@@ -1,0 +1,22 @@
+[package]
+name = "datarust"
+version = "0.1.0"
+edition = "2021"
+description = "Scikit-Learn Preprocessing in Rust"
+license = "MIT"
+
+[lib]
+name = "datarust"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Enable JSON serialization / save-load support for fitted transformers.
+serde = ["dep:serde", "dep:serde_json"]
+# Enable parallelism via rayon for large datasets.
+rayon = ["dep:rayon"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+rayon = { version = "1", optional = true }
