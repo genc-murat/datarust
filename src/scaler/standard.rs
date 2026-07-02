@@ -124,6 +124,7 @@ impl Transformer for StandardScaler {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_no_nan()?;
         #[cfg(feature = "rayon")]
         {
             let mean = &self.mean;

@@ -116,7 +116,7 @@ fn rotate(a: &mut Vec<Vec<f64>>, v: &mut Vec<Vec<f64>>, p: usize, q: usize, c: f
 
 /// Compute the covariance matrix of centered data: `(1/(n-ddof)) * Xcᵀ Xc`.
 ///
-/// This is a thin wrapper over the canonical [`crate::stats::covariance_centered`]
+/// This is a thin wrapper over the canonical `covariance_centered`
 /// implementation so that PCA, Truncated SVD and the public stats API all share
 /// one tested routine. `x_centered` is row-major `n×p`.
 pub fn covariance(x_centered: &[Vec<f64>], ddof: usize) -> Vec<Vec<f64>> {

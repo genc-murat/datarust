@@ -99,6 +99,19 @@ impl SelectKBest {
     }
 }
 
+/// Default: keep 10 best features using F-test scoring.
+impl Default for SelectKBest {
+    fn default() -> Self {
+        Self {
+            score_func: ScoreFunc::FClassif,
+            k: 10,
+            scores: vec![],
+            support_mask: vec![],
+            fitted: false,
+        }
+    }
+}
+
 impl Transformer for SelectKBest {
     fn name(&self) -> &'static str {
         "SelectKBest"

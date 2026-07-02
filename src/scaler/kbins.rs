@@ -116,19 +116,24 @@ impl KBinsDiscretizer {
     }
 
     /// Find the bin index for a value given the edges.
-    fn value_to_bin(value: f64, edges: &[f64]) -> usize {
+    fn value_to_bin(value: f64, edges: &[f64]) -> Result<usize> {
+        if value.is_nan() {
+            return Err(DatarustError::InvalidInput(
+                "KBinsDiscretizer: NaN encountered in input".into(),
+            ));
+        }
         if edges.len() <= 1 {
-            return 0;
+            return Ok(0);
         }
         // Binary search for the right edge.
         let n_bins = edges.len() - 1;
         // Clamp to last bin if value >= last edge.
         if value >= edges[n_bins] {
-            return n_bins - 1;
+            return Ok(n_bins - 1);
         }
         // Clamp to first bin if value <= first edge.
         if value <= edges[0] {
-            return 0;
+            return Ok(0);
         }
         // Find the first edge[i] > value; bin = i-1.
         let mut lo = 0usize;
@@ -142,13 +147,28 @@ impl KBinsDiscretizer {
             }
         }
         // lo is the first index where edges[lo] > value; bin = lo - 1.
-        (lo - 1).min(n_bins - 1)
+        Ok((lo - 1).min(n_bins - 1))
     }
 
     fn total_output_cols(&self) -> usize {
         match self.encode {
             KBinsEncode::Ordinal => self.n_features,
             KBinsEncode::OneHotDense => self.n_actual_bins.iter().sum(),
+        }
+    }
+}
+
+/// Default: 5 bins, quantile strategy, ordinal encoding.
+impl Default for KBinsDiscretizer {
+    fn default() -> Self {
+        Self {
+            n_bins: 5,
+            strategy: BinStrategy::Quantile,
+            encode: KBinsEncode::Ordinal,
+            bin_edges: vec![],
+            n_actual_bins: vec![],
+            n_features: 0,
+            fitted: false,
         }
     }
 }
@@ -190,7 +210,7 @@ impl Transformer for KBinsDiscretizer {
                 let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
                 for (i, out_row) in out.iter_mut().enumerate() {
                     for (j, cell) in out_row.iter_mut().enumerate() {
-                        *cell = Self::value_to_bin(x.get(i, j), &self.bin_edges[j]) as f64;
+                        *cell = Self::value_to_bin(x.get(i, j), &self.bin_edges[j])? as f64;
                     }
                 }
                 Matrix::new(out)
@@ -201,7 +221,7 @@ impl Transformer for KBinsDiscretizer {
                 for (i, out_row) in out.iter_mut().enumerate() {
                     let mut offset = 0;
                     for j in 0..x.ncols() {
-                        let bin = Self::value_to_bin(x.get(i, j), &self.bin_edges[j]);
+                        let bin = Self::value_to_bin(x.get(i, j), &self.bin_edges[j])?;
                         out_row[offset + bin] = 1.0;
                         offset += self.n_actual_bins[j];
                     }
@@ -413,14 +433,21 @@ mod tests {
     #[test]
     fn value_at_max_edge_goes_to_last_bin() {
         let edges = vec![0.0, 1.0, 2.0];
-        assert_eq!(KBinsDiscretizer::value_to_bin(2.0, &edges), 1);
-        assert_eq!(KBinsDiscretizer::value_to_bin(3.0, &edges), 1);
+        assert_eq!(KBinsDiscretizer::value_to_bin(2.0, &edges).unwrap(), 1);
+        assert_eq!(KBinsDiscretizer::value_to_bin(3.0, &edges).unwrap(), 1);
     }
 
     #[test]
     fn value_below_min_edge_goes_to_first_bin() {
         let edges = vec![0.0, 1.0, 2.0];
-        assert_eq!(KBinsDiscretizer::value_to_bin(-5.0, &edges), 0);
+        assert_eq!(KBinsDiscretizer::value_to_bin(-5.0, &edges).unwrap(), 0);
+    }
+
+    #[test]
+    fn nan_in_value_to_bin_errors() {
+        let edges = vec![0.0, 1.0, 2.0];
+        let result = KBinsDiscretizer::value_to_bin(f64::NAN, &edges);
+        assert!(result.is_err());
     }
 
     #[test]

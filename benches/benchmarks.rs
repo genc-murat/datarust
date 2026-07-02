@@ -1,11 +1,14 @@
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
+use datarust::categorical_kind::CategoricalTransformerKind;
+use datarust::compose::*;
 use datarust::decomposition::*;
+use datarust::encoder::*;
 use datarust::pipeline::Pipeline;
 use datarust::scaler::*;
 use datarust::traits::Transformer;
 use datarust::transformer_kind::TransformerKind;
-use datarust::Matrix;
+use datarust::{Matrix, StrMatrix};
 
 fn make_matrix(rows: usize, cols: usize) -> Matrix {
     let data: Vec<Vec<f64>> = (0..rows)
@@ -16,6 +19,85 @@ fn make_matrix(rows: usize, cols: usize) -> Matrix {
         })
         .collect();
     Matrix::new(data).unwrap()
+}
+
+fn make_str_matrix(rows: usize, cols: usize) -> StrMatrix {
+    let data: Vec<Vec<String>> = (0..rows)
+        .map(|i| (0..cols).map(|j| format!("cat_{}_{}", j, i % 5)).collect())
+        .collect();
+    StrMatrix::new(data).unwrap()
+}
+
+fn bench_onehot_encoder(c: &mut Criterion) {
+    let mut group = c.benchmark_group("onehot_encoder");
+    for (rows, cols) in [(100, 5), (1000, 10)] {
+        let x = make_str_matrix(rows, cols);
+        group.bench_with_input(
+            criterion::BenchmarkId::new("fit_transform", rows),
+            &x,
+            |bencher, x| {
+                bencher.iter_batched(
+                    OneHotEncoder::new,
+                    |mut ohe| ohe.fit_transform(x),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_power_transformer(c: &mut Criterion) {
+    let mut group = c.benchmark_group("power_transformer");
+    for (rows, cols) in [(100, 5), (1000, 20)] {
+        let x = make_matrix(rows, cols);
+        group.bench_with_input(
+            criterion::BenchmarkId::new("fit_transform", rows),
+            &x,
+            |bencher, x| {
+                bencher.iter_batched(
+                    PowerTransformer::default,
+                    |mut pt| pt.fit_transform(x),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_column_transformer(c: &mut Criterion) {
+    let mut group = c.benchmark_group("column_transformer");
+    let rows = 1000;
+    let num_cols = 5;
+    let cat_cols = 5;
+    let numeric: Matrix = make_matrix(rows, num_cols);
+    let categorical: StrMatrix = make_str_matrix(rows, cat_cols);
+    let table = Table::new(numeric, categorical).unwrap();
+    group.bench_with_input(
+        criterion::BenchmarkId::new("fit_transform", rows),
+        &table,
+        |bencher, tbl| {
+            bencher.iter_batched(
+                || {
+                    ColumnTransformer::new()
+                        .add_numeric(
+                            "nums",
+                            (0..num_cols).collect(),
+                            TransformerKind::StandardScaler(StandardScaler::new()),
+                        )
+                        .add_categorical(
+                            "cats",
+                            (num_cols..num_cols + cat_cols).collect(),
+                            CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new()),
+                        )
+                },
+                |mut ct| ct.fit_transform_to_table(tbl),
+                BatchSize::SmallInput,
+            )
+        },
+    );
+    group.finish();
 }
 
 fn bench_matrix_matmul(c: &mut Criterion) {
@@ -150,6 +232,9 @@ criterion_group!(
     bench_standard_scaler,
     bench_minmax_scaler,
     bench_robust_scaler,
+    bench_power_transformer,
+    bench_onehot_encoder,
+    bench_column_transformer,
     bench_pca,
     bench_pipeline,
 );

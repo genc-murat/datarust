@@ -163,6 +163,22 @@ impl TruncatedSVD {
     }
 }
 
+/// Default: keep 2 components.
+impl Default for TruncatedSVD {
+    fn default() -> Self {
+        Self {
+            components_spec: SVDComponents::Count(2),
+            components: vec![],
+            singular_values: vec![],
+            explained_variance: vec![],
+            explained_variance_ratio: vec![],
+            n_components_: 0,
+            n_samples_: 0,
+            fitted: false,
+        }
+    }
+}
+
 impl Transformer for TruncatedSVD {
     fn name(&self) -> &'static str {
         "TruncatedSVD"

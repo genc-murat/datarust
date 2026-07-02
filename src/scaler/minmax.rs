@@ -100,6 +100,7 @@ impl Transformer for MinMaxScaler {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_no_nan()?;
         let (lo, hi) = self.feature_range;
         let span = hi - lo;
         #[cfg(feature = "rayon")]

@@ -87,6 +87,7 @@ impl Transformer for MaxAbsScaler {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_no_nan()?;
         #[cfg(feature = "rayon")]
         {
             let max_abs = &self.max_abs;

@@ -209,7 +209,14 @@ impl OrdinalEncoder {
         for i in 0..y.nrows() {
             let mut row = Vec::with_capacity(y.ncols());
             for j in 0..y.ncols() {
-                let idx = y.get(i, j) as isize;
+                let v = y.get(i, j);
+                if v.is_nan() {
+                    return Err(DatarustError::InvalidInput(format!(
+                        "NaN value at row {}, column {} in inverse_transform input",
+                        i, j
+                    )));
+                }
+                let idx = v as isize;
                 if idx == -1 {
                     // Sentinel for unknown categories (UseNegOne)
                     row.push(String::new());

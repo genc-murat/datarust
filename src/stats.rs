@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use crate::error::{DatarustError, Result};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
@@ -163,33 +164,37 @@ pub fn quantile(sorted: &[f64], q: f64) -> Option<f64> {
 }
 
 /// Returns the requested quantile of each column using linear interpolation.
-pub fn quantile_column(data: &[Vec<f64>], q: f64) -> Vec<f64> {
+pub fn quantile_column(data: &[Vec<f64>], q: f64) -> Result<Vec<f64>> {
+    if !(0.0..=1.0).contains(&q) {
+        return Err(DatarustError::InvalidInput(format!(
+            "quantile q must be in [0, 1], got {}",
+            q
+        )));
+    }
     if data.is_empty() {
-        return vec![];
+        return Ok(vec![]);
     }
     let cols = data[0].len();
     #[cfg(feature = "rayon")]
     {
-        (0..cols)
+        Ok((0..cols)
             .into_par_iter()
             .map(|j| {
                 let mut col: Vec<f64> = data.iter().map(|r| r[j]).collect();
                 col.sort_by(|a, b| a.total_cmp(b));
-                // INVARIANT: `data` is non-empty (checked above), so each column has
-                // >= 1 element and `q` validity is the caller's contract.
                 quantile(&col, q).expect("non-empty column with q in [0,1]")
             })
-            .collect()
+            .collect())
     }
     #[cfg(not(feature = "rayon"))]
     {
-        (0..cols)
+        Ok((0..cols)
             .map(|j| {
                 let mut col: Vec<f64> = data.iter().map(|r| r[j]).collect();
                 col.sort_by(|a, b| a.total_cmp(b));
                 quantile(&col, q).expect("non-empty column with q in [0,1]")
             })
-            .collect()
+            .collect())
     }
 }
 

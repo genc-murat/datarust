@@ -240,6 +240,22 @@ impl Transformer for PowerTransformer {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_no_nan()?;
+        // Box-Cox requires strictly positive input; validate on new data
+        // since fit-time validation does not cover unseen values.
+        if matches!(self.method, PowerMethod::BoxCox) {
+            for i in 0..x.nrows() {
+                for j in 0..x.ncols() {
+                    let v = x.get(i, j);
+                    if v <= 0.0 {
+                        return Err(DatarustError::InvalidInput(format!(
+                            "Box-Cox transform requires positive finite values; got {} at ({}, {})",
+                            v, i, j
+                        )));
+                    }
+                }
+            }
+        }
         let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
         for (i, out_row) in out.iter_mut().enumerate() {
             for (j, cell) in out_row.iter_mut().enumerate() {

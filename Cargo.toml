@@ -1,6 +1,6 @@
 [package]
 name = "datarust"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.70"
 description = "Scikit-Learn Preprocessing in Rust"
@@ -42,3 +42,7 @@ path = "examples/basic_preprocessing.rs"
 [[example]]
 name = "pipeline_workflow"
 path = "examples/pipeline_workflow.rs"
+
+[package.metadata.docs.rs]
+features = ["serde", "rayon"]
+rustdoc-args = ["--cfg", "docsrs"]

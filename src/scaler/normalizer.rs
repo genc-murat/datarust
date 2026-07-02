@@ -107,6 +107,7 @@ impl Transformer for Normalizer {
         if !self.fitted {
             return Err(DatarustError::NotFitted("Normalizer".into()));
         }
+        x.validate_no_nan()?;
         #[cfg(feature = "rayon")]
         {
             let out: Vec<Vec<f64>> = x.rows_ref().par_iter().map(|r| self.scale_row(r)).collect();

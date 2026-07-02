@@ -4,7 +4,6 @@ use crate::error::{DatarustError, Result};
 
 /// Row-major dense matrix of `f64` backed by `Vec<Vec<f64>>`.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Matrix {
     pub(crate) data: Vec<Vec<f64>>,
 }
@@ -40,9 +39,15 @@ impl Matrix {
         if rows == 0 || cols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
         }
-        if flat.len() != rows * cols {
+        let expected = rows
+            .checked_mul(cols)
+            .ok_or_else(|| DatarustError::ShapeMismatch {
+                expected: "rows * cols within usize range".into(),
+                actual: format!("{} rows × {} cols overflows usize", rows, cols),
+            })?;
+        if flat.len() != expected {
             return Err(DatarustError::ShapeMismatch {
-                expected: format!("{} elements", rows * cols),
+                expected: format!("{} elements", expected),
                 actual: format!("{} elements", flat.len()),
             });
         }
@@ -89,15 +94,50 @@ impl Matrix {
     }
 
     /// Returns the element at row `i`, column `j`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `i >= nrows()` or `j >= ncols()`. Use [`checked_get`](Self::checked_get)
+    /// for a safe alternative that returns `None` on out-of-bounds access.
     #[inline]
     pub fn get(&self, i: usize, j: usize) -> f64 {
+        debug_assert!(
+            i < self.data.len() && j < self.data[i].len(),
+            "Matrix::get: index ({}, {}) out of bounds for {}×{}",
+            i,
+            j,
+            self.data.len(),
+            self.data[0].len()
+        );
         self.data[i][j]
+    }
+
+    /// Returns `Some(element)` at row `i`, column `j`, or `None` if the indices
+    /// are out of bounds.
+    #[inline]
+    pub fn checked_get(&self, i: usize, j: usize) -> Option<f64> {
+        self.data.get(i)?.get(j).copied()
     }
 
     /// Sets the element at row `i`, column `j`.
     #[inline]
     pub fn set(&mut self, i: usize, j: usize, v: f64) {
         self.data[i][j] = v;
+    }
+
+    /// Returns `Ok(())` if the matrix contains no NaN values.
+    pub fn validate_no_nan(&self) -> Result<()> {
+        for (i, row) in self.data.iter().enumerate() {
+            for (j, &v) in row.iter().enumerate() {
+                if v.is_nan() {
+                    return Err(DatarustError::InvalidInput(format!(
+                        "NaN value at position ({}, {})",
+                        i, j
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Returns the row at index `i` as a slice.
@@ -266,9 +306,36 @@ impl Matrix {
     }
 }
 
+#[cfg(feature = "serde")]
+impl serde::Serialize for Matrix {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("Matrix", 1)?;
+        s.serialize_field("data", &self.data)?;
+        s.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Matrix {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            data: Vec<Vec<f64>>,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        Matrix::new(raw.data).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Row-major matrix of strings used by the categorical encoders.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StrMatrix {
     pub(crate) data: Vec<Vec<String>>,
 }
@@ -333,9 +400,29 @@ impl StrMatrix {
     }
 
     /// Returns the string at row `i`, column `j`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `i >= nrows()` or `j >= ncols()`. Use
+    /// [`checked_get`](Self::checked_get) for a safe alternative.
     #[inline]
     pub fn get(&self, i: usize, j: usize) -> &str {
+        debug_assert!(
+            i < self.data.len() && j < self.data[i].len(),
+            "StrMatrix::get: index ({}, {}) out of bounds for {}×{}",
+            i,
+            j,
+            self.data.len(),
+            self.data[0].len()
+        );
         &self.data[i][j]
+    }
+
+    /// Returns `Some(element)` at row `i`, column `j`, or `None` if the indices
+    /// are out of bounds.
+    #[inline]
+    pub fn checked_get(&self, i: usize, j: usize) -> Option<&str> {
+        self.data.get(i)?.get(j).map(|s| s.as_str())
     }
 
     /// Returns column `j` as a new vector of strings.
@@ -346,6 +433,34 @@ impl StrMatrix {
     /// Returns the row at index `i` as a slice.
     pub fn row(&self, i: usize) -> &[String] {
         &self.data[i]
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for StrMatrix {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("StrMatrix", 1)?;
+        s.serialize_field("data", &self.data)?;
+        s.end()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for StrMatrix {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            data: Vec<Vec<String>>,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        StrMatrix::new(raw.data).map_err(serde::de::Error::custom)
     }
 }
 
@@ -510,7 +625,7 @@ impl SparseMatrix {
 
     /// Density (fraction of non-zero entries).
     pub fn density(&self) -> f64 {
-        let total = self.nrows * self.ncols;
+        let total = self.nrows.saturating_mul(self.ncols);
         if total == 0 {
             return 0.0;
         }
@@ -526,6 +641,18 @@ impl SparseMatrix {
         match slice.binary_search(&j) {
             Ok(local) => self.data[start + local],
             Err(_) => 0.0,
+        }
+    }
+
+    /// Returns `Some(element)` at row `i`, column `j`, or `None` if `i` is
+    /// out of bounds or the value is not stored (equivalent to 0.0).
+    pub fn checked_get(&self, i: usize, j: usize) -> Option<f64> {
+        let start = *self.indptr.get(i)?;
+        let end = *self.indptr.get(i + 1)?;
+        let slice = self.indices.get(start..end)?;
+        match slice.binary_search(&j) {
+            Ok(local) => Some(self.data[start + local]),
+            Err(_) => Some(0.0),
         }
     }
 

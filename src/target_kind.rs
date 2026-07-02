@@ -9,7 +9,7 @@ use crate::matrix::{Matrix, StrMatrix};
 use crate::traits::{FeatureNames, TargetTransformer};
 
 /// Concrete target transformer variant, wrapping a [`TargetEncoder`] for use
-/// in [`ColumnTransformer`].
+/// in [`crate::ColumnTransformer`].
 ///
 /// Each variant wraps a single supervised encoder that implements
 /// [`TargetTransformer`] (i.e. operates on `(StrMatrix, &[f64]) -> Matrix`).

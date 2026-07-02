@@ -101,8 +101,8 @@ impl Transformer for RobustScaler {
             )));
         }
         let data = x.rows_ref();
-        let q1 = stats::quantile_column(data, q_lo);
-        let q3 = stats::quantile_column(data, q_hi);
+        let q1 = stats::quantile_column(data, q_lo)?;
+        let q3 = stats::quantile_column(data, q_hi)?;
         let median = stats::median_column(data);
         let scale: Vec<f64> = (0..x.ncols())
             .map(|j| {
@@ -132,6 +132,7 @@ impl Transformer for RobustScaler {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_no_nan()?;
         #[cfg(feature = "rayon")]
         {
             let center = &self.center;

@@ -74,21 +74,26 @@ impl QuantileTransformer {
     }
 
     /// Transform a single value through the empirical CDF.
-    fn transform_value(value: f64, refs: &[f64]) -> f64 {
+    fn transform_value(value: f64, refs: &[f64]) -> Result<f64> {
+        if value.is_nan() {
+            return Err(DatarustError::InvalidInput(
+                "QuantileTransformer: NaN encountered in input".into(),
+            ));
+        }
         let n = refs.len();
         if n == 0 {
-            return 0.0;
+            return Ok(0.0);
         }
         if n == 1 {
             // All values map to 0.5 percentile (the middle).
-            return 0.5;
+            return Ok(0.5);
         }
         // Clamp to [0, 1] percentile range.
         if value <= refs[0] {
-            return 0.0;
+            return Ok(0.0);
         }
         if value >= refs[n - 1] {
-            return 1.0;
+            return Ok(1.0);
         }
         // Binary search for position.
         let mut lo = 0usize;
@@ -112,7 +117,20 @@ impl QuantileTransformer {
             (value - refs[lower]) / denom
         };
         // Map to percentile in [0, 1].
-        lower as f64 / (n - 1) as f64 + frac / (n - 1) as f64
+        Ok(lower as f64 / (n - 1) as f64 + frac / (n - 1) as f64)
+    }
+}
+
+/// Default: 1000 quantiles, uniform output distribution.
+impl Default for QuantileTransformer {
+    fn default() -> Self {
+        Self {
+            n_quantiles: 1000,
+            output_distribution: OutputDistribution::Uniform,
+            references: vec![],
+            n_features: 0,
+            fitted: false,
+        }
     }
 }
 
@@ -149,7 +167,7 @@ impl Transformer for QuantileTransformer {
         let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
         for (i, out_row) in out.iter_mut().enumerate() {
             for (j, cell) in out_row.iter_mut().enumerate() {
-                let percentile = Self::transform_value(x.get(i, j), &self.references[j]);
+                let percentile = Self::transform_value(x.get(i, j), &self.references[j])?;
                 *cell = match self.output_distribution {
                     OutputDistribution::Uniform => percentile.clamp(0.0, 1.0),
                     OutputDistribution::Normal => {

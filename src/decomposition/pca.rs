@@ -133,6 +133,24 @@ impl PCA {
     }
 }
 
+/// Default: keep 95% of variance, no whitening.
+impl Default for PCA {
+    fn default() -> Self {
+        Self {
+            n_components: PCAComponents::Variance(0.95),
+            whiten: false,
+            mean: vec![],
+            components: vec![],
+            explained_variance: vec![],
+            explained_variance_ratio: vec![],
+            n_components_: 0,
+            n_samples_: 0,
+            total_variance_: 0.0,
+            fitted: false,
+        }
+    }
+}
+
 impl Transformer for PCA {
     fn name(&self) -> &'static str {
         "PCA"

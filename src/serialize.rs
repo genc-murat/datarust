@@ -30,7 +30,8 @@ pub fn from_json<T: serde::de::DeserializeOwned>(s: &str) -> Result<T> {
 /// `&Path`, `PathBuf`).
 pub fn save_json<T: serde::Serialize, P: AsRef<Path>>(t: &T, path: P) -> Result<()> {
     let s = to_json(t)?;
-    std::fs::write(path, s).map_err(|e| crate::error::DatarustError::Io(e.to_string()))
+    std::fs::write(path, s)?;
+    Ok(())
 }
 
 /// Read a transformer from the JSON file at `path`.
@@ -38,7 +39,6 @@ pub fn save_json<T: serde::Serialize, P: AsRef<Path>>(t: &T, path: P) -> Result<
 /// `path` accepts anything implementing [`AsRef<Path>`] (e.g. `&str`, `String`,
 /// `&Path`, `PathBuf`).
 pub fn load_json<T: serde::de::DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<T> {
-    let s = std::fs::read_to_string(path)
-        .map_err(|e| crate::error::DatarustError::Io(e.to_string()))?;
+    let s = std::fs::read_to_string(path)?;
     from_json(&s)
 }

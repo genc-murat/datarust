@@ -63,6 +63,18 @@ impl std::fmt::Debug for FunctionTransformer {
     }
 }
 
+/// Default is an identity transformer (no function set).
+impl Default for FunctionTransformer {
+    fn default() -> Self {
+        Self {
+            func: None,
+            inv_func: None,
+            n_features_in_: 0,
+            fitted: false,
+        }
+    }
+}
+
 impl Transformer for FunctionTransformer {
     fn name(&self) -> &'static str {
         "FunctionTransformer"

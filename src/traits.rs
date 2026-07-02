@@ -78,7 +78,7 @@ pub fn default_input_names(n: usize) -> Vec<String> {
 
 /// Trait for categorical (string) transformers operating on `StrMatrix -> Matrix`.
 ///
-/// All categorical encoders that accept a [`StrMatrix`](crate::StrMatrix) and
+/// All categorical encoders that accept a [`StrMatrix`] and
 /// produce a [`Matrix`] implement this trait.
 pub trait CategoricalTransformer {
     /// Human-readable name of the transformer.

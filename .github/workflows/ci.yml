@@ -76,3 +76,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.70.0
       - name: Check build with MSRV
         run: cargo check --all-features
+
+  doc:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build documentation
+        run: cargo doc --all-features --no-deps -D warnings

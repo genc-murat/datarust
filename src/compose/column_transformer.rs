@@ -501,7 +501,7 @@ impl ColumnTransformer {
         self.transform(table)
     }
 
-    /// Transforms the table and returns an [`Output`] that preserves the
+    /// Transforms the table and returns an [`crate::Output`] that preserves the
     /// separation between numeric and categorical columns.
     ///
     /// Unlike [`transform`](Self::transform), remainder categorical columns are
@@ -628,7 +628,7 @@ impl ColumnTransformer {
         crate::compose::Output::new(numeric, categorical)
     }
 
-    /// Fits then transforms the table, returning an [`Output`] that preserves
+    /// Fits then transforms the table, returning an [`crate::Output`] that preserves
     /// numeric / categorical column separation.
     pub fn fit_transform_to_table(&mut self, table: &Table) -> Result<crate::compose::Output> {
         self.fit(table)?;

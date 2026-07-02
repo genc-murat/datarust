@@ -11,7 +11,7 @@ use crate::matrix::{Matrix, StrMatrix};
 use crate::traits::{CategoricalTransformer, FeatureNames};
 
 /// Concrete categorical transformer variant, used to allow
-/// [`ColumnTransformer`] to apply any categorical encoder to a column block.
+/// [`crate::ColumnTransformer`] to apply any categorical encoder to a column block.
 ///
 /// Each variant wraps a single encoder type that implements
 /// [`CategoricalTransformer`] (i.e. operates on `StrMatrix -> Matrix`).

@@ -178,6 +178,11 @@ impl Transformer for KnnImputer {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        if self.n_neighbors == 0 {
+            return Err(DatarustError::InvalidInput(
+                "n_neighbors must be >= 1".into(),
+            ));
+        }
         if x.nrows() == 0 {
             return Err(DatarustError::InvalidInput(
                 "KNN imputer needs at least one sample".into(),
