@@ -450,6 +450,115 @@ assert_eq!(names, vec!["x0", "x1"]);
 
 Pipeline chains names through all steps; OneHotEncoder appends `_category` suffixes; PCA/TruncatedSVD generate `pca0`/`svd0` names; VarianceThreshold and SelectKBest filter names by the selected mask; ColumnTransformer composes names from all sub-transformers.
 
+### Inverse Transform
+
+Several transformers support reversing the transformation via `inverse_transform` on the [`Transformer`](https://docs.rs/datarust/latest/datarust/trait.Transformer.html) trait, returning an approximation of the original input:
+
+| Transformer | Notes |
+|---|---|
+| StandardScaler | `x = z * std + mean` |
+| MinMaxScaler | `x = z * (max - min) + min` |
+| RobustScaler | `x = z * iqr + median` |
+| MaxAbsScaler | `x = z * max_abs` |
+| PCA | via `components_` matrix multiply |
+| TruncatedSVD | via `components_` matrix multiply |
+| OneHotEncoder | `Matrix` → `StrMatrix` (dense + sparse) |
+
+```rust
+let mut s = StandardScaler::new();
+let transformed = s.fit_transform(&x)?;
+let reconstructed = s.inverse_transform(&transformed)?;
+// reconstructed ≈ x (within floating-point precision)
+```
+
+Transformers that do not support inverse (e.g. Binarizer, Normalizer) return an error.
+
+### FunctionTransformer
+
+Wrap arbitrary functions as a [`Transformer`](https://docs.rs/datarust/latest/datarust/trait.Transformer.html), mirroring `sklearn.preprocessing.FunctionTransformer`.
+
+```rust
+use datarust::function_transformer::FunctionTransformer;
+
+fn times_two(x: &Matrix) -> Result<Matrix> {
+    let out: Vec<Vec<f64>> = x.rows_ref()
+        .iter()
+        .map(|row| row.iter().map(|&v| v * 2.0).collect())
+        .collect();
+    Matrix::new(out)
+}
+
+let mut ft = FunctionTransformer::new(times_two);
+let out = ft.fit_transform(&x)?;
+// out[i][j] = x[i][j] * 2
+```
+
+An inverse function can be set via `.with_inverse(func)`. At deserialization (serde feature), function pointers are skipped — call `set_func()` to restore.
+
+### Pipeline Ergonomics
+
+[`Pipeline`](https://docs.rs/datarust/latest/datarust/struct.Pipeline.html) provides runtime access to individual steps without consuming or destructuring the pipeline:
+
+| Method | Description |
+|---|---|
+| `get_step(name)` | Borrow a step by name |
+| `get_step_mut(name)` | Mutably borrow a step by name |
+| `step(index)` | Borrow a step and its name by index |
+| `step_mut(index)` | Mutably borrow a step and its name by index |
+| `remove_step(index)` | Remove and return a step |
+| `insert_step(index, name, t)` | Insert a step at a position |
+| `set_step(name, t)` | Replace a step by name |
+
+```rust
+let mut pipe = Pipeline::new()
+    .push("scale", TransformerKind::StandardScaler(StandardScaler::new()))
+    .push("reduce", TransformerKind::PCA(PCA::new(PCAComponents::Count(5))));
+
+// Replace the scaler
+pipe.set_step("scale", TransformerKind::RobustScaler(RobustScaler::new()));
+
+// Access the PCA step's explained variance
+if let TransformerKind::PCA(pca) = pipe.get_step("reduce").unwrap() {
+    println!("explained variance: {:?}", pca.explained_variance_ratio());
+}
+```
+
+### Matrix Slicing
+
+[`Matrix`](https://docs.rs/datarust/latest/datarust/struct.Matrix.html) supports column and row slicing with bounds checking:
+
+```rust
+let m = Matrix::new(vec![
+    vec![1.0, 2.0, 3.0],
+    vec![4.0, 5.0, 6.0],
+])?;
+
+let cols = m.select_columns(&[0, 2])?;  // columns 0 and 2
+assert_eq!(cols.get(0, 0), 1.0);
+assert_eq!(cols.get(0, 1), 3.0);
+
+let rows = m.select_rows(&[1])?;  // only row 1
+assert_eq!(rows.nrows(), 1);
+```
+
+### Covariance & Correlation
+
+The [`stats`](https://docs.rs/datarust/latest/datarust/stats/index.html) module provides matrix-level statistical operations:
+
+```rust
+use datarust::stats::{covariance_matrix, correlation_matrix};
+
+let data = Matrix::new(vec![
+    vec![1.0, 2.0],
+    vec![3.0, 4.0],
+    vec![5.0, 6.0],
+])?;
+let cov = covariance_matrix(&data, 0);  // ddof=0 (population)
+let corr = correlation_matrix(&data);   // Pearson (ddof=1)
+```
+
+PCA also exposes [`noise_variance()`](https://docs.rs/datarust/latest/datarust/decomposition/struct.PCA.html#method.noise_variance) — the average eigenvalue of discarded components, matching sklearn's `PCA.noise_variance_`.
+
 ## Serialization
 
 Enable the `serde` feature for JSON save/load of fitted transformers.
@@ -516,7 +625,12 @@ When enabled, the following use parallel iterators:
 | TruncatedSVD | ✓ (via X^T X eigen) | ✓ |
 | Pipeline | ✓ (TransformerKind, serde) | ✓ |
 | ColumnTransformer | ✓ (numeric + onehot, remainder passthrough) | ✓ |
+| FunctionTransformer | ✓ (optional inverse, closure-based) | ✓ |
 | FeatureNames | ✓ (trait, all transformers) | ✓ |
+| inverse_transform | ✓ (scalers, PCA, SVD, OneHotEncoder) | ✓ |
+| Pipeline Ergonomics | ✓ (get_step, step, set_step, insert, remove) | — |
+| Matrix Slicing | ✓ (select_columns, select_rows) | — |
+| Covariance / Correlation | ✓ (ddof-configurable) | — |
 | JSON Serialization | ✓ (serde feature) | — (joblib) |
 | Sparse Output | ✓ (CSR via SparseMatrix) | ✓ |
 | Parallelism | ✓ (rayon feature) | — (joblib) |

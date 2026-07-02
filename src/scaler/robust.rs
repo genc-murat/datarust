@@ -11,12 +11,14 @@ use rayon::prelude::*;
 /// `sklearn.preprocessing.RobustScaler`.
 ///
 /// Centers to the median and scales according to the interquartile range
-/// (Q3 - Q1) using numpy-default linear quantile interpolation.
+/// (default Q3 - Q1) using numpy-default linear quantile interpolation.
+/// The quantile range can be customized via [`quantile_range`](RobustScaler::quantile_range).
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RobustScaler {
     with_centering: bool,
     with_scaling: bool,
+    quantile_range: (f64, f64),
     center: Vec<f64>,
     scale: Vec<f64>,
     fitted: bool,
@@ -27,6 +29,7 @@ impl RobustScaler {
         Self {
             with_centering: true,
             with_scaling: true,
+            quantile_range: (0.25, 0.75),
             center: vec![],
             scale: vec![],
             fitted: false,
@@ -45,12 +48,23 @@ impl RobustScaler {
         self
     }
 
+    /// Builder: set the quantile range used to compute the IQR scale.
+    /// Must satisfy `0 < lo < hi < 1`.  Default is `(0.25, 0.75)`.
+    pub fn quantile_range(mut self, lo: f64, hi: f64) -> Self {
+        self.quantile_range = (lo, hi);
+        self
+    }
+
     pub fn center(&self) -> &[f64] {
         &self.center
     }
 
     pub fn scale(&self) -> &[f64] {
         &self.scale
+    }
+
+    pub fn quantile_range_value(&self) -> (f64, f64) {
+        self.quantile_range
     }
 }
 
@@ -75,9 +89,16 @@ impl Transformer for RobustScaler {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        let (q_lo, q_hi) = self.quantile_range;
+        if q_lo <= 0.0 || q_hi >= 1.0 || q_lo >= q_hi {
+            return Err(DatarustError::InvalidConfig(format!(
+                "quantile_range ({}, {}) must satisfy 0 < lo < hi < 1",
+                q_lo, q_hi
+            )));
+        }
         let data = x.rows_ref();
-        let q1 = stats::quantile_column(data, 0.25);
-        let q3 = stats::quantile_column(data, 0.75);
+        let q1 = stats::quantile_column(data, q_lo);
+        let q3 = stats::quantile_column(data, q_hi);
         let median = stats::median_column(data);
         let scale: Vec<f64> = (0..x.ncols())
             .map(|j| {
@@ -141,6 +162,44 @@ impl Transformer for RobustScaler {
                     } else {
                         out[i][j] = (v - self.center[j]) / s;
                     }
+                }
+            }
+            Matrix::new(out)
+        }
+    }
+
+    fn inverse_transform(&self, x: &Matrix) -> Result<Matrix> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("RobustScaler".into()));
+        }
+        if self.center.len() != x.ncols() {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} features", self.center.len()),
+                actual: format!("{} features", x.ncols()),
+            });
+        }
+        #[cfg(feature = "rayon")]
+        {
+            let center = &self.center;
+            let scale = &self.scale;
+            let rows: Vec<Vec<f64>> = x
+                .rows_ref()
+                .par_iter()
+                .map(|row| {
+                    row.iter()
+                        .enumerate()
+                        .map(|(j, &z)| z * scale[j] + center[j])
+                        .collect()
+                })
+                .collect();
+            Matrix::new(rows)
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
+            for (i, row) in x.rows_ref().iter().enumerate() {
+                for (j, &z) in row.iter().enumerate() {
+                    out[i][j] = z * self.scale[j] + self.center[j];
                 }
             }
             Matrix::new(out)
@@ -270,5 +329,103 @@ mod tests {
         s.fit(&x).unwrap();
         assert!((s.center()[0] - 4.5).abs() < 1e-12);
         assert!((s.scale()[0] - 4.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn inverse_transform_round_trip() {
+        let mut s = RobustScaler::new();
+        let x = m1();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_with_centering_false() {
+        let mut s = RobustScaler::new().with_centering(false);
+        let x = m1();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_with_scaling_false() {
+        let mut s = RobustScaler::new().with_scaling(false);
+        let x = m1();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_zero_iqr() {
+        let x = Matrix::new(vec![vec![2.0], vec![2.0], vec![2.0]]).unwrap();
+        let mut s = RobustScaler::new();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        // scale=0 -> all transformed values 0.0; inverse gives center (median=2.0)
+        for i in 0..3 {
+            assert!((recovered.get(i, 0) - 2.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn inverse_transform_before_fit_errors() {
+        let s = RobustScaler::new();
+        assert!(s.inverse_transform(&m1()).is_err());
+    }
+
+    #[test]
+    fn inverse_transform_shape_mismatch() {
+        let mut s = RobustScaler::new();
+        s.fit(&m1()).unwrap();
+        let bad = Matrix::new(vec![vec![1.0, 2.0, 3.0]]).unwrap();
+        assert!(s.inverse_transform(&bad).is_err());
+    }
+
+    #[test]
+    fn custom_quantile_range_wider_scale() {
+        // With a wider quantile range, the IQR is larger -> scale is larger
+        // -> transformed values are smaller in magnitude
+        let mut s_default = RobustScaler::new();
+        let mut s_wide = RobustScaler::new().quantile_range(0.1, 0.9);
+        let x = m1();
+        s_default.fit(&x).unwrap();
+        s_wide.fit(&x).unwrap();
+        // Wide range should have larger scale (IQR) -> abs values are smaller
+        assert!(s_wide.scale()[0] > s_default.scale()[0]);
+    }
+
+    #[test]
+    fn custom_quantile_range_narrower_scale() {
+        let mut s = RobustScaler::new().quantile_range(0.4, 0.6);
+        let x = m1();
+        s.fit(&x).unwrap();
+        // With q=(0.4,0.6), IQR is smaller -> scale is smaller -> values larger
+        assert!(s.scale()[0] < 4.5); // default scale is 4.5
+    }
+
+    #[test]
+    fn invalid_quantile_range_rejected() {
+        let mut s = RobustScaler::new().quantile_range(0.5, 0.5);
+        let x = m1();
+        assert!(s.fit(&x).is_err());
+        let mut s2 = RobustScaler::new().quantile_range(0.0, 0.75);
+        assert!(s2.fit(&x).is_err());
+        let mut s3 = RobustScaler::new().quantile_range(0.25, 1.0);
+        assert!(s3.fit(&x).is_err());
     }
 }

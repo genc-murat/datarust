@@ -261,6 +261,62 @@ impl OneHotEncoder {
         self.transform_sparse(x)
     }
 
+    /// Convert one-hot encoded dense data back to categorical strings.
+    ///
+    /// For each row, the active (1.0) column within each feature block is
+    /// decoded to its category.  When `drop = First`, an all-zero block
+    /// decodes to the dropped (first) category.  All-zero blocks with
+    /// `drop = None` decode to an empty string (matching sklearn's `None`).
+    pub fn inverse_transform(&self, x: &Matrix) -> Result<StrMatrix> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("OneHotEncoder".into()));
+        }
+        let expected_cols = self.n_output_cols;
+        if x.ncols() != expected_cols {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} output columns", expected_cols),
+                actual: format!("{} columns", x.ncols()),
+            });
+        }
+        let mut offsets = Vec::with_capacity(self.categories.len());
+        let mut acc = 0;
+        for j in 0..self.categories.len() {
+            offsets.push(acc);
+            acc += self.kept_categories(j).len();
+        }
+        let n_features = self.categories.len();
+        let mut out: Vec<Vec<String>> = Vec::with_capacity(x.nrows());
+        for i in 0..x.nrows() {
+            let mut row_cats = Vec::with_capacity(n_features);
+            for (j, &block_start) in offsets.iter().enumerate() {
+                let block_len = self.kept_categories(j).len();
+                let block_end = block_start + block_len;
+                let mut found: Option<usize> = None;
+                for c in block_start..block_end {
+                    if x.get(i, c) >= 0.5 {
+                        found = Some(c - block_start);
+                        break;
+                    }
+                }
+                let cat = match (self.drop, found) {
+                    (DropStrategy::None, Some(k)) => self.categories[j][k].clone(),
+                    (DropStrategy::None, None) => String::new(),
+                    (DropStrategy::First, Some(k)) => self.categories[j][k + 1].clone(),
+                    (DropStrategy::First, None) => self.categories[j][0].clone(),
+                };
+                row_cats.push(cat);
+            }
+            out.push(row_cats);
+        }
+        StrMatrix::new(out)
+    }
+
+    /// Inverse transform from sparse (CSR) input.
+    pub fn inverse_transform_sparse(&self, x: &SparseMatrix) -> Result<StrMatrix> {
+        let dense = x.to_dense()?;
+        self.inverse_transform(&dense)
+    }
+
     /// Transform returning sparse if `sparse_output` is set, dense otherwise.
     pub fn transform_auto(&self, x: &StrMatrix) -> Result<OneHotOutput> {
         if self.sparse_output {
@@ -569,5 +625,97 @@ mod tests {
             }
             OneHotOutput::Dense(_) => panic!("expected sparse"),
         }
+    }
+
+    #[test]
+    fn inverse_transform_single_column() {
+        let s = StrMatrix::from_column(["Red", "Blue", "Green", "Red"]).unwrap();
+        let mut ohe = OneHotEncoder::new();
+        let encoded = ohe.fit_transform(&s).unwrap();
+        let decoded = ohe.inverse_transform(&encoded).unwrap();
+        for i in 0..s.nrows() {
+            assert_eq!(decoded.get(i, 0), s.get(i, 0));
+        }
+    }
+
+    #[test]
+    fn inverse_transform_multiple_columns() {
+        let s =
+            StrMatrix::from_strings(vec![vec!["a", "x"], vec!["b", "y"], vec!["a", "y"]]).unwrap();
+        let mut ohe = OneHotEncoder::new();
+        let encoded = ohe.fit_transform(&s).unwrap();
+        let decoded = ohe.inverse_transform(&encoded).unwrap();
+        for i in 0..s.nrows() {
+            for j in 0..s.ncols() {
+                assert_eq!(decoded.get(i, j), s.get(i, j));
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_with_drop_first() {
+        let s = StrMatrix::from_column(["Red", "Blue", "Green"]).unwrap();
+        let mut ohe = OneHotEncoder::new().drop(DropStrategy::First);
+        let encoded = ohe.fit_transform(&s).unwrap();
+        let decoded = ohe.inverse_transform(&encoded).unwrap();
+        // Blue was dropped -> encoded as all-zeros -> decoded back to Blue
+        for i in 0..s.nrows() {
+            assert_eq!(decoded.get(i, 0), s.get(i, 0));
+        }
+    }
+
+    #[test]
+    fn inverse_transform_with_drop_multi_col() {
+        let s =
+            StrMatrix::from_strings(vec![vec!["a", "x"], vec!["b", "y"], vec!["c", "z"]]).unwrap();
+        let mut ohe = OneHotEncoder::new().drop(DropStrategy::First);
+        let encoded = ohe.fit_transform(&s).unwrap();
+        let decoded = ohe.inverse_transform(&encoded).unwrap();
+        for i in 0..s.nrows() {
+            for j in 0..s.ncols() {
+                assert_eq!(decoded.get(i, j), s.get(i, j));
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_sparse_input() {
+        let s = StrMatrix::from_column(["Red", "Blue", "Green", "Red"]).unwrap();
+        let mut ohe = OneHotEncoder::new();
+        let sp = ohe.fit_transform_sparse(&s).unwrap();
+        let decoded = ohe.inverse_transform_sparse(&sp).unwrap();
+        for i in 0..s.nrows() {
+            assert_eq!(decoded.get(i, 0), s.get(i, 0));
+        }
+    }
+
+    #[test]
+    fn inverse_transform_handle_unknown_ignore_zeros() {
+        let s = StrMatrix::from_column(["a", "b"]).unwrap();
+        let mut ohe = OneHotEncoder::new().handle_unknown(HandleUnknown::Ignore);
+        ohe.fit(&s).unwrap();
+        let s2 = StrMatrix::from_column(["a", "z"]).unwrap();
+        let encoded = ohe.transform(&s2).unwrap();
+        // row 1 is all-zeros (unknown 'z')
+        let decoded = ohe.inverse_transform(&encoded).unwrap();
+        assert_eq!(decoded.get(0, 0), "a");
+        // unknown -> empty string
+        assert_eq!(decoded.get(1, 0), "");
+    }
+
+    #[test]
+    fn inverse_transform_before_fit_errors() {
+        let ohe = OneHotEncoder::new();
+        let x = Matrix::new(vec![vec![1.0]]).unwrap();
+        assert!(ohe.inverse_transform(&x).is_err());
+    }
+
+    #[test]
+    fn inverse_transform_shape_mismatch() {
+        let s = StrMatrix::from_column(["a", "b"]).unwrap();
+        let mut ohe = OneHotEncoder::new();
+        ohe.fit(&s).unwrap();
+        let bad = Matrix::new(vec![vec![1.0, 0.0, 0.0]]).unwrap();
+        assert!(ohe.inverse_transform(&bad).is_err());
     }
 }

@@ -1,7 +1,35 @@
-use crate::error::Result;
+use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
 
 /// Trait for numeric transformers operating on `Matrix -> Matrix`.
+///
+/// All scalers, decompositions, and other numeric transformers implement this
+/// trait.  Call [`fit`](Transformer::fit) to learn parameters from training
+/// data, then [`transform`](Transformer::transform) to apply the learned
+/// transformation to new data.
+///
+/// ```rust
+/// use datarust::scaler::StandardScaler;
+/// use datarust::traits::Transformer;
+/// use datarust::Matrix;
+///
+/// let x = Matrix::new(vec![
+///     vec![1.0, 10.0],
+///     vec![2.0, 20.0],
+///     vec![3.0, 30.0],
+/// ])?;
+/// let mut s = StandardScaler::new();
+/// let out = s.fit_transform(&x)?;
+/// assert_eq!(out.ncols(), 2);
+/// // Inverse supported on StandardScaler
+/// let back = s.inverse_transform(&out)?;
+/// for i in 0..3 {
+///     for j in 0..2 {
+///         assert!((back.get(i, j) - x.get(i, j)).abs() < 1e-9);
+///     }
+/// }
+/// # Ok::<_, Box<dyn std::error::Error>>(())
+/// ```
 pub trait Transformer {
     /// Name of the transformer, used for diagnostics.
     fn name(&self) -> &'static str;
@@ -16,6 +44,16 @@ pub trait Transformer {
     fn fit_transform(&mut self, x: &Matrix) -> Result<Matrix> {
         self.fit(x)?;
         self.transform(x)
+    }
+
+    /// Reverse the transformation, recovering an approximation of the
+    /// original input.  Not all transformers support this; the default
+    /// implementation returns an error.
+    fn inverse_transform(&self, _x: &Matrix) -> Result<Matrix> {
+        Err(DatarustError::InvalidInput(format!(
+            "{} does not support inverse_transform",
+            self.name()
+        )))
     }
 
     /// Whether the transformer has been fitted.

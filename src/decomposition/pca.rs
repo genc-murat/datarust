@@ -33,6 +33,7 @@ pub struct PCA {
     explained_variance_ratio: Vec<f64>,
     n_components_: usize,
     n_samples_: usize,
+    total_variance_: f64,
     fitted: bool,
 }
 
@@ -47,6 +48,7 @@ impl PCA {
             explained_variance_ratio: vec![],
             n_components_: 0,
             n_samples_: 0,
+            total_variance_: 0.0,
             fitted: false,
         }
     }
@@ -66,6 +68,19 @@ impl PCA {
 
     pub fn explained_variance_ratio(&self) -> &[f64] {
         &self.explained_variance_ratio
+    }
+
+    /// Estimated noise variance, computed as the mean of discarded
+    /// eigenvalues.  Returns 0 when all components are kept.
+    pub fn noise_variance(&self) -> f64 {
+        let p = self.mean.len();
+        let max_k = self.n_samples_.min(p);
+        if self.n_components_ < max_k {
+            let kept: f64 = self.explained_variance.iter().sum();
+            (self.total_variance_ - kept) / (max_k - self.n_components_) as f64
+        } else {
+            0.0
+        }
     }
 
     pub fn mean(&self) -> &[f64] {
@@ -135,6 +150,7 @@ impl Transformer for PCA {
         let max_k = n.min(p);
         let k = self.select_k(&vals, max_k)?;
         self.n_components_ = k;
+        self.total_variance_ = total_var;
         self.components = vecs.into_iter().take(k).collect();
         self.explained_variance = vals.iter().take(k).copied().collect();
         self.explained_variance_ratio = if total_var > 0.0 {
@@ -180,26 +196,8 @@ impl Transformer for PCA {
         Matrix::new(out)
     }
 
-    fn is_fitted(&self) -> bool {
-        self.fitted
-    }
-}
-
-impl PCA {
-    fn centered(&self, x: &Matrix) -> Vec<Vec<f64>> {
-        let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-        for (i, row) in x.rows_ref().iter().enumerate() {
-            for (j, &v) in row.iter().enumerate() {
-                out[i][j] = v - self.mean[j];
-            }
-        }
-        out
-    }
-
-    /// Reconstruct an approximation of the (centered) input from its projection.
-    /// Useful for checking reconstruction error in tests.
     #[allow(clippy::needless_range_loop)]
-    pub fn inverse_transform(&self, projected: &Matrix) -> Result<Matrix> {
+    fn inverse_transform(&self, projected: &Matrix) -> Result<Matrix> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("PCA".into()));
         }
@@ -230,6 +228,22 @@ impl PCA {
             }
         }
         Matrix::new(out)
+    }
+
+    fn is_fitted(&self) -> bool {
+        self.fitted
+    }
+}
+
+impl PCA {
+    fn centered(&self, x: &Matrix) -> Vec<Vec<f64>> {
+        let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
+        for (i, row) in x.rows_ref().iter().enumerate() {
+            for (j, &v) in row.iter().enumerate() {
+                out[i][j] = v - self.mean[j];
+            }
+        }
+        out
     }
 }
 
@@ -446,5 +460,40 @@ mod tests {
                 assert!(out.get(i, j).abs() < 1e-9);
             }
         }
+    }
+
+    #[test]
+    fn noise_variance_all_components_zero() {
+        let x = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+        let mut pca = PCA::new(PCAComponents::All);
+        pca.fit(&x).unwrap();
+        // all components kept -> noise = 0
+        assert!((pca.noise_variance() - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn noise_variance_few_components_positive() {
+        let x = Matrix::new(vec![
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 9.0],
+            vec![2.0, 4.0, 6.0],
+        ])
+        .unwrap();
+        let mut pca = PCA::new(PCAComponents::Count(1));
+        pca.fit(&x).unwrap();
+        // noise_variance > 0 because we discarded components
+        assert!(pca.noise_variance() > 0.0);
+        // noise_variance < first eigenvalue (dominant component)
+        assert!(pca.noise_variance() < pca.explained_variance()[0]);
+    }
+
+    #[test]
+    fn noise_variance_constant_data() {
+        let x = Matrix::new(vec![vec![5.0, 5.0], vec![5.0, 5.0], vec![5.0, 5.0]]).unwrap();
+        let mut pca = PCA::new(PCAComponents::Count(1));
+        pca.fit(&x).unwrap();
+        // all eigenvalues are 0 (no variance), so noise = 0
+        assert!((pca.noise_variance() - 0.0).abs() < 1e-12);
     }
 }

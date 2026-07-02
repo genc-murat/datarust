@@ -5,4 +5,4 @@ pub mod pca;
 pub mod truncated_svd;
 
 pub use pca::{PCAComponents, PCA};
-pub use truncated_svd::TruncatedSVD;
+pub use truncated_svd::{SVDComponents, TruncatedSVD};

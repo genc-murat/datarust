@@ -21,6 +21,7 @@ pub mod compose;
 pub mod decomposition;
 pub mod encoder;
 pub mod error;
+pub mod function_transformer;
 pub mod imputer;
 pub mod matrix;
 pub mod pipeline;

@@ -5,6 +5,7 @@
 //! [`ColumnTransformer`]: crate::compose::ColumnTransformer
 
 use crate::error::{DatarustError, Result};
+use crate::function_transformer::FunctionTransformer;
 use crate::imputer::{KnnImputer, SimpleImputer};
 use crate::matrix::Matrix;
 use crate::polynomial::PolynomialFeatures;
@@ -38,6 +39,7 @@ pub enum TransformerKind {
     SimpleImputer(SimpleImputer),
     KnnImputer(KnnImputer),
     SelectKBest(SelectKBest),
+    FunctionTransformer(FunctionTransformer),
 }
 
 impl TransformerKind {
@@ -60,6 +62,7 @@ impl TransformerKind {
             Self::SimpleImputer(_) => "SimpleImputer",
             Self::KnnImputer(_) => "KnnImputer",
             Self::SelectKBest(_) => "SelectKBest",
+            Self::FunctionTransformer(_) => "FunctionTransformer",
         }
     }
 }
@@ -83,6 +86,7 @@ impl Transformer for TransformerKind {
             Self::SimpleImputer(t) => t.name(),
             Self::KnnImputer(t) => t.name(),
             Self::SelectKBest(t) => t.name(),
+            Self::FunctionTransformer(t) => t.name(),
         }
     }
 
@@ -106,6 +110,7 @@ impl Transformer for TransformerKind {
             Self::SelectKBest(_) => Err(DatarustError::InvalidInput(
                 "SelectKBest requires labels; use fit_with_labels".into(),
             )),
+            Self::FunctionTransformer(t) => t.fit(x),
         }
     }
 
@@ -127,6 +132,29 @@ impl Transformer for TransformerKind {
             Self::SimpleImputer(t) => t.transform(x),
             Self::KnnImputer(t) => t.transform(x),
             Self::SelectKBest(t) => t.transform(x),
+            Self::FunctionTransformer(t) => t.transform(x),
+        }
+    }
+
+    fn inverse_transform(&self, x: &Matrix) -> Result<Matrix> {
+        match self {
+            Self::StandardScaler(t) => t.inverse_transform(x),
+            Self::MinMaxScaler(t) => t.inverse_transform(x),
+            Self::MaxAbsScaler(t) => t.inverse_transform(x),
+            Self::RobustScaler(t) => t.inverse_transform(x),
+            Self::Normalizer(t) => t.inverse_transform(x),
+            Self::Binarizer(t) => t.inverse_transform(x),
+            Self::KBinsDiscretizer(t) => t.inverse_transform(x),
+            Self::QuantileTransformer(t) => t.inverse_transform(x),
+            Self::PowerTransformer(t) => t.inverse_transform(x),
+            Self::PolynomialFeatures(t) => t.inverse_transform(x),
+            Self::VarianceThreshold(t) => t.inverse_transform(x),
+            Self::PCA(t) => t.inverse_transform(x),
+            Self::TruncatedSVD(t) => t.inverse_transform(x),
+            Self::SimpleImputer(t) => t.inverse_transform(x),
+            Self::KnnImputer(t) => t.inverse_transform(x),
+            Self::SelectKBest(t) => t.inverse_transform(x),
+            Self::FunctionTransformer(t) => t.inverse_transform(x),
         }
     }
 
@@ -148,6 +176,7 @@ impl Transformer for TransformerKind {
             Self::SimpleImputer(t) => t.is_fitted(),
             Self::KnnImputer(t) => t.is_fitted(),
             Self::SelectKBest(t) => t.is_fitted(),
+            Self::FunctionTransformer(t) => t.is_fitted(),
         }
     }
 }
@@ -171,6 +200,7 @@ impl FeatureNames for TransformerKind {
             Self::SimpleImputer(t) => t.feature_names_out(input_features),
             Self::KnnImputer(t) => t.feature_names_out(input_features),
             Self::SelectKBest(t) => t.feature_names_out(input_features),
+            Self::FunctionTransformer(t) => t.feature_names_out(input_features),
         }
     }
 }

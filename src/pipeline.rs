@@ -53,6 +53,126 @@ impl Pipeline {
     pub fn steps_mut(&mut self) -> &mut Vec<(String, TransformerKind)> {
         &mut self.steps
     }
+
+    /// Access a step by name.
+    ///
+    /// ```rust
+    /// use datarust::pipeline::Pipeline;
+    /// use datarust::scaler::StandardScaler;
+    /// use datarust::transformer_kind::TransformerKind;
+    ///
+    /// let p = Pipeline::new()
+    ///     .push("scale", TransformerKind::StandardScaler(StandardScaler::new()));
+    /// assert!(p.get_step("scale").is_some());
+    /// assert!(p.get_step("nope").is_none());
+    /// ```
+    pub fn get_step(&self, name: &str) -> Option<&TransformerKind> {
+        self.steps.iter().find(|(n, _)| n == name).map(|(_, t)| t)
+    }
+
+    /// Mutable access to a step by name.
+    ///
+    /// ```rust
+    /// use datarust::pipeline::Pipeline;
+    /// use datarust::scaler::{StandardScaler, MaxAbsScaler};
+    /// use datarust::transformer_kind::TransformerKind;
+    /// use datarust::traits::Transformer;
+    ///
+    /// let mut p = Pipeline::new()
+    ///     .push("a", TransformerKind::StandardScaler(StandardScaler::new()));
+    /// let step = p.get_step_mut("a").unwrap();
+    /// *step = TransformerKind::MaxAbsScaler(MaxAbsScaler::new());
+    /// assert_eq!(p.get_step("a").unwrap().name(), "MaxAbsScaler");
+    /// ```
+    pub fn get_step_mut(&mut self, name: &str) -> Option<&mut TransformerKind> {
+        self.steps
+            .iter_mut()
+            .find(|(n, _)| n == name)
+            .map(|(_, t)| t)
+    }
+
+    /// Access a step and its name by index (0-based).
+    ///
+    /// ```rust
+    /// use datarust::pipeline::Pipeline;
+    /// use datarust::scaler::StandardScaler;
+    /// use datarust::transformer_kind::TransformerKind;
+    /// use datarust::traits::Transformer;
+    ///
+    /// let p = Pipeline::new()
+    ///     .push("scale", TransformerKind::StandardScaler(StandardScaler::new()));
+    /// let (name, step) = p.step(0).unwrap();
+    /// assert_eq!(name, "scale");
+    /// assert_eq!(step.name(), "StandardScaler");
+    /// ```
+    pub fn step(&self, index: usize) -> Option<(&String, &TransformerKind)> {
+        self.steps.get(index).map(|(n, t)| (n, t))
+    }
+
+    /// Mutable access to a step and its name by index.
+    pub fn step_mut(&mut self, index: usize) -> Option<(&mut String, &mut TransformerKind)> {
+        self.steps.get_mut(index).map(|(n, t)| (n, t))
+    }
+
+    /// Remove a step by index, returning its name and transformer.
+    ///
+    /// ```rust
+    /// use datarust::pipeline::Pipeline;
+    /// use datarust::scaler::StandardScaler;
+    /// use datarust::transformer_kind::TransformerKind;
+    ///
+    /// let mut p = Pipeline::new()
+    ///     .push("a", TransformerKind::StandardScaler(StandardScaler::new()))
+    ///     .push("b", TransformerKind::StandardScaler(StandardScaler::new()));
+    /// let (name, _) = p.remove_step(0).unwrap();
+    /// assert_eq!(name, "a");
+    /// assert_eq!(p.len(), 1);
+    /// ```
+    pub fn remove_step(&mut self, index: usize) -> Option<(String, TransformerKind)> {
+        if index < self.steps.len() {
+            Some(self.steps.remove(index))
+        } else {
+            None
+        }
+    }
+
+    /// Insert a step at a given index (0-based), shifting later steps right.
+    ///
+    /// ```rust
+    /// use datarust::pipeline::Pipeline;
+    /// use datarust::scaler::{StandardScaler, MaxAbsScaler};
+    /// use datarust::transformer_kind::TransformerKind;
+    ///
+    /// let p = Pipeline::new()
+    ///     .push("b", TransformerKind::StandardScaler(StandardScaler::new()))
+    ///     .insert_step(0, "a", TransformerKind::MaxAbsScaler(MaxAbsScaler::new()));
+    /// assert_eq!(p.names(), vec!["a", "b"]);
+    /// ```
+    pub fn insert_step(mut self, index: usize, name: &str, t: TransformerKind) -> Self {
+        self.steps.insert(index, (name.to_string(), t));
+        self
+    }
+
+    /// Replace a step by name, returning the previous step if found.
+    ///
+    /// ```rust
+    /// use datarust::pipeline::Pipeline;
+    /// use datarust::scaler::{StandardScaler, RobustScaler};
+    /// use datarust::transformer_kind::TransformerKind;
+    /// use datarust::traits::Transformer;
+    ///
+    /// let mut p = Pipeline::new()
+    ///     .push("s", TransformerKind::StandardScaler(StandardScaler::new()));
+    /// let old = p.set_step("s", TransformerKind::RobustScaler(RobustScaler::new()));
+    /// assert!(old.is_some());
+    /// assert_eq!(p.get_step("s").unwrap().name(), "RobustScaler");
+    /// ```
+    pub fn set_step(&mut self, name: &str, t: TransformerKind) -> Option<TransformerKind> {
+        self.steps
+            .iter_mut()
+            .find(|(n, _)| n == name)
+            .map(|(_, old)| std::mem::replace(old, t))
+    }
 }
 
 impl Default for Pipeline {
@@ -255,5 +375,113 @@ mod tests {
         );
         let names = p.feature_names_out(None);
         assert_eq!(names, vec!["svd0", "svd1"]);
+    }
+
+    #[test]
+    fn get_step_by_name() {
+        let p = Pipeline::new()
+            .push("a", TransformerKind::StandardScaler(StandardScaler::new()))
+            .push("b", TransformerKind::MinMaxScaler(MinMaxScaler::new()));
+        assert!(p.get_step("a").is_some());
+        assert!(p.get_step("b").is_some());
+        assert!(p.get_step("c").is_none());
+    }
+
+    #[test]
+    fn get_step_by_name_mut() {
+        let mut p = Pipeline::new()
+            .push("a", TransformerKind::StandardScaler(StandardScaler::new()))
+            .push("b", TransformerKind::MinMaxScaler(MinMaxScaler::new()));
+        let step = p.get_step_mut("a").unwrap();
+        assert_eq!(step.name(), "StandardScaler");
+        // mutate: replace with RobustScaler
+        *step = TransformerKind::MaxAbsScaler(crate::scaler::MaxAbsScaler::new());
+        assert_eq!(p.get_step("a").unwrap().name(), "MaxAbsScaler");
+    }
+
+    #[test]
+    fn step_by_index() {
+        let p = Pipeline::new().push("a", TransformerKind::StandardScaler(StandardScaler::new()));
+        let (name, step) = p.step(0).unwrap();
+        assert_eq!(name, "a");
+        assert_eq!(step.name(), "StandardScaler");
+        assert!(p.step(5).is_none());
+    }
+
+    #[test]
+    fn remove_step_removes_and_returns() {
+        let mut p = Pipeline::new()
+            .push("a", TransformerKind::StandardScaler(StandardScaler::new()))
+            .push("b", TransformerKind::MinMaxScaler(MinMaxScaler::new()));
+        let (name, _) = p.remove_step(0).unwrap();
+        assert_eq!(name, "a");
+        assert_eq!(p.len(), 1);
+        assert!(p.remove_step(5).is_none());
+    }
+
+    #[test]
+    fn insert_step_adds_at_position() {
+        let p = Pipeline::new()
+            .push("a", TransformerKind::StandardScaler(StandardScaler::new()))
+            .insert_step(
+                0,
+                "z",
+                TransformerKind::MaxAbsScaler(crate::scaler::MaxAbsScaler::new()),
+            );
+        assert_eq!(p.len(), 2);
+        assert_eq!(p.step(0).unwrap().0, "z");
+        assert_eq!(p.step(1).unwrap().0, "a");
+    }
+
+    #[test]
+    fn set_step_replaces_by_name() {
+        let mut p = Pipeline::new()
+            .push("a", TransformerKind::StandardScaler(StandardScaler::new()))
+            .push("b", TransformerKind::MinMaxScaler(MinMaxScaler::new()));
+        let old = p.set_step(
+            "a",
+            TransformerKind::MaxAbsScaler(crate::scaler::MaxAbsScaler::new()),
+        );
+        assert!(old.is_some());
+        assert_eq!(p.get_step("a").unwrap().name(), "MaxAbsScaler");
+        assert!(p
+            .set_step(
+                "nonexistent",
+                TransformerKind::StandardScaler(StandardScaler::new())
+            )
+            .is_none());
+    }
+
+    #[test]
+    fn pipeline_with_function_transformer() {
+        use crate::function_transformer::FunctionTransformer;
+        fn times_two(x: &Matrix) -> Result<Matrix> {
+            let out: Vec<Vec<f64>> = x
+                .rows_ref()
+                .iter()
+                .map(|row| row.iter().map(|&v| v * 2.0).collect())
+                .collect();
+            Matrix::new(out)
+        }
+        let mut p = Pipeline::new()
+            .push(
+                "std",
+                TransformerKind::StandardScaler(StandardScaler::new()),
+            )
+            .push(
+                "times2",
+                TransformerKind::FunctionTransformer(FunctionTransformer::new(times_two)),
+            );
+        let x = Matrix::new(vec![vec![0.0, 10.0], vec![1.0, 100.0]]).unwrap();
+        let out = p.fit_transform(&x).unwrap();
+        // std: col0 mean=0.5, std=0.5; col1 mean=55, std=45
+        // row0 col0: (0-0.5)/0.5 = -1, then *2 = -2
+        assert!((out.get(0, 0) - (-2.0)).abs() < 1e-9);
+        // row0 col1: (10-55)/45 = -1, then *2 = -2
+        assert!((out.get(0, 1) - (-2.0)).abs() < 1e-9);
+        assert!(p.is_fitted());
+        // Verify we can access the function transformer step by name
+        let step = p.get_step("times2").unwrap();
+        assert_eq!(step.name(), "FunctionTransformer");
     }
 }

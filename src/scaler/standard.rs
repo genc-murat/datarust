@@ -16,15 +16,6 @@ use rayon::prelude::*;
 /// let mut s = StandardScaler::new();
 /// let out = s.fit_transform(&x)?;
 /// ```
-/// Standardize features by removing the mean and scaling to unit variance.
-///
-/// Mirrors `sklearn.preprocessing.StandardScaler`. Uses population
-/// standard deviation (ddof = 0) by default, matching sklearn.
-///
-/// ```rust,ignore
-/// let mut s = StandardScaler::new();
-/// let out = s.fit_transform(&x)?;
-/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StandardScaler {
@@ -160,6 +151,54 @@ impl Transformer for StandardScaler {
         }
     }
 
+    fn inverse_transform(&self, x: &Matrix) -> Result<Matrix> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("StandardScaler".into()));
+        }
+        if self.mean.len() != x.ncols() {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} features", self.mean.len()),
+                actual: format!("{} features", x.ncols()),
+            });
+        }
+        #[cfg(feature = "rayon")]
+        {
+            let mean = &self.mean;
+            let std = &self.std;
+            let rows: Vec<Vec<f64>> = x
+                .rows_ref()
+                .par_iter()
+                .map(|row| {
+                    row.iter()
+                        .enumerate()
+                        .map(|(j, &z)| {
+                            if std[j] == 0.0 {
+                                mean[j]
+                            } else {
+                                z * std[j] + mean[j]
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+            Matrix::new(rows)
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
+            for (i, row) in x.rows_ref().iter().enumerate() {
+                for (j, &z) in row.iter().enumerate() {
+                    out[i][j] = if self.std[j] == 0.0 {
+                        self.mean[j]
+                    } else {
+                        z * self.std[j] + self.mean[j]
+                    };
+                }
+            }
+            Matrix::new(out)
+        }
+    }
+
     fn is_fitted(&self) -> bool {
         self.fitted
     }
@@ -269,20 +308,68 @@ mod tests {
     }
 
     #[test]
-    fn inverse_round_trip_property() {
-        // fit on m1, transform, then manually invert -> recovers original
+    fn inverse_transform_round_trip() {
         let mut s = StandardScaler::new();
-        let out = s.fit_transform(&m1()).unwrap();
-        let original = m1();
-        for i in 0..original.nrows() {
-            for j in 0..original.ncols() {
-                let z = out.get(i, j);
-                let m = s.mean()[j];
-                let sd = s.std()[j];
-                let recovered = if sd == 0.0 { m } else { z * sd + m };
-                assert!((recovered - original.get(i, j)).abs() < 1e-9);
+        let x = m1();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
             }
         }
+    }
+
+    #[test]
+    fn inverse_transform_with_mean_false() {
+        let mut s = StandardScaler::new().with_mean(false);
+        let x = m1();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_with_std_false() {
+        let mut s = StandardScaler::new().with_std(false);
+        let x = m1();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_constant_column() {
+        let x = Matrix::new(vec![vec![5.0], vec![5.0], vec![5.0]]).unwrap();
+        let mut s = StandardScaler::new();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..3 {
+            assert!((recovered.get(i, 0) - 5.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn inverse_transform_before_fit_errors() {
+        let s = StandardScaler::new();
+        let x = m1();
+        assert!(s.inverse_transform(&x).is_err());
+    }
+
+    #[test]
+    fn inverse_transform_shape_mismatch() {
+        let mut s = StandardScaler::new();
+        s.fit(&m1()).unwrap();
+        let bad = Matrix::new(vec![vec![1.0, 2.0, 3.0]]).unwrap();
+        assert!(s.inverse_transform(&bad).is_err());
     }
 
     #[test]

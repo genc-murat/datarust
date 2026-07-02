@@ -2,6 +2,18 @@ use std::collections::HashMap;
 
 use crate::error::{DatarustError, Result};
 
+/// How to handle unknown labels in [`LabelEncoder::transform`].
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum LabelHandleUnknown {
+    /// Return an error when an unknown label is encountered (default).
+    #[default]
+    Error,
+    /// Map unknown labels to [`usize::MAX`].  Callers must check for this
+    /// sentinel value before passing to [`inverse_transform`](LabelEncoder::inverse_transform).
+    Ignore,
+}
+
 /// Encode target labels with values between `0` and `n_classes - 1`, mirroring
 /// `sklearn.preprocessing.LabelEncoder`. Classes are sorted (sklearn default).
 ///
@@ -10,6 +22,7 @@ use crate::error::{DatarustError, Result};
 pub struct LabelEncoder {
     classes: Vec<String>,
     indices: HashMap<String, usize>,
+    handle_unknown: LabelHandleUnknown,
     fitted: bool,
 }
 
@@ -18,8 +31,15 @@ impl LabelEncoder {
         Self {
             classes: vec![],
             indices: HashMap::new(),
+            handle_unknown: LabelHandleUnknown::Error,
             fitted: false,
         }
+    }
+
+    /// Set how unknown labels are handled during transform.
+    pub fn handle_unknown(mut self, val: LabelHandleUnknown) -> Self {
+        self.handle_unknown = val;
+        self
     }
 
     pub fn classes(&self) -> &[String] {
@@ -62,7 +82,12 @@ impl LabelEncoder {
             let key = s.as_ref();
             match self.indices.get(key) {
                 Some(&i) => out.push(i),
-                None => return Err(DatarustError::UnknownLabel(key.to_string())),
+                None => match self.handle_unknown {
+                    LabelHandleUnknown::Error => {
+                        return Err(DatarustError::UnknownLabel(key.to_string()))
+                    }
+                    LabelHandleUnknown::Ignore => out.push(usize::MAX),
+                },
             }
         }
         Ok(out)
@@ -175,5 +200,23 @@ mod tests {
         le.fit(["10", "2", "1"]).unwrap();
         // sorted lexicographically: "1","10","2"
         assert_eq!(le.classes(), &["1", "10", "2"]);
+    }
+
+    #[test]
+    fn handle_unknown_ignore_returns_max() {
+        let mut le = LabelEncoder::new().handle_unknown(LabelHandleUnknown::Ignore);
+        le.fit(["a", "b"]).unwrap();
+        let out = le.transform(["a", "z", "b"]).unwrap();
+        assert_eq!(out, vec![0, usize::MAX, 1]);
+    }
+
+    #[test]
+    fn handle_unknown_default_is_error() {
+        let mut le = LabelEncoder::new();
+        le.fit(["a", "b"]).unwrap();
+        assert!(matches!(
+            le.transform(["z"]),
+            Err(DatarustError::UnknownLabel(_))
+        ));
     }
 }

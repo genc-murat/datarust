@@ -138,6 +138,58 @@ impl Transformer for MinMaxScaler {
         }
     }
 
+    fn inverse_transform(&self, x: &Matrix) -> Result<Matrix> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("MinMaxScaler".into()));
+        }
+        if self.min.len() != x.ncols() {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} features", self.min.len()),
+                actual: format!("{} features", x.ncols()),
+            });
+        }
+        let (lo, hi) = self.feature_range;
+        let span = hi - lo;
+        #[cfg(feature = "rayon")]
+        {
+            let min = &self.min;
+            let data_range = &self.data_range;
+            let rows: Vec<Vec<f64>> = x
+                .rows_ref()
+                .par_iter()
+                .map(|row| {
+                    row.iter()
+                        .enumerate()
+                        .map(|(j, &z)| {
+                            let dr = data_range[j];
+                            if dr == 0.0 {
+                                min[j]
+                            } else {
+                                min[j] + (z - lo) * dr / span
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+            Matrix::new(rows)
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
+            for (i, row) in x.rows_ref().iter().enumerate() {
+                for (j, &z) in row.iter().enumerate() {
+                    let dr = self.data_range[j];
+                    out[i][j] = if dr == 0.0 {
+                        self.min[j]
+                    } else {
+                        self.min[j] + (z - lo) * dr / span
+                    };
+                }
+            }
+            Matrix::new(out)
+        }
+    }
+
     fn is_fitted(&self) -> bool {
         self.fitted
     }
@@ -234,22 +286,53 @@ mod tests {
     }
 
     #[test]
-    fn inverse_round_trip() {
+    fn inverse_transform_round_trip() {
         let mut s = MinMaxScaler::new().feature_range(-2.0, 8.0);
-        let out = s.fit_transform(&m1()).unwrap();
-        let original = m1();
-        for i in 0..original.nrows() {
-            for j in 0..original.ncols() {
-                let z = out.get(i, j);
-                let (lo, hi) = (-2.0_f64, 8.0_f64);
-                let dr = s.data_range()[j];
-                let recovered = if dr == 0.0 {
-                    s.min()[j]
-                } else {
-                    s.min()[j] + (z - lo) * dr / (hi - lo)
-                };
-                assert!((recovered - original.get(i, j)).abs() < 1e-9);
+        let x = m1();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
             }
         }
+    }
+
+    #[test]
+    fn inverse_transform_default_range() {
+        let mut s = MinMaxScaler::new();
+        let x = m1();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_constant_column() {
+        let x = Matrix::new(vec![vec![7.0], vec![7.0]]).unwrap();
+        let mut s = MinMaxScaler::new();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..2 {
+            assert!((recovered.get(i, 0) - 7.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn inverse_transform_before_fit_errors() {
+        let s = MinMaxScaler::new();
+        assert!(s.inverse_transform(&m1()).is_err());
+    }
+
+    #[test]
+    fn inverse_transform_shape_mismatch() {
+        let mut s = MinMaxScaler::new();
+        s.fit(&m1()).unwrap();
+        let bad = Matrix::new(vec![vec![1.0, 2.0, 3.0]]).unwrap();
+        assert!(s.inverse_transform(&bad).is_err());
     }
 }

@@ -174,6 +174,75 @@ impl Matrix {
         }
         Ok(Self { data })
     }
+
+    /// Select a subset of columns by index (0-based).
+    ///
+    /// ```rust
+    /// use datarust::Matrix;
+    ///
+    /// let m = Matrix::new(vec![
+    ///     vec![1.0, 2.0, 3.0],
+    ///     vec![4.0, 5.0, 6.0],
+    /// ])?;
+    /// let sub = m.select_columns(&[0, 2])?;
+    /// assert_eq!(sub.ncols(), 2);
+    /// assert_eq!(sub.get(0, 0), 1.0);
+    /// assert_eq!(sub.get(0, 1), 3.0);
+    /// # Ok::<_, Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn select_columns(&self, indices: &[usize]) -> Result<Self> {
+        if indices.is_empty() {
+            return Err(DatarustError::EmptyInput("no columns selected".into()));
+        }
+        let ncols = self.ncols();
+        for &c in indices {
+            if c >= ncols {
+                return Err(DatarustError::InvalidInput(format!(
+                    "column index {} out of range (ncols {})",
+                    c, ncols
+                )));
+            }
+        }
+        let out: Vec<Vec<f64>> = self
+            .data
+            .iter()
+            .map(|row| indices.iter().map(|&c| row[c]).collect())
+            .collect();
+        Ok(Self { data: out })
+    }
+
+    /// Select a subset of rows by index (0-based).
+    ///
+    /// ```rust
+    /// use datarust::Matrix;
+    ///
+    /// let m = Matrix::new(vec![
+    ///     vec![10.0],
+    ///     vec![20.0],
+    ///     vec![30.0],
+    /// ])?;
+    /// let sub = m.select_rows(&[0, 2])?;
+    /// assert_eq!(sub.nrows(), 2);
+    /// assert_eq!(sub.get(0, 0), 10.0);
+    /// assert_eq!(sub.get(1, 0), 30.0);
+    /// # Ok::<_, Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn select_rows(&self, indices: &[usize]) -> Result<Self> {
+        if indices.is_empty() {
+            return Err(DatarustError::EmptyInput("no rows selected".into()));
+        }
+        let nrows = self.nrows();
+        for &r in indices {
+            if r >= nrows {
+                return Err(DatarustError::InvalidInput(format!(
+                    "row index {} out of range (nrows {})",
+                    r, nrows
+                )));
+            }
+        }
+        let out: Vec<Vec<f64>> = indices.iter().map(|&r| self.data[r].clone()).collect();
+        Ok(Self { data: out })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -652,5 +721,67 @@ mod tests {
     fn sparse_col_out_of_range_rejected() {
         let err = SparseMatrix::from_triplets(2, 2, &[(0, 5, 1.0)]).unwrap_err();
         assert!(matches!(err, DatarustError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn select_columns_basic() {
+        let m = Matrix::new(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]).unwrap();
+        let sub = m.select_columns(&[0, 2]).unwrap();
+        assert_eq!(sub.ncols(), 2);
+        assert_eq!(sub.get(0, 0), 1.0);
+        assert_eq!(sub.get(0, 1), 3.0);
+        assert_eq!(sub.get(1, 0), 4.0);
+        assert_eq!(sub.get(1, 1), 6.0);
+    }
+
+    #[test]
+    fn select_columns_out_of_range() {
+        let m = Matrix::new(vec![vec![1.0, 2.0]]).unwrap();
+        assert!(m.select_columns(&[0, 5]).is_err());
+    }
+
+    #[test]
+    fn select_columns_empty() {
+        let m = Matrix::new(vec![vec![1.0]]).unwrap();
+        assert!(m.select_columns(&[]).is_err());
+    }
+
+    #[test]
+    fn select_rows_basic() {
+        let m = Matrix::new(vec![vec![10.0], vec![20.0], vec![30.0]]).unwrap();
+        let sub = m.select_rows(&[0, 2]).unwrap();
+        assert_eq!(sub.nrows(), 2);
+        assert_eq!(sub.get(0, 0), 10.0);
+        assert_eq!(sub.get(1, 0), 30.0);
+    }
+
+    #[test]
+    fn select_rows_out_of_range() {
+        let m = Matrix::new(vec![vec![1.0]]).unwrap();
+        assert!(m.select_rows(&[0, 5]).is_err());
+    }
+
+    #[test]
+    fn select_rows_empty() {
+        let m = Matrix::new(vec![vec![1.0]]).unwrap();
+        assert!(m.select_rows(&[]).is_err());
+    }
+
+    #[test]
+    fn select_columns_reordered() {
+        let m = Matrix::new(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]).unwrap();
+        let sub = m.select_columns(&[2, 0]).unwrap();
+        assert_eq!(sub.get(0, 0), 3.0);
+        assert_eq!(sub.get(0, 1), 1.0);
+    }
+
+    #[test]
+    fn select_rows_duplicates() {
+        let m = Matrix::new(vec![vec![10.0], vec![20.0]]).unwrap();
+        let sub = m.select_rows(&[0, 0, 1]).unwrap();
+        assert_eq!(sub.nrows(), 3);
+        assert_eq!(sub.get(0, 0), 10.0);
+        assert_eq!(sub.get(1, 0), 10.0);
+        assert_eq!(sub.get(2, 0), 20.0);
     }
 }

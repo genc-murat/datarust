@@ -123,6 +123,43 @@ impl Transformer for MaxAbsScaler {
         }
     }
 
+    fn inverse_transform(&self, x: &Matrix) -> Result<Matrix> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("MaxAbsScaler".into()));
+        }
+        if self.max_abs.len() != x.ncols() {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} features", self.max_abs.len()),
+                actual: format!("{} features", x.ncols()),
+            });
+        }
+        #[cfg(feature = "rayon")]
+        {
+            let max_abs = &self.max_abs;
+            let rows: Vec<Vec<f64>> = x
+                .rows_ref()
+                .par_iter()
+                .map(|row| {
+                    row.iter()
+                        .enumerate()
+                        .map(|(j, &z)| z * max_abs[j])
+                        .collect()
+                })
+                .collect();
+            Matrix::new(rows)
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
+            for (i, row) in x.rows_ref().iter().enumerate() {
+                for (j, &z) in row.iter().enumerate() {
+                    out[i][j] = z * self.max_abs[j];
+                }
+            }
+            Matrix::new(out)
+        }
+    }
+
     fn is_fitted(&self) -> bool {
         self.fitted
     }
@@ -207,16 +244,56 @@ mod tests {
     }
 
     #[test]
-    fn inverse_round_trip() {
+    fn inverse_transform_round_trip() {
         let mut s = MaxAbsScaler::new();
-        let out = s.fit_transform(&m1()).unwrap();
-        let original = m1();
-        for i in 0..original.nrows() {
-            for j in 0..original.ncols() {
-                let recovered = out.get(i, j) * s.max_abs()[j];
-                assert!((recovered - original.get(i, j)).abs() < 1e-9);
+        let x = m1();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
             }
         }
+    }
+
+    #[test]
+    fn inverse_transform_negative_values() {
+        let x = Matrix::new(vec![vec![-3.0, 10.0], vec![3.0, -10.0]]).unwrap();
+        let mut s = MaxAbsScaler::new();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((recovered.get(i, j) - x.get(i, j)).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_zero_column() {
+        let x = Matrix::new(vec![vec![5.0, 0.0], vec![5.0, 0.0]]).unwrap();
+        let mut s = MaxAbsScaler::new();
+        let out = s.fit_transform(&x).unwrap();
+        let recovered = s.inverse_transform(&out).unwrap();
+        // col0 recovered, col1 stays 0
+        for i in 0..2 {
+            assert!((recovered.get(i, 0) - 5.0).abs() < 1e-9);
+            assert!((recovered.get(i, 1) - 0.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn inverse_transform_before_fit_errors() {
+        let s = MaxAbsScaler::new();
+        assert!(s.inverse_transform(&m1()).is_err());
+    }
+
+    #[test]
+    fn inverse_transform_shape_mismatch() {
+        let mut s = MaxAbsScaler::new();
+        s.fit(&m1()).unwrap();
+        let bad = Matrix::new(vec![vec![1.0, 2.0, 3.0]]).unwrap();
+        assert!(s.inverse_transform(&bad).is_err());
     }
 
     #[test]

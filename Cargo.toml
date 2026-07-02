@@ -20,3 +20,11 @@ rayon = ["dep:rayon"]
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 rayon = { version = "1", optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1"
+
+[[bench]]
+name = "benchmarks"
+harness = false
