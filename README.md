@@ -154,6 +154,19 @@ pub trait LabelTransformer {
 
 Operations return `Result<T, DatarustError>` with variants for `NotFitted`, `InvalidInput`, `ShapeMismatch`, `EmptyInput`, `AllMissing`, `UnknownCategory`, `UnknownLabel`, `InvalidConfig`, and `Singular`.
 
+## Architecture
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for a deep dive into the crate's module layout, trait hierarchy, type erasure, design decisions, and error handling philosophy.
+
+Key architectural highlights:
+
+| Layer | Description |
+|---|---|
+| **Matrix types** | `Matrix` (f64), `StrMatrix` (String), `SparseMatrix` (CSR) — all with validation |
+| **Core traits** | `Transformer`, `CategoricalTransformer`, `TargetTransformer`, `LabelTransformer`, `FeatureNames` |
+| **Type erasure** | `TransformerKind`, `CategoricalTransformerKind`, `TargetTransformerKind` — enable heterogeneous `Pipeline` and `ColumnTransformer` |
+| **Features** | `serde` (JSON save/load), `rayon` (parallel iterators) — both optional, zero deps by default |
+
 ## API Reference
 
 ### Scalers
@@ -877,4 +890,213 @@ save_json(&pipe, "pipeline.json")?;
 // Load and reuse
 let loaded: Pipeline = load_json("pipeline.json")?;
 let out = loaded.transform(&new_data)?;
+```
+
+### End-to-end: TargetEncoder + ColumnTransformer
+
+```rust,ignore
+use datarust::compose::{ColumnTransformer, Table};
+use datarust::encoder::{OneHotEncoder, TargetEncoder};
+use datarust::scaler::StandardScaler;
+use datarust::transformer_kind::TransformerKind;
+
+let numeric = Matrix::new(vec![
+    vec![25.0, 50000.0],
+    vec![30.0, 60000.0],
+    vec![35.0, 70000.0],
+])?;
+let categorical = StrMatrix::from_strings(vec![
+    vec!["Istanbul", "Engineer"],
+    vec!["Ankara", "Sales"],
+    vec!["Izmir", "Engineer"],
+])?;
+let targets = vec![100.0, 200.0, 150.0];
+
+let table = Table::new(numeric, categorical)?;
+let mut ct = ColumnTransformer::new()
+    .add_numeric("nums", vec![0], TransformerKind::StandardScaler(StandardScaler::new()))
+    .add_categorical("city", vec![0], OneHotEncoder::new())
+    .add_target("te", vec![1], TargetEncoder::new(5.0)?);
+ct.fit_with_target(&table, &targets)?;
+
+// Transform with all three spec types
+let out = ct.transform(&table)?;
+println!("{} columns", out.ncols());
+```
+
+### Feature selection + PCA + Pipeline
+
+```rust,ignore
+use datarust::decomposition::{PCA, PCAComponents};
+use datarust::selection::{SelectKBest, ScoreFunc};
+use datarust::scaler::StandardScaler;
+use datarust::pipeline::Pipeline;
+use datarust::transformer_kind::TransformerKind;
+
+let mut pipe = Pipeline::new()
+    .push("scale", TransformerKind::StandardScaler(StandardScaler::new()))
+    .push("select", TransformerKind::SelectKBest(SelectKBest::new(ScoreFunc::FClassif, 5)?))
+    .push("pca", TransformerKind::PCA(PCA::new(PCAComponents::Count(2))));
+
+pipe.fit_transform_with_labels(&x, &labels)?;
+
+// 2-dimensional output from 50+ feature input
+assert_eq!(pipe.transform(&x)?.ncols(), 2);
+```
+
+### Inverse transform with error propagation
+
+```rust
+use datarust::scaler::{StandardScaler, MinMaxScaler};
+use datarust::decomposition::{PCA, PCAComponents};
+
+let x = Matrix::new(vec![
+    vec![1.0, 2.0],
+    vec![3.0, 4.0],
+])?;
+
+// Forward: StandardScaler → MinMaxScaler → PCA
+let mut scaler = StandardScaler::new();
+let scaled = scaler.fit_transform(&x)?;
+
+let mut mm = MinMaxScaler::new();
+let normalized = mm.fit_transform(&scaled)?;
+
+// Inverse: PCA → MinMaxScaler → StandardScaler
+let mut pca = PCA::new(PCAComponents::Count(2));
+let projected = pca.fit_transform(&normalized)?;
+
+let pca_back = pca.inverse_transform(&projected)?;
+let mm_back = mm.inverse_transform(&pca_back)?;
+let reconstructed = scaler.inverse_transform(&mm_back)?;
+
+for i in 0..x.nrows() {
+    for j in 0..x.ncols() {
+        let err = (x.get(i, j) - reconstructed.get(i, j)).abs();
+        assert!(err < 1e-10, "reconstruction error at ({},{}): {}", i, j, err);
+    }
+}
+```
+
+### Custom transformer with FunctionTransformer
+
+```rust
+use datarust::function_transformer::FunctionTransformer;
+
+fn log_transform(x: &Matrix) -> Result<Matrix> {
+    let out: Vec<Vec<f64>> = x.rows_ref()
+        .iter()
+        .map(|row| row.iter().map(|&v| v.ln()).collect())
+        .collect();
+    Matrix::new(out)
+}
+
+fn exp_transform(x: &Matrix) -> Result<Matrix> {
+    let out: Vec<Vec<f64>> = x.rows_ref()
+        .iter()
+        .map(|row| row.iter().map(|&v| v.exp()).collect())
+        .collect();
+    Matrix::new(out)
+}
+
+let mut ft = FunctionTransformer::new(log_transform)
+    .with_inverse(exp_transform);
+
+let x = Matrix::new(vec![vec![1.0, 10.0], vec![100.0, 1000.0]])?;
+let log_x = ft.fit_transform(&x)?;
+let back = ft.inverse_transform(&log_x)?;
+// back ≈ x
+```
+
+### Pipeline ergonomics: step inspection and replacement
+
+```rust,ignore
+use datarust::decomposition::{PCA, PCAComponents};
+use datarust::pipeline::Pipeline;
+use datarust::scaler::{StandardScaler, RobustScaler};
+use datarust::transformer_kind::TransformerKind;
+
+let mut pipe = Pipeline::new()
+    .push("scale", TransformerKind::StandardScaler(StandardScaler::new()))
+    .push("reduce", TransformerKind::PCA(PCA::new(PCAComponents::Count(5))));
+
+// Inspect step names
+for name in pipe.names() {
+    println!("Step: {}", name);
+}
+
+// Replace the scaler with a robust alternative
+pipe.set_step("scale", TransformerKind::RobustScaler(RobustScaler::new()));
+
+// Mutably access the PCA step to change parameters
+if let TransformerKind::PCA(pca) = pipe.get_step_mut("reduce").unwrap() {
+    // pca configuration can be modified here (if we had setter methods)
+}
+
+// Remove and insert steps dynamically
+pipe.remove_step("reduce");
+pipe.insert_step(1, "select", TransformerKind::SelectKBest(SelectKBest::new(ScoreFunc::FClassif, 3)?));
+```
+
+### Sparse inverse transform with OneHotEncoder
+
+```rust
+use datarust::encoder::OneHotEncoder;
+use datarust::StrMatrix;
+
+let s = StrMatrix::from_column(["Red", "Blue", "Green", "Red", "Blue"])?;
+let mut ohe = OneHotEncoder::new();
+
+// Two round-trip paths: dense → StrMatrix and sparse → StrMatrix
+let dense = ohe.fit_transform(&s)?;
+let from_dense = ohe.inverse_transform(&dense)?;
+
+let sparse = ohe.transform_sparse(&s)?;
+let from_sparse = ohe.inverse_transform_sparse(&sparse)?;
+
+for i in 0..s.nrows() {
+    assert_eq!(from_dense.get(i, 0), s.get(i, 0));
+    assert_eq!(from_sparse.get(i, 0), s.get(i, 0));
+}
+```
+
+### QuantileTransformer with NaN rejection
+
+```rust
+use datarust::scaler::{QuantileTransformer, OutputDistribution};
+use datarust::Matrix;
+
+let x = Matrix::new(vec![
+    vec![1.0, f64::NAN],
+    vec![3.0, 4.0],
+])?;
+
+let mut qt = QuantileTransformer::new(1000)?;
+let result = qt.fit_transform(&x);
+assert!(result.is_err());  // NaN input is rejected with InvalidInput
+```
+
+### Pipeline with feature names
+
+```rust,ignore
+use datarust::pipeline::Pipeline;
+use datarust::scaler::StandardScaler;
+use datarust::selection::VarianceThreshold;
+use datarust::decomposition::PCA;
+use datarust::decomposition::PCAComponents;
+use datarust::transformer_kind::TransformerKind;
+use datarust::traits::FeatureNames;
+
+let mut pipe = Pipeline::new()
+    .push("scale", TransformerKind::StandardScaler(StandardScaler::new()))
+    .push("filter", TransformerKind::VarianceThreshold(VarianceThreshold::new(0.1)?))
+    .push("pca", TransformerKind::PCA(PCA::new(PCAComponents::Variance(0.95))));
+
+pipe.fit(&x)?;
+
+// Feature names propagate through the entire pipeline
+let input_names = &["age", "salary", "bonus", "years_exp"];
+let names = pipe.feature_names_out(Some(input_names));
+// e.g. ["pca0", "pca1", "pca2"] — depends on variance threshold + PCA
+println!("output columns: {:?}", names);
 ```

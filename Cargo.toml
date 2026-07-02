@@ -43,6 +43,10 @@ path = "examples/basic_preprocessing.rs"
 name = "pipeline_workflow"
 path = "examples/pipeline_workflow.rs"
 
+[[example]]
+name = "target_encoding"
+path = "examples/target_encoding.rs"
+
 [package.metadata.docs.rs]
 features = ["serde", "rayon"]
 rustdoc-args = ["--cfg", "docsrs"]

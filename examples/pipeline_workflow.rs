@@ -1,4 +1,5 @@
-//! Pipeline workflow: chain transformers and test inverse-transform round-trip.
+//! Pipeline workflow: chain transformers, test inverse-transform round-trip,
+//! pipeline ergonomics, and feature names.
 //!
 //! Run: `cargo run --example pipeline_workflow`
 
@@ -6,6 +7,7 @@ use datarust::compose::{ColumnTransformer, Remainder, Table};
 use datarust::encoder::OneHotEncoder;
 use datarust::pipeline::Pipeline;
 use datarust::scaler::{MinMaxScaler, StandardScaler};
+use datarust::selection::VarianceThreshold;
 use datarust::transformer_kind::TransformerKind;
 use datarust::CategoricalTransformerKind;
 use datarust::FeatureNames;
@@ -13,7 +15,7 @@ use datarust::Transformer;
 use datarust::{Matrix, StrMatrix};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // ── 1. Numeric-only pipeline ──────────────────────────────────────
+    // ── 1. Numeric-only pipeline with inverse transform ────────────────
     let x = Matrix::new(vec![
         vec![1.0, 500.0],
         vec![2.0, 300.0],
@@ -40,9 +42,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect();
         println!("  [{}]", row.join(", "));
     }
-    println!();
 
-    // ── 2. ColumnTransformer with categorical data ────────────────────
+    // ── 2. Pipeline ergonomics: step inspection and replacement ───────
+    println!("=== Pipeline ergonomics ===");
+    println!("Step names: {:?}", pipeline.names());
+
+    // Access a step by name
+    if let TransformerKind::MinMaxScaler(mm) = pipeline.get_step("norm").unwrap() {
+        println!(
+            "  norm step: MinMaxScaler(range={:?})",
+            mm.feature_range_value()
+        );
+    }
+
+    // Replace a step
+    pipeline.set_step(
+        "norm",
+        TransformerKind::VarianceThreshold(VarianceThreshold::new(0.01)?),
+    );
+    println!("  after replacing norm with VarianceThreshold:");
+    println!("  Step names: {:?}", pipeline.names());
+
+    // ── 3. Feature names through pipeline ─────────────────────────────
+    let names = pipeline.feature_names_out(Some(&["feat0".into(), "feat1".into()]));
+    println!("\n=== Feature names ===");
+    println!("{:?}", names);
+
+    // ── 4. ColumnTransformer with categorical data ────────────────────
     let numeric = Matrix::new(vec![
         vec![10.0, 1000.0],
         vec![20.0, 2000.0],
@@ -76,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let names = ct.feature_names_out(None);
     println!("\nFeature names: {:?}", names);
 
-    // ── 3. Multi-output (table) transform ────────────────────────────
+    // ── 5. Multi-output (table) transform ────────────────────────────
     let output = ct.fit_transform_to_table(&table)?;
     println!("\n=== Multi-output ===");
     println!(
