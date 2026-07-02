@@ -14,11 +14,11 @@ let normalized = scaler.fit_transform(&data)?;
 | **Scalers** | StandardScaler, MinMaxScaler, RobustScaler, MaxAbsScaler, Normalizer (L1/L2/Max) |
 | **Discretizers** | KBinsDiscretizer (Uniform / Quantile / KMeans), Binarizer |
 | **Distribution Transformers** | QuantileTransformer (Uniform / Normal output), PowerTransformer (Yeo-Johnson / Box-Cox) |
-| **Encoders** | LabelEncoder, OneHotEncoder (+ CSR sparse output), OrdinalEncoder, TargetEncoder, FrequencyEncoder |
+| **Encoders** | LabelEncoder (+ handle_unknown), OneHotEncoder (+ CSR sparse output), OrdinalEncoder, TargetEncoder, FrequencyEncoder |
 | **Imputers** | SimpleImputer (mean / median / most_frequent / constant), KnnImputer (uniform / distance) |
 | **Polynomial** | PolynomialFeatures (degree, interaction_only, include_bias) |
 | **Selection** | VarianceThreshold, SelectKBest (ANOVA F / Chi2 / Mutual Information) |
-| **Decomposition** | PCA (with whiten, inverse_transform), TruncatedSVD |
+| **Decomposition** | PCA (with whiten, inverse_transform), TruncatedSVD (SVDComponents: Count/Variance/All) |
 | **Pipeline** | Sequential Pipeline (serde-serializable), ColumnTransformer (numeric + categorical) |
 | **Feature Names** | `FeatureNames` trait on all transformers for output column names |
 | **Serialization** | JSON save/load via optional `serde` feature |
@@ -231,12 +231,19 @@ let out = pt.fit_transform(&x)?;
 Encode string labels as integer values 0..n_classes-1 (sorted lexicographically).
 
 ```rust
-use datarust::encoder::LabelEncoder;
+use datarust::encoder::{LabelEncoder, LabelHandleUnknown};
 
 let mut encoder = LabelEncoder::new();
 encoder.fit(&["dog", "cat", "bird"])?;
 let encoded = encoder.transform(&["dog", "bird"])?;
 // encoded = [1, 2]
+
+// Handle unknown labels gracefully (returns usize::MAX):
+let mut encoder = LabelEncoder::new()
+    .handle_unknown(LabelHandleUnknown::Ignore);
+encoder.fit(&["a", "b"])?;
+let out = encoder.transform(&["a", "z", "b"])?;
+// out = [0, usize::MAX, 1]
 ```
 
 #### OneHotEncoder
@@ -380,12 +387,21 @@ let projected = pca.fit_transform(&x)?;
 #### TruncatedSVD
 
 Dimensionality reduction via truncated SVD (suitable for sparse or TF-IDF data).
-Does **not** center the data.
+Does **not** center the data. Supports flexible component selection via [`SVDComponents`](https://docs.rs/datarust/latest/datarust/decomposition/enum.SVDComponents.html).
 
 ```rust
-use datarust::decomposition::TruncatedSVD;
+use datarust::decomposition::{TruncatedSVD, SVDComponents};
 
-let mut svd = TruncatedSVD::new(5)?;
+// By exact count:
+let mut svd = TruncatedSVD::new(5).unwrap();
+let out = svd.fit_transform(&x)?;
+
+// By variance threshold (keeps enough components to explain 95% variance):
+let mut svd = TruncatedSVD::new(0.95).unwrap();
+let out = svd.fit_transform(&x)?;
+
+// Keep all components:
+let mut svd = TruncatedSVD::new(SVDComponents::All).unwrap();
 let out = svd.fit_transform(&x)?;
 ```
 
@@ -407,7 +423,7 @@ let out = pipe.fit_transform(&x)?;
 assert_eq!(pipe.names(), vec!["scale", "pca", "clip"]);
 ```
 
-All 16 transformer types are available as `TransformerKind` variants, enabling type-safe heterogeneous pipelines.
+All 17 transformer types are available as `TransformerKind` variants, enabling type-safe heterogeneous pipelines.
 
 ### ColumnTransformer
 
@@ -611,7 +627,7 @@ When enabled, the following use parallel iterators:
 | KBinsDiscretizer | ✓ (Uniform/Quantile/KMeans, Ordinal/OneHotDense) | ✓ |
 | QuantileTransformer | ✓ (Uniform/Normal output) | ✓ |
 | PowerTransformer | ✓ (Yeo-Johnson/Box-Cox + MLE lambda) | ✓ |
-| LabelEncoder | ✓ | ✓ |
+| LabelEncoder | ✓ (handle_unknown: Error/Ignore) | ✓ |
 | OrdinalEncoder | ✓ (auto + manual) | ✓ |
 | OneHotEncoder | ✓ (drop, handle_unknown, sparse CSR) | ✓ |
 | TargetEncoder | ✓ (smoothed mean) | ✓ |
@@ -622,7 +638,7 @@ When enabled, the following use parallel iterators:
 | VarianceThreshold | ✓ | ✓ |
 | SelectKBest | ✓ (F-classif / Chi2 / Mutual Info) | ✓ |
 | PCA | ✓ (Jacobi EV, count/variance/all, whiten) | ✓ |
-| TruncatedSVD | ✓ (via X^T X eigen) | ✓ |
+| TruncatedSVD | ✓ (SVDComponents: Count/Variance/All) | ✓ |
 | Pipeline | ✓ (TransformerKind, serde) | ✓ |
 | ColumnTransformer | ✓ (numeric + onehot, remainder passthrough) | ✓ |
 | FunctionTransformer | ✓ (optional inverse, closure-based) | ✓ |
