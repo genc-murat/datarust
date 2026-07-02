@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::error::{DatarustError, Result};
 use crate::matrix::{Matrix, SparseMatrix, StrMatrix};
-use crate::traits::{default_input_names, FeatureNames};
+use crate::traits::{default_input_names, CategoricalTransformer, FeatureNames};
 
 /// How to handle unknown categories during `transform`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -46,6 +46,7 @@ pub struct OneHotEncoder {
 }
 
 impl OneHotEncoder {
+    /// Creates a new one-hot encoder.
     pub fn new() -> Self {
         Self {
             drop: DropStrategy::None,
@@ -58,11 +59,13 @@ impl OneHotEncoder {
         }
     }
 
+    /// Sets the category drop strategy.
     pub fn drop(mut self, d: DropStrategy) -> Self {
         self.drop = d;
         self
     }
 
+    /// Sets how unknown categories are handled during transform.
     pub fn handle_unknown(mut self, h: HandleUnknown) -> Self {
         self.handle_unknown = h;
         self
@@ -76,14 +79,17 @@ impl OneHotEncoder {
         self
     }
 
+    /// Returns whether sparse output is enabled.
     pub fn is_sparse(&self) -> bool {
         self.sparse_output
     }
 
+    /// Returns the learned categories per column.
     pub fn categories(&self) -> &[Vec<String>] {
         &self.categories
     }
 
+    /// Returns the number of output columns after transform.
     pub fn n_output_cols(&self) -> usize {
         self.n_output_cols
     }
@@ -104,6 +110,63 @@ impl OneHotEncoder {
         }
     }
 
+    /// Validates that the encoder is fitted and the input has the correct
+    /// number of columns.
+    fn validate_input(&self, x: &StrMatrix) -> Result<()> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("OneHotEncoder".into()));
+        }
+        if x.ncols() != self.categories.len() {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} categorical columns", self.categories.len()),
+                actual: format!("{} columns", x.ncols()),
+            });
+        }
+        Ok(())
+    }
+
+    /// Computes the output column offset for each input feature and the total
+    /// number of output columns.
+    fn compute_offsets(&self) -> (usize, Vec<usize>) {
+        let mut offsets = Vec::with_capacity(self.categories.len());
+        let mut acc = 0;
+        for j in 0..self.categories.len() {
+            offsets.push(acc);
+            acc += self.kept_categories(j).len();
+        }
+        (acc, offsets)
+    }
+
+    /// Encodes a single value for a single input feature, returning the
+    /// output column index if the value should be set to 1.0, or `None` if
+    /// it should be skipped (unknown category with Ignore, or dropped).
+    fn encode_one(&self, val: &str, j: usize, offsets: &[usize]) -> Result<Option<usize>> {
+        let idx_in_full = match self.category_index[j].get(val) {
+            Some(&idx) => idx,
+            None => match self.handle_unknown {
+                HandleUnknown::Error => {
+                    return Err(DatarustError::UnknownCategory(format!(
+                        "column {} value '{}'",
+                        j, val
+                    )));
+                }
+                HandleUnknown::Ignore => return Ok(None),
+            },
+        };
+        let target = match self.drop {
+            DropStrategy::None => Some(offsets[j] + idx_in_full),
+            DropStrategy::First => {
+                if idx_in_full == 0 {
+                    None
+                } else {
+                    Some(offsets[j] + (idx_in_full - 1))
+                }
+            }
+        };
+        Ok(target)
+    }
+
+    /// Learns the sorted categories per column.
     pub fn fit(&mut self, x: &StrMatrix) -> Result<()> {
         let ncols = x.ncols();
         let mut categories = Vec::with_capacity(ncols);
@@ -132,65 +195,43 @@ impl OneHotEncoder {
         Ok(())
     }
 
+    /// Encodes the input as a dense one-hot matrix.
     pub fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
-        if !self.fitted {
-            return Err(DatarustError::NotFitted("OneHotEncoder".into()));
-        }
-        if x.ncols() != self.categories.len() {
-            return Err(DatarustError::ShapeMismatch {
-                expected: format!("{} categorical columns", self.categories.len()),
-                actual: format!("{} columns", x.ncols()),
-            });
-        }
-        // column offset per feature in the output
-        let mut offsets = Vec::with_capacity(self.categories.len());
-        let mut acc = 0;
-        for j in 0..self.categories.len() {
-            offsets.push(acc);
-            acc += self.kept_categories(j).len();
-        }
-        let n_out = acc;
+        self.validate_input(x)?;
+        let (n_out, offsets) = self.compute_offsets();
         let nrows = x.nrows();
         let mut out = vec![vec![0.0; n_out]; nrows];
-        for (i, out_row) in out.iter_mut().enumerate() {
-            for (j, cat_idx) in self.category_index.iter().enumerate() {
-                let val = &x.data[i][j];
-                let cats = &self.categories[j];
-                let _kept = self.kept_categories(j);
-                let idx_in_full = match cat_idx.get(val) {
-                    Some(&idx) => idx,
-                    None => match self.handle_unknown {
-                        HandleUnknown::Error => {
-                            return Err(DatarustError::UnknownCategory(format!(
-                                "column {} value '{}'",
-                                j, val
-                            )));
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            out.par_iter_mut()
+                .enumerate()
+                .try_for_each(|(i, out_row)| {
+                    for j in 0..x.ncols() {
+                        if let Some(col) = self.encode_one(x.get(i, j), j, &offsets)? {
+                            out_row[col] = 1.0;
                         }
-                        HandleUnknown::Ignore => continue,
-                    },
-                };
-                if idx_in_full >= cats.len() {
-                    continue;
-                }
-                match self.drop {
-                    DropStrategy::None => {
-                        let target = offsets[j] + idx_in_full;
-                        out_row[target] = 1.0;
                     }
-                    DropStrategy::First => {
-                        if idx_in_full == 0 {
-                            // dropped category -> all zeros in this block
-                        } else {
-                            let target = offsets[j] + (idx_in_full - 1);
-                            out_row[target] = 1.0;
-                        }
+                    Ok::<(), DatarustError>(())
+                })?;
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            for (i, out_row) in out.iter_mut().enumerate() {
+                for j in 0..x.ncols() {
+                    if let Some(col) = self.encode_one(x.get(i, j), j, &offsets)? {
+                        out_row[col] = 1.0;
                     }
                 }
             }
         }
+
         Matrix::new(out)
     }
 
+    /// Fits the encoder and transforms the input into a dense matrix.
     pub fn fit_transform(&mut self, x: &StrMatrix) -> Result<Matrix> {
         self.fit(x)?;
         self.transform(x)
@@ -199,58 +240,43 @@ impl OneHotEncoder {
     /// Transform using sparse (CSR) output, regardless of the `sparse_output`
     /// flag. Useful when only some callers need sparse data.
     pub fn transform_sparse(&self, x: &StrMatrix) -> Result<SparseMatrix> {
-        if !self.fitted {
-            return Err(DatarustError::NotFitted("OneHotEncoder".into()));
-        }
-        if x.ncols() != self.categories.len() {
-            return Err(DatarustError::ShapeMismatch {
-                expected: format!("{} categorical columns", self.categories.len()),
-                actual: format!("{} columns", x.ncols()),
-            });
-        }
-        // column offset per feature in the output
-        let mut offsets = Vec::with_capacity(self.categories.len());
-        let mut acc = 0;
-        for j in 0..self.categories.len() {
-            offsets.push(acc);
-            acc += self.kept_categories(j).len();
-        }
-        let n_out = acc;
+        self.validate_input(x)?;
+        let (n_out, offsets) = self.compute_offsets();
         let nrows = x.nrows();
-        let mut triplets: Vec<(usize, usize, f64)> = Vec::new();
-        for i in 0..nrows {
-            for (j, cat_idx) in self.category_index.iter().enumerate() {
-                let val = &x.data[i][j];
-                let cats = &self.categories[j];
-                let idx_in_full = match cat_idx.get(val) {
-                    Some(&idx) => idx,
-                    None => match self.handle_unknown {
-                        HandleUnknown::Error => {
-                            return Err(DatarustError::UnknownCategory(format!(
-                                "column {} value '{}'",
-                                j, val
-                            )));
-                        }
-                        HandleUnknown::Ignore => continue,
-                    },
-                };
-                if idx_in_full >= cats.len() {
-                    continue;
-                }
-                let target = match self.drop {
-                    DropStrategy::None => Some(offsets[j] + idx_in_full),
-                    DropStrategy::First => {
-                        if idx_in_full == 0 {
-                            None
-                        } else {
-                            Some(offsets[j] + (idx_in_full - 1))
+
+        let mut row_triplets: Vec<Vec<(usize, usize, f64)>> = vec![vec![]; nrows];
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            row_triplets
+                .par_iter_mut()
+                .enumerate()
+                .try_for_each(|(i, trip)| {
+                    for j in 0..x.ncols() {
+                        if let Some(col) = self.encode_one(x.get(i, j), j, &offsets)? {
+                            trip.push((i, col, 1.0));
                         }
                     }
-                };
-                if let Some(col) = target {
-                    triplets.push((i, col, 1.0));
+                    Ok::<(), DatarustError>(())
+                })?;
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            for (i, trip) in row_triplets.iter_mut().enumerate() {
+                for j in 0..x.ncols() {
+                    if let Some(col) = self.encode_one(x.get(i, j), j, &offsets)? {
+                        trip.push((i, col, 1.0));
+                    }
                 }
             }
+        }
+
+        let mut triplets: Vec<(usize, usize, f64)> =
+            Vec::with_capacity(row_triplets.iter().map(|t| t.len()).sum());
+        for t in row_triplets {
+            triplets.extend(t);
         }
         SparseMatrix::from_triplets(nrows, n_out, &triplets)
     }
@@ -278,15 +304,10 @@ impl OneHotEncoder {
                 actual: format!("{} columns", x.ncols()),
             });
         }
-        let mut offsets = Vec::with_capacity(self.categories.len());
-        let mut acc = 0;
-        for j in 0..self.categories.len() {
-            offsets.push(acc);
-            acc += self.kept_categories(j).len();
-        }
+        let (_n_out, offsets) = self.compute_offsets();
         let n_features = self.categories.len();
-        let mut out: Vec<Vec<String>> = Vec::with_capacity(x.nrows());
-        for i in 0..x.nrows() {
+
+        let decode_row = |i: usize| -> Vec<String> {
             let mut row_cats = Vec::with_capacity(n_features);
             for (j, &block_start) in offsets.iter().enumerate() {
                 let block_len = self.kept_categories(j).len();
@@ -306,9 +327,21 @@ impl OneHotEncoder {
                 };
                 row_cats.push(cat);
             }
-            out.push(row_cats);
+            row_cats
+        };
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            let out: Vec<Vec<String>> = (0..x.nrows()).into_par_iter().map(decode_row).collect();
+            StrMatrix::new(out)
         }
-        StrMatrix::new(out)
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            let out: Vec<Vec<String>> = (0..x.nrows()).map(decode_row).collect();
+            StrMatrix::new(out)
+        }
     }
 
     /// Inverse transform from sparse (CSR) input.
@@ -328,9 +361,34 @@ impl OneHotEncoder {
 }
 
 /// Output of [`OneHotEncoder::transform_auto`].
+#[derive(Debug, Clone, PartialEq)]
 pub enum OneHotOutput {
+    /// Dense encoded output.
     Dense(Matrix),
+    /// Sparse (CSR) encoded output.
     Sparse(SparseMatrix),
+}
+
+impl CategoricalTransformer for OneHotEncoder {
+    fn name(&self) -> &'static str {
+        "OneHotEncoder"
+    }
+
+    fn fit(&mut self, x: &StrMatrix) -> Result<()> {
+        self.fit(x)
+    }
+
+    fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
+        self.transform(x)
+    }
+
+    fn inverse_transform(&self, y: &Matrix) -> Result<StrMatrix> {
+        self.inverse_transform(y)
+    }
+
+    fn is_fitted(&self) -> bool {
+        self.fitted
+    }
 }
 
 impl Default for OneHotEncoder {
@@ -717,5 +775,15 @@ mod tests {
         ohe.fit(&s).unwrap();
         let bad = Matrix::new(vec![vec![1.0, 0.0, 0.0]]).unwrap();
         assert!(ohe.inverse_transform(&bad).is_err());
+    }
+
+    #[test]
+    fn feature_names_short_input_pads_with_synthetic() {
+        let s = StrMatrix::from_strings(vec![vec!["a", "x"], vec!["b", "y"]]).unwrap();
+        let mut ohe = OneHotEncoder::new();
+        ohe.fit(&s).unwrap();
+        // 2 columns but only 1 name provided
+        let names = ohe.feature_names_out(Some(&["city".into()]));
+        assert_eq!(names, vec!["city_a", "city_b", "x1_x", "x1_y"]);
     }
 }

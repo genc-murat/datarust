@@ -60,6 +60,7 @@ pub struct TruncatedSVD {
 }
 
 impl TruncatedSVD {
+    /// Creates a new TruncatedSVD with the given component selection.
     pub fn new<C: Into<SVDComponents>>(components: C) -> Result<Self> {
         let spec = components.into();
         match &spec {
@@ -87,18 +88,22 @@ impl TruncatedSVD {
         })
     }
 
+    /// Returns the right singular vectors (one row per component).
     pub fn components(&self) -> &[Vec<f64>] {
         &self.components
     }
 
+    /// Returns the singular values of the kept components.
     pub fn singular_values(&self) -> &[f64] {
         &self.singular_values
     }
 
+    /// Returns the variance explained by each kept component.
     pub fn explained_variance(&self) -> &[f64] {
         &self.explained_variance
     }
 
+    /// Returns the fraction of total variance explained by each kept component.
     pub fn explained_variance_ratio(&self) -> &[f64] {
         &self.explained_variance_ratio
     }
@@ -167,7 +172,8 @@ impl Transformer for TruncatedSVD {
         let n = x.nrows();
         self.n_samples_ = n;
         let m = Self::xtx(x);
-        let (mut vals, vecs) = jacobi::eigh(&m);
+        let (mut vals, vecs) = jacobi::eigh(&m)
+            .ok_or_else(|| DatarustError::Singular("XᵀX matrix is empty or non-square".into()))?;
         for v in vals.iter_mut() {
             if *v < 0.0 && v.abs() < 1e-10 {
                 *v = 0.0;

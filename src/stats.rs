@@ -1,8 +1,11 @@
+//! Column-wise statistics, covariance and correlation helpers.
+
 use std::collections::HashMap;
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
+/// Returns the mean of each column.
 pub fn column_mean(data: &[Vec<f64>]) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -30,12 +33,16 @@ pub fn column_mean(data: &[Vec<f64>]) -> Vec<f64> {
     }
 }
 
+/// Returns the variance of each column using the given delta degrees of freedom.
 pub fn column_variance(data: &[Vec<f64>], ddof: usize) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
     }
     let cols = data[0].len();
     let n = data.len();
+    // Guard against a non-positive denominator (ddof >= n); fall back to NaN
+    // rather than producing +/-inf and propagating it through downstream transforms.
+    let denom = (n - ddof) as f64;
     let means = column_mean(data);
     #[cfg(feature = "rayon")]
     {
@@ -44,7 +51,11 @@ pub fn column_variance(data: &[Vec<f64>], ddof: usize) -> Vec<f64> {
             .map(|j| {
                 let m = means[j];
                 let s: f64 = data.iter().map(|r| (r[j] - m).powi(2)).sum();
-                s / (n - ddof) as f64
+                if denom > 0.0 {
+                    s / denom
+                } else {
+                    f64::NAN
+                }
             })
             .collect()
     }
@@ -54,12 +65,17 @@ pub fn column_variance(data: &[Vec<f64>], ddof: usize) -> Vec<f64> {
             .map(|j| {
                 let m = means[j];
                 let s: f64 = data.iter().map(|r| (r[j] - m).powi(2)).sum();
-                s / (n - ddof) as f64
+                if denom > 0.0 {
+                    s / denom
+                } else {
+                    f64::NAN
+                }
             })
             .collect()
     }
 }
 
+/// Returns the standard deviation of each column using the given delta degrees of freedom.
 pub fn column_std(data: &[Vec<f64>], ddof: usize) -> Vec<f64> {
     column_variance(data, ddof)
         .iter()
@@ -67,6 +83,7 @@ pub fn column_std(data: &[Vec<f64>], ddof: usize) -> Vec<f64> {
         .collect()
 }
 
+/// Returns the minimum value of each column.
 pub fn column_min(data: &[Vec<f64>]) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -87,6 +104,7 @@ pub fn column_min(data: &[Vec<f64>]) -> Vec<f64> {
     }
 }
 
+/// Returns the maximum value of each column.
 pub fn column_max(data: &[Vec<f64>]) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -107,35 +125,44 @@ pub fn column_max(data: &[Vec<f64>]) -> Vec<f64> {
     }
 }
 
-pub fn median_sorted(sorted: &[f64]) -> f64 {
+/// Median of a slice that is assumed to be sorted in non-decreasing order.
+///
+/// Returns `None` for an empty slice instead of panicking. Callers that can
+/// guarantee a non-empty slice may safely [`Option::unwrap`] the result.
+pub fn median_sorted(sorted: &[f64]) -> Option<f64> {
     let n = sorted.len();
-    assert!(!sorted.is_empty(), "median of empty slice");
+    if n == 0 {
+        return None;
+    }
     if n % 2 == 1 {
-        sorted[n / 2]
+        Some(sorted[n / 2])
     } else {
-        (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+        Some((sorted[n / 2 - 1] + sorted[n / 2]) / 2.0)
     }
 }
 
 /// Quantile with linear interpolation, matching numpy's default ("linear") method.
-/// `q` must be in [0, 1].
-pub fn quantile(sorted: &[f64], q: f64) -> f64 {
+///
+/// Returns `None` if the slice is empty or if `q` is outside `[0, 1]`.
+pub fn quantile(sorted: &[f64], q: f64) -> Option<f64> {
     let n = sorted.len();
-    assert!(n >= 1, "quantile of empty slice");
-    assert!((0.0..=1.0).contains(&q), "quantile q out of [0,1]: {}", q);
+    if n == 0 || !(0.0..=1.0).contains(&q) {
+        return None;
+    }
     if n == 1 {
-        return sorted[0];
+        return Some(sorted[0]);
     }
     let pos = q * (n - 1) as f64;
     let lo = pos.floor() as usize;
     let hi = pos.ceil() as usize;
     if lo == hi {
-        return sorted[lo];
+        return Some(sorted[lo]);
     }
     let frac = pos - lo as f64;
-    sorted[lo] * (1.0 - frac) + sorted[hi] * frac
+    Some(sorted[lo] * (1.0 - frac) + sorted[hi] * frac)
 }
 
+/// Returns the requested quantile of each column using linear interpolation.
 pub fn quantile_column(data: &[Vec<f64>], q: f64) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -147,8 +174,10 @@ pub fn quantile_column(data: &[Vec<f64>], q: f64) -> Vec<f64> {
             .into_par_iter()
             .map(|j| {
                 let mut col: Vec<f64> = data.iter().map(|r| r[j]).collect();
-                col.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                quantile(&col, q)
+                col.sort_by(|a, b| a.total_cmp(b));
+                // INVARIANT: `data` is non-empty (checked above), so each column has
+                // >= 1 element and `q` validity is the caller's contract.
+                quantile(&col, q).expect("non-empty column with q in [0,1]")
             })
             .collect()
     }
@@ -157,13 +186,14 @@ pub fn quantile_column(data: &[Vec<f64>], q: f64) -> Vec<f64> {
         (0..cols)
             .map(|j| {
                 let mut col: Vec<f64> = data.iter().map(|r| r[j]).collect();
-                col.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                quantile(&col, q)
+                col.sort_by(|a, b| a.total_cmp(b));
+                quantile(&col, q).expect("non-empty column with q in [0,1]")
             })
             .collect()
     }
 }
 
+/// Returns the median of each column.
 pub fn median_column(data: &[Vec<f64>]) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -175,8 +205,9 @@ pub fn median_column(data: &[Vec<f64>]) -> Vec<f64> {
             .into_par_iter()
             .map(|j| {
                 let mut col: Vec<f64> = data.iter().map(|r| r[j]).collect();
-                col.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                median_sorted(&col)
+                col.sort_by(|a, b| a.total_cmp(b));
+                // INVARIANT: `data` is non-empty (checked above), so each column is non-empty.
+                median_sorted(&col).expect("non-empty column")
             })
             .collect()
     }
@@ -185,14 +216,16 @@ pub fn median_column(data: &[Vec<f64>]) -> Vec<f64> {
         (0..cols)
             .map(|j| {
                 let mut col: Vec<f64> = data.iter().map(|r| r[j]).collect();
-                col.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                median_sorted(&col)
+                col.sort_by(|a, b| a.total_cmp(b));
+                median_sorted(&col).expect("non-empty column")
             })
             .collect()
     }
 }
 
 /// Most frequent value. Ties broken by smallest value (deterministic).
+///
+/// A column of all-equal (or empty) entries yields [`f64::NAN`] for that column.
 pub fn mode_column(data: &[Vec<f64>]) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -221,7 +254,7 @@ pub fn mode_column(data: &[Vec<f64>]) -> Vec<f64> {
                         }
                     }
                 }
-                best.unwrap().1
+                best.map(|(_, v)| v).unwrap_or(f64::NAN)
             })
             .collect()
     }
@@ -247,7 +280,7 @@ pub fn mode_column(data: &[Vec<f64>]) -> Vec<f64> {
                         }
                     }
                 }
-                best.unwrap().1
+                best.map(|(_, v)| v).unwrap_or(f64::NAN)
             })
             .collect()
     }
@@ -268,6 +301,40 @@ pub fn column_sum(data: &[Vec<f64>]) -> Vec<f64> {
     sums
 }
 
+/// Covariance of already-centered data: `(1/(n-ddof)) * Xcᵀ Xc`.
+///
+/// This is the single canonical centered-covariance routine shared by
+/// [`covariance_matrix`] (raw-data entry point), PCA and Truncated SVD.
+/// `x_centered` is row-major `n × p`. A non-positive denominator (`ddof >= n`)
+/// leaves the scale unchanged rather than producing infinities.
+#[allow(clippy::needless_range_loop)]
+pub(crate) fn covariance_centered(x_centered: &[Vec<f64>], ddof: usize) -> Vec<Vec<f64>> {
+    let n = x_centered.len();
+    let p = if n > 0 { x_centered[0].len() } else { 0 };
+    let mut cov = vec![vec![0.0; p]; p];
+    for row in x_centered {
+        for i in 0..p {
+            let xi = row[i];
+            if xi == 0.0 {
+                continue;
+            }
+            for j in 0..p {
+                cov[i][j] += xi * row[j];
+            }
+        }
+    }
+    let denom = (n - ddof) as f64;
+    if denom > 0.0 {
+        let inv = 1.0 / denom;
+        for i in 0..p {
+            for j in 0..p {
+                cov[i][j] *= inv;
+            }
+        }
+    }
+    cov
+}
+
 /// Covariance matrix (p × p) for an n × p data matrix.
 ///
 /// `ddof=0` gives population covariance, `ddof=1` gives sample covariance.
@@ -276,27 +343,13 @@ pub fn covariance_matrix(data: &[Vec<f64>], ddof: usize) -> Vec<Vec<f64>> {
     if data.is_empty() {
         return vec![];
     }
-    let p = data[0].len();
-    let n = data.len() as f64;
     let means = column_mean(data);
-    let mut cov = vec![vec![0.0; p]; p];
-    // centered data — materialised for simpler indexing
+    // Center the data, then delegate to the shared centered-covariance routine.
     let centered: Vec<Vec<f64>> = data
         .iter()
         .map(|row| row.iter().enumerate().map(|(j, &v)| v - means[j]).collect())
         .collect();
-    for i in 0..p {
-        for j in i..p {
-            let mut s = 0.0;
-            for row in &centered {
-                s += row[i] * row[j];
-            }
-            let v = s / (n - ddof as f64);
-            cov[i][j] = v;
-            cov[j][i] = v;
-        }
-    }
-    cov
+    covariance_centered(&centered, ddof)
 }
 
 /// Pearson correlation matrix (p × p).
@@ -353,24 +406,32 @@ mod tests {
     fn quantile_linear() {
         // numpy quantile linear for [0,1,2,3,4]: q=0.5 -> 2, q=0.25 -> 1, q=0.75 -> 3
         let s = [0.0_f64, 1.0, 2.0, 3.0, 4.0];
-        assert!((quantile(&s, 0.5) - 2.0).abs() < 1e-12);
-        assert!((quantile(&s, 0.25) - 1.0).abs() < 1e-12);
-        assert!((quantile(&s, 0.75) - 3.0).abs() < 1e-12);
+        assert!((quantile(&s, 0.5).unwrap() - 2.0).abs() < 1e-12);
+        assert!((quantile(&s, 0.25).unwrap() - 1.0).abs() < 1e-12);
+        assert!((quantile(&s, 0.75).unwrap() - 3.0).abs() < 1e-12);
         // q=0.3 -> 0.3*4 = 1.2 -> interp between idx1 and idx2
-        assert!((quantile(&s, 0.3) - 1.2).abs() < 1e-12);
+        assert!((quantile(&s, 0.3).unwrap() - 1.2).abs() < 1e-12);
     }
 
     #[test]
     fn quantile_edge() {
         let s = [5.0_f64];
-        assert!((quantile(&s, 0.5) - 5.0).abs() < 1e-12);
-        assert!((quantile(&s, 0.0) - 5.0).abs() < 1e-12);
+        assert!((quantile(&s, 0.5).unwrap() - 5.0).abs() < 1e-12);
+        assert!((quantile(&s, 0.0).unwrap() - 5.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn quantile_none_cases() {
+        assert!(quantile(&[], 0.5).is_none());
+        assert!(quantile(&[1.0, 2.0], 1.5).is_none());
+        assert!(quantile(&[1.0, 2.0], -0.1).is_none());
+        assert!(median_sorted(&[]).is_none());
     }
 
     #[test]
     fn median_even_odd() {
-        assert!((median_sorted(&[1.0_f64, 2.0, 3.0]) - 2.0).abs() < 1e-12);
-        assert!((median_sorted(&[1.0_f64, 2.0, 3.0, 4.0]) - 2.5).abs() < 1e-12);
+        assert!((median_sorted(&[1.0_f64, 2.0, 3.0]).unwrap() - 2.0).abs() < 1e-12);
+        assert!((median_sorted(&[1.0_f64, 2.0, 3.0, 4.0]).unwrap() - 2.5).abs() < 1e-12);
     }
 
     #[test]

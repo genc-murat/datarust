@@ -2,8 +2,14 @@
 name = "datarust"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.70"
 description = "Scikit-Learn Preprocessing in Rust"
 license = "MIT"
+repository = "https://github.com/muratgenc/datarust"
+readme = "README.md"
+keywords = ["machine-learning", "preprocessing", "scikit-learn", "data", "ml"]
+categories = ["science", "mathematics", "algorithms"]
+exclude = ["/.github", "/benches"]
 
 [lib]
 name = "datarust"
@@ -28,3 +34,11 @@ proptest = "1"
 [[bench]]
 name = "benchmarks"
 harness = false
+
+[[example]]
+name = "basic_preprocessing"
+path = "examples/basic_preprocessing.rs"
+
+[[example]]
+name = "pipeline_workflow"
+path = "examples/pipeline_workflow.rs"

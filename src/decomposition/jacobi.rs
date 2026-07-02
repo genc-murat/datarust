@@ -9,23 +9,18 @@ const TOL: f64 = 1e-12;
 
 /// Symmetric eigen-decomposition.
 ///
-/// Returns `(eigenvalues, eigenvectors)` where `eigenvalues[k]` is the k-th
-/// largest eigenvalue and `eigenvectors[k]` is the corresponding eigenvector
-/// of length `n` (a unit vector). The input must be symmetric; only the
-/// lower triangle is read but the full matrix is used to verify symmetry
-/// is not required (the caller is responsible).
-pub fn eigh(matrix: &[Vec<f64>]) -> (Vec<f64>, Vec<Vec<f64>>) {
+/// Returns `Some((eigenvalues, eigenvectors))` where `eigenvalues[k]` is the
+/// k-th largest eigenvalue and `eigenvectors[k]` is the corresponding eigenvector
+/// of length `n` (a unit vector). Returns `None` if the input is empty or not
+/// square. The caller is responsible for ensuring the matrix is symmetric; only
+/// the lower triangle is read.
+pub fn eigh(matrix: &[Vec<f64>]) -> Option<(Vec<f64>, Vec<Vec<f64>>)> {
     let n = matrix.len();
-    assert!(n > 0, "eigh: empty matrix");
-    assert_eq!(
-        matrix[0].len(),
-        n,
-        "eigh: matrix must be square {}x{}",
-        n,
-        matrix[0].len()
-    );
+    if n == 0 || matrix[0].len() != n {
+        return None;
+    }
     if n == 1 {
-        return (vec![matrix[0][0]], vec![vec![1.0]]);
+        return Some((vec![matrix[0][0]], vec![vec![1.0]]));
     }
 
     let mut a: Vec<Vec<f64>> = matrix.to_vec();
@@ -66,16 +61,12 @@ pub fn eigh(matrix: &[Vec<f64>]) -> (Vec<f64>, Vec<Vec<f64>>) {
     // Convert to rows indexed by eigenvalue rank.
     let eigvecs: Vec<Vec<f64>> = (0..n).map(|k| (0..n).map(|i| v[i][k]).collect()).collect();
 
-    // Sort by eigenvalue descending.
+    // Sort by eigenvalue descending (total_cmp is NaN-safe).
     let mut idx: Vec<usize> = (0..n).collect();
-    idx.sort_by(|&i, &j| {
-        eigvals[j]
-            .partial_cmp(&eigvals[i])
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    idx.sort_by(|&i, &j| eigvals[j].total_cmp(&eigvals[i]));
     let sorted_vals: Vec<f64> = idx.iter().map(|&i| eigvals[i]).collect();
     let sorted_vecs: Vec<Vec<f64>> = idx.iter().map(|&i| eigvecs[i].clone()).collect();
-    (sorted_vals, sorted_vecs)
+    Some((sorted_vals, sorted_vecs))
 }
 
 #[allow(clippy::needless_range_loop)]
@@ -123,34 +114,13 @@ fn rotate(a: &mut Vec<Vec<f64>>, v: &mut Vec<Vec<f64>>, p: usize, q: usize, c: f
     }
 }
 
-/// Compute the covariance matrix of centered data: (1/(n-1)) * Xc^T Xc.
-/// `x_centered` is row-major n×p.
-#[allow(clippy::needless_range_loop)]
+/// Compute the covariance matrix of centered data: `(1/(n-ddof)) * Xcᵀ Xc`.
+///
+/// This is a thin wrapper over the canonical [`crate::stats::covariance_centered`]
+/// implementation so that PCA, Truncated SVD and the public stats API all share
+/// one tested routine. `x_centered` is row-major `n×p`.
 pub fn covariance(x_centered: &[Vec<f64>], ddof: usize) -> Vec<Vec<f64>> {
-    let n = x_centered.len();
-    let p = if n > 0 { x_centered[0].len() } else { 0 };
-    let mut cov = vec![vec![0.0; p]; p];
-    for row in x_centered {
-        for i in 0..p {
-            let xi = row[i];
-            if xi == 0.0 {
-                continue;
-            }
-            for j in 0..p {
-                cov[i][j] += xi * row[j];
-            }
-        }
-    }
-    let denom = (n - ddof) as f64;
-    if denom > 0.0 {
-        let inv = 1.0 / denom;
-        for i in 0..p {
-            for j in 0..p {
-                cov[i][j] *= inv;
-            }
-        }
-    }
-    cov
+    crate::stats::covariance_centered(x_centered, ddof)
 }
 
 #[cfg(test)]
@@ -164,7 +134,7 @@ mod tests {
     #[test]
     fn diagonal_matrix() {
         let m = vec![vec![3.0, 0.0], vec![0.0, 7.0]];
-        let (vals, vecs) = eigh(&m);
+        let (vals, vecs) = eigh(&m).unwrap();
         assert!(approx(vals[0], 7.0, 1e-9));
         assert!(approx(vals[1], 3.0, 1e-9));
         // eigenvector for 7 should be [0,1], for 3 should be [1,0]
@@ -178,7 +148,7 @@ mod tests {
     fn known_2x2() {
         // [[2,1],[1,2]] eigenvalues 3 and 1, eigenvectors [1,1]/sqrt2 and [1,-1]/sqrt2
         let m = vec![vec![2.0, 1.0], vec![1.0, 2.0]];
-        let (vals, vecs) = eigh(&m);
+        let (vals, vecs) = eigh(&m).unwrap();
         assert!(approx(vals[0], 3.0, 1e-9));
         assert!(approx(vals[1], 1.0, 1e-9));
         // eigenvector magnitudes are unit
@@ -205,7 +175,7 @@ mod tests {
             vec![1.0, 3.0, 0.0],
             vec![2.0, 0.0, 5.0],
         ];
-        let (vals, vecs) = eigh(&m);
+        let (vals, vecs) = eigh(&m).unwrap();
         // descending order
         assert!(vals[0] >= vals[1]);
         assert!(vals[1] >= vals[2]);
@@ -250,7 +220,7 @@ mod tests {
     #[test]
     fn single_element_matrix() {
         let m = vec![vec![42.0]];
-        let (vals, vecs) = eigh(&m);
+        let (vals, vecs) = eigh(&m).unwrap();
         assert_eq!(vals, vec![42.0]);
         assert_eq!(vecs, vec![vec![1.0]]);
     }
@@ -263,7 +233,7 @@ mod tests {
             vec![0.0, 1.0, 0.0],
             vec![0.0, 0.0, 1.0],
         ];
-        let (vals, _) = eigh(&m);
+        let (vals, _) = eigh(&m).unwrap();
         for v in &vals {
             assert!(approx(*v, 1.0, 1e-9));
         }
@@ -272,7 +242,7 @@ mod tests {
     #[test]
     fn trace_preserved() {
         let m = vec![vec![6.0, 2.0], vec![2.0, 3.0]]; // trace 9
-        let (vals, _) = eigh(&m);
+        let (vals, _) = eigh(&m).unwrap();
         let sum: f64 = vals.iter().sum();
         assert!(approx(sum, 9.0, 1e-9));
     }

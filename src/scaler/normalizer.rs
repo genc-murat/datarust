@@ -11,9 +11,12 @@ use rayon::prelude::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Norm {
+    /// Normalize by the L1 (Manhattan) norm.
     L1,
     #[default]
+    /// Normalize by the L2 (Euclidean) norm.
     L2,
+    /// Normalize by the maximum absolute value.
     Max,
 }
 
@@ -30,6 +33,7 @@ pub struct Normalizer {
 }
 
 impl Normalizer {
+    /// Creates a new normalizer using the given norm.
     pub fn new(norm: Norm) -> Self {
         Self {
             norm,
@@ -38,6 +42,7 @@ impl Normalizer {
         }
     }
 
+    /// Returns the norm used for normalization.
     pub fn norm(&self) -> Norm {
         self.norm
     }

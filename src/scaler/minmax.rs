@@ -20,6 +20,7 @@ pub struct MinMaxScaler {
 }
 
 impl MinMaxScaler {
+    /// Creates a new scaler with the default `[0, 1]` range.
     pub fn new() -> Self {
         Self {
             feature_range: (0.0, 1.0),
@@ -35,14 +36,17 @@ impl MinMaxScaler {
         self
     }
 
+    /// Fitted per-column minimum values.
     pub fn min(&self) -> &[f64] {
         &self.min
     }
 
+    /// Fitted per-column data range (max - min).
     pub fn data_range(&self) -> &[f64] {
         &self.data_range
     }
 
+    /// Returns the configured output feature range.
     pub fn feature_range_value(&self) -> (f64, f64) {
         self.feature_range
     }

@@ -40,6 +40,7 @@ pub struct KnnImputer {
 }
 
 impl KnnImputer {
+    /// Creates a new KNN imputer with the given neighbor count and weights.
     pub fn new(n_neighbors: usize, weights: KnnWeights) -> Self {
         Self {
             n_neighbors,
@@ -49,10 +50,12 @@ impl KnnImputer {
         }
     }
 
+    /// Returns the number of neighbors used for imputation.
     pub fn n_neighbors(&self) -> usize {
         self.n_neighbors
     }
 
+    /// Returns the weighting scheme.
     pub fn weights(&self) -> KnnWeights {
         self.weights
     }
@@ -103,7 +106,7 @@ impl KnnImputer {
                 "row has no co-observed features with any reference row".into(),
             ));
         }
-        distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        distances.sort_by(|a, b| a.0.total_cmp(&b.0));
         let k = self.n_neighbors.min(distances.len());
         Ok(distances[..k].to_vec())
     }

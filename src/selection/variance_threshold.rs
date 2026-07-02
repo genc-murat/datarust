@@ -18,6 +18,7 @@ pub struct VarianceThreshold {
 }
 
 impl VarianceThreshold {
+    /// Creates a new selector that drops features with variance at or below `threshold`.
     pub fn new(threshold: f64) -> Result<Self> {
         if threshold < 0.0 {
             return Err(DatarustError::InvalidConfig(format!(
@@ -33,14 +34,17 @@ impl VarianceThreshold {
         })
     }
 
+    /// Returns the per-feature variance computed during fit.
     pub fn variances(&self) -> &[f64] {
         &self.variances
     }
 
+    /// Returns the boolean mask of kept features.
     pub fn get_support(&self) -> &[bool] {
         &self.support_mask
     }
 
+    /// Returns the configured variance threshold.
     pub fn threshold(&self) -> f64 {
         self.threshold
     }

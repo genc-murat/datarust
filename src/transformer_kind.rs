@@ -23,22 +23,39 @@ use crate::Transformer;
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TransformerKind {
+    /// Wraps a `StandardScaler`.
     StandardScaler(StandardScaler),
+    /// Wraps a `MinMaxScaler`.
     MinMaxScaler(MinMaxScaler),
+    /// Wraps a `MaxAbsScaler`.
     MaxAbsScaler(MaxAbsScaler),
+    /// Wraps a `RobustScaler`.
     RobustScaler(RobustScaler),
+    /// Wraps a `Normalizer`.
     Normalizer(Normalizer),
+    /// Wraps a `Binarizer`.
     Binarizer(Binarizer),
+    /// Wraps a `KBinsDiscretizer`.
     KBinsDiscretizer(KBinsDiscretizer),
+    /// Wraps a `QuantileTransformer`.
     QuantileTransformer(QuantileTransformer),
+    /// Wraps a `PowerTransformer`.
     PowerTransformer(PowerTransformer),
+    /// Wraps a `PolynomialFeatures` transformer.
     PolynomialFeatures(PolynomialFeatures),
+    /// Wraps a `VarianceThreshold` selector.
     VarianceThreshold(VarianceThreshold),
+    /// Wraps a `PCA` decomposition.
     PCA(crate::decomposition::PCA),
+    /// Wraps a `TruncatedSVD` decomposition.
     TruncatedSVD(crate::decomposition::TruncatedSVD),
+    /// Wraps a `SimpleImputer`.
     SimpleImputer(SimpleImputer),
+    /// Wraps a `KnnImputer`.
     KnnImputer(KnnImputer),
+    /// Wraps a `SelectKBest` selector.
     SelectKBest(SelectKBest),
+    /// Wraps a `FunctionTransformer`.
     FunctionTransformer(FunctionTransformer),
 }
 

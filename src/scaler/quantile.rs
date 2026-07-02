@@ -47,6 +47,7 @@ impl QuantileTransformer {
         })
     }
 
+    /// Builder: set the target output distribution.
     pub fn output_distribution(mut self, d: OutputDistribution) -> Self {
         self.output_distribution = d;
         self
@@ -126,7 +127,7 @@ impl Transformer for QuantileTransformer {
         let n_q = self.n_quantiles.min(x.nrows());
         for j in 0..ncols {
             let mut col = x.col(j);
-            col.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            col.sort_by(|a, b| a.total_cmp(b));
             refs_all.push(Self::compute_references(&col, n_q.max(1)));
         }
         self.references = refs_all;

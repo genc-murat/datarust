@@ -34,6 +34,7 @@ pub struct SelectKBest {
 }
 
 impl SelectKBest {
+    /// Creates a new selector keeping the `k` best features per `score_func`.
     pub fn new(score_func: ScoreFunc, k: usize) -> Result<Self> {
         if k == 0 {
             return Err(DatarustError::InvalidConfig("k must be > 0".into()));
@@ -47,10 +48,12 @@ impl SelectKBest {
         })
     }
 
+    /// Returns the per-feature scores computed during fit.
     pub fn scores(&self) -> &[f64] {
         &self.scores
     }
 
+    /// Returns the boolean mask of selected features.
     pub fn get_support(&self) -> &[bool] {
         &self.support_mask
     }
@@ -280,7 +283,7 @@ fn mi_classif(x: &Matrix, labels: &[&str]) -> Result<Vec<f64>> {
         // Collect feature column and bin edges.
         let col: Vec<f64> = (0..n).map(|i| x.get(i, j)).collect();
         let mut sorted_col = col.clone();
-        sorted_col.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_col.sort_by(|a, b| a.total_cmp(b));
         let lo = sorted_col[0];
         let hi = sorted_col[n - 1];
         let range = hi - lo;

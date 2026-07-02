@@ -5,6 +5,7 @@ use datarust::imputer::{ImputeStrategy, SimpleImputer};
 use datarust::pipeline::Pipeline;
 use datarust::scaler::{MinMaxScaler, Norm, Normalizer, RobustScaler, StandardScaler};
 use datarust::transformer_kind::TransformerKind;
+use datarust::CategoricalTransformerKind;
 use datarust::Transformer;
 
 fn approx(a: f64, b: f64, tol: f64) -> bool {
@@ -135,7 +136,11 @@ fn onehot_then_scaler_via_column_transformer() {
             vec![0],
             TransformerKind::StandardScaler(StandardScaler::new()),
         )
-        .add_categorical("cat", vec![0], OneHotEncoder::new());
+        .add_categorical(
+            "cat",
+            vec![0],
+            CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new()),
+        );
     let out = ct.fit_transform(&table).unwrap();
     assert_eq!(out.ncols(), 4);
     assert_eq!(out.nrows(), 3);

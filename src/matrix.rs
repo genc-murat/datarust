@@ -1,5 +1,8 @@
+//! Dense and sparse matrix containers used throughout the crate.
+
 use crate::error::{DatarustError, Result};
 
+/// Row-major dense matrix of `f64` backed by `Vec<Vec<f64>>`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Matrix {
@@ -7,6 +10,7 @@ pub struct Matrix {
 }
 
 impl Matrix {
+    /// Creates a matrix from a nested vector, validating a rectangular shape.
     pub fn new(data: Vec<Vec<f64>>) -> Result<Self> {
         if data.is_empty() {
             return Err(DatarustError::EmptyInput("matrix has no rows".into()));
@@ -26,10 +30,12 @@ impl Matrix {
         Ok(Self { data })
     }
 
+    /// Creates a matrix from a nested vector of rows.
     pub fn from_rows(rows: Vec<Vec<f64>>) -> Result<Self> {
         Self::new(rows)
     }
 
+    /// Creates a matrix from row-major flat data of the given shape.
     pub fn from_flat(rows: usize, cols: usize, flat: Vec<f64>) -> Result<Self> {
         if rows == 0 || cols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
@@ -48,6 +54,7 @@ impl Matrix {
         Ok(Self { data })
     }
 
+    /// Creates a matrix filled with zeros of the given shape.
     pub fn zeros(rows: usize, cols: usize) -> Result<Self> {
         if rows == 0 || cols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
@@ -57,6 +64,7 @@ impl Matrix {
         })
     }
 
+    /// Creates an `n` by `n` identity matrix.
     pub fn identity(n: usize) -> Result<Self> {
         if n == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
@@ -68,46 +76,56 @@ impl Matrix {
         Ok(Self { data })
     }
 
+    /// Returns the number of rows.
     #[inline]
     pub fn nrows(&self) -> usize {
         self.data.len()
     }
 
+    /// Returns the number of columns.
     #[inline]
     pub fn ncols(&self) -> usize {
         self.data[0].len()
     }
 
+    /// Returns the element at row `i`, column `j`.
     #[inline]
     pub fn get(&self, i: usize, j: usize) -> f64 {
         self.data[i][j]
     }
 
+    /// Sets the element at row `i`, column `j`.
     #[inline]
     pub fn set(&mut self, i: usize, j: usize, v: f64) {
         self.data[i][j] = v;
     }
 
+    /// Returns the row at index `i` as a slice.
     pub fn row(&self, i: usize) -> &[f64] {
         &self.data[i]
     }
 
+    /// Returns column `j` as a new vector.
     pub fn col(&self, j: usize) -> Vec<f64> {
         self.data.iter().map(|r| r[j]).collect()
     }
 
+    /// Iterates over the rows as slices.
     pub fn iter_rows(&self) -> impl Iterator<Item = &[f64]> {
         self.data.iter().map(|v| v.as_slice())
     }
 
+    /// Borrows the underlying vector of rows.
     pub fn rows_ref(&self) -> &Vec<Vec<f64>> {
         &self.data
     }
 
+    /// Consumes the matrix and returns the underlying rows.
     pub fn into_rows(self) -> Vec<Vec<f64>> {
         self.data
     }
 
+    /// Returns the transpose of the matrix.
     pub fn transpose(&self) -> Matrix {
         let rows = self.nrows();
         let cols = self.ncols();
@@ -120,6 +138,7 @@ impl Matrix {
         Matrix { data: out }
     }
 
+    /// Multiplies two matrices and returns the product.
     #[allow(clippy::needless_range_loop)]
     pub fn matmul(&self, other: &Matrix) -> Result<Matrix> {
         if self.ncols() != other.nrows() {
@@ -149,10 +168,12 @@ impl Matrix {
         Ok(Matrix { data: out })
     }
 
+    /// Returns the mean of each column.
     pub fn column_mean(&self) -> Vec<f64> {
         crate::stats::column_mean(&self.data)
     }
 
+    /// Creates a matrix from a vector of columns.
     pub fn from_columns(cols: Vec<Vec<f64>>) -> Result<Self> {
         if cols.is_empty() || cols[0].is_empty() {
             return Err(DatarustError::EmptyInput("no columns".into()));
@@ -245,6 +266,7 @@ impl Matrix {
     }
 }
 
+/// Row-major matrix of strings used by the categorical encoders.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StrMatrix {
@@ -252,6 +274,7 @@ pub struct StrMatrix {
 }
 
 impl StrMatrix {
+    /// Creates a string matrix from a nested vector, validating a rectangular shape.
     pub fn new(data: Vec<Vec<String>>) -> Result<Self> {
         if data.is_empty() {
             return Err(DatarustError::EmptyInput("matrix has no rows".into()));
@@ -271,6 +294,7 @@ impl StrMatrix {
         Ok(Self { data })
     }
 
+    /// Creates a single-column string matrix from an iterator of values.
     pub fn from_column<I, S>(col: I) -> Result<Self>
     where
         I: IntoIterator<Item = S>,
@@ -283,6 +307,7 @@ impl StrMatrix {
         Self::new(data)
     }
 
+    /// Creates a string matrix from an iterator of rows.
     pub fn from_strings<I, S>(rows: I) -> Result<Self>
     where
         I: IntoIterator<Item = Vec<S>>,
@@ -295,33 +320,45 @@ impl StrMatrix {
         Self::new(data)
     }
 
+    /// Returns the number of rows.
     #[inline]
     pub fn nrows(&self) -> usize {
         self.data.len()
     }
 
+    /// Returns the number of columns.
     #[inline]
     pub fn ncols(&self) -> usize {
         self.data[0].len()
     }
 
+    /// Returns the string at row `i`, column `j`.
     #[inline]
     pub fn get(&self, i: usize, j: usize) -> &str {
         &self.data[i][j]
     }
 
+    /// Returns column `j` as a new vector of strings.
     pub fn column(&self, j: usize) -> Vec<String> {
         self.data.iter().map(|r| r[j].clone()).collect()
     }
 
+    /// Returns the row at index `i` as a slice.
     pub fn row(&self, i: usize) -> &[String] {
         &self.data[i]
     }
 }
 
-impl From<Vec<Vec<f64>>> for Matrix {
-    fn from(data: Vec<Vec<f64>>) -> Self {
-        Matrix::new(data).expect("invalid matrix shape")
+impl TryFrom<Vec<Vec<f64>>> for Matrix {
+    type Error = DatarustError;
+
+    /// Fallibly construct a [`Matrix`] from a nested vector.
+    ///
+    /// Returns an error if the rows are empty or jagged. This replaces the
+    /// previous panicking `From` impl to keep validation consistent with
+    /// [`Matrix::new`].
+    fn try_from(data: Vec<Vec<f64>>) -> Result<Self> {
+        Matrix::new(data)
     }
 }
 
@@ -453,11 +490,13 @@ impl SparseMatrix {
         })
     }
 
+    /// Returns the number of rows.
     #[inline]
     pub fn nrows(&self) -> usize {
         self.nrows
     }
 
+    /// Returns the number of columns.
     #[inline]
     pub fn ncols(&self) -> usize {
         self.ncols

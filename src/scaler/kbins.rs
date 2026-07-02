@@ -62,20 +62,24 @@ impl KBinsDiscretizer {
         })
     }
 
+    /// Builder: set the strategy used to compute bin edges.
     pub fn strategy(mut self, s: BinStrategy) -> Self {
         self.strategy = s;
         self
     }
 
+    /// Builder: set the output encoding scheme.
     pub fn encode(mut self, e: KBinsEncode) -> Self {
         self.encode = e;
         self
     }
 
+    /// Returns the fitted bin edges per column.
     pub fn bin_edges(&self) -> &[Vec<f64>] {
         &self.bin_edges
     }
 
+    /// Returns the effective number of bins per column.
     pub fn n_actual_bins(&self) -> &[usize] {
         &self.n_actual_bins
     }
@@ -83,7 +87,7 @@ impl KBinsDiscretizer {
     /// Compute bin edges for one column.
     fn compute_edges(col: &[f64], n_bins: usize, strategy: BinStrategy) -> Vec<f64> {
         let mut sorted = col.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.total_cmp(b));
 
         let lo = sorted[0];
         let hi = sorted[sorted.len() - 1];
@@ -101,7 +105,10 @@ impl KBinsDiscretizer {
             BinStrategy::Quantile => {
                 // Edges at quantiles i/n_bins for i=0..=n_bins.
                 (0..=n_bins)
-                    .map(|i| stats::quantile(&sorted, i as f64 / n_bins as f64))
+                    .map(|i| {
+                        stats::quantile(&sorted, i as f64 / n_bins as f64)
+                            .expect("i in 0..=n_bins keeps q in [0,1]")
+                    })
                     .collect()
             }
             BinStrategy::KMeans => kmeans_1d(&sorted, n_bins),
@@ -241,9 +248,11 @@ fn kmeans_1d(sorted: &[f64], k: usize) -> Vec<f64> {
     }
     // Initialize centers at quantiles.
     let mut centers: Vec<f64> = (0..k)
-        .map(|i| stats::quantile(sorted, i as f64 / (k - 1) as f64))
+        .map(|i| {
+            stats::quantile(sorted, i as f64 / (k - 1) as f64).expect("i in 0..k keeps q in [0,1]")
+        })
         .collect();
-    centers.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    centers.sort_by(|a, b| a.total_cmp(b));
     centers.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
     if centers.len() < 2 {
         return vec![sorted[0]];
@@ -283,7 +292,7 @@ fn kmeans_1d(sorted: &[f64], k: usize) -> Vec<f64> {
         }
     }
 
-    centers.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    centers.sort_by(|a, b| a.total_cmp(b));
 
     // Bin edges: first = min(sorted), last = max(sorted),
     // interior = midpoints between consecutive centers.

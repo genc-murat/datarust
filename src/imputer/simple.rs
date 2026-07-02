@@ -8,9 +8,13 @@ use crate::Transformer;
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ImputeStrategy {
+    /// Fill missing values with the column mean.
     Mean,
+    /// Fill missing values with the column median.
     Median,
+    /// Fill missing values with the column most frequent value.
     MostFrequent,
+    /// Fill missing values with the given constant.
     Constant(f64),
 }
 
@@ -26,6 +30,7 @@ pub struct SimpleImputer {
 }
 
 impl SimpleImputer {
+    /// Creates a new simple imputer with the given strategy.
     pub fn new(strategy: ImputeStrategy) -> Self {
         Self {
             strategy,
@@ -34,10 +39,12 @@ impl SimpleImputer {
         }
     }
 
+    /// Returns the imputation strategy.
     pub fn strategy(&self) -> &ImputeStrategy {
         &self.strategy
     }
 
+    /// Returns the learned per-column fill values.
     pub fn fill_values(&self) -> &[f64] {
         &self.fill_values
     }
@@ -71,15 +78,15 @@ impl SimpleImputer {
                         return Err(DatarustError::AllMissing(format!("column {}", j)));
                     }
                     let mut c = col.clone();
-                    c.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                    stats::median_sorted(&c)
+                    c.sort_by(|a, b| a.total_cmp(b));
+                    stats::median_sorted(&c).expect("column non-empty (checked above)")
                 }
                 ImputeStrategy::MostFrequent => {
                     if col.is_empty() {
                         return Err(DatarustError::AllMissing(format!("column {}", j)));
                     }
                     let mut c = col.clone();
-                    c.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    c.sort_by(|a, b| a.total_cmp(b));
                     let single: Vec<Vec<f64>> = c.into_iter().map(|v| vec![v]).collect();
                     stats::mode_column(&single)[0]
                 }

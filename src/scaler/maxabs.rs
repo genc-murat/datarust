@@ -27,6 +27,7 @@ pub struct MaxAbsScaler {
 }
 
 impl MaxAbsScaler {
+    /// Creates a new scaler with default settings.
     pub fn new() -> Self {
         Self {
             max_abs: vec![],

@@ -10,6 +10,7 @@ use datarust::scaler::{
     StandardScaler,
 };
 use datarust::serialize::{from_json, load_json, save_json, to_json};
+use datarust::CategoricalTransformerKind;
 use datarust::Transformer;
 
 fn approx(a: f64, b: f64, tol: f64) -> bool {
@@ -249,7 +250,11 @@ fn column_transformer_round_trip() {
             vec![0, 1],
             TransformerKind::StandardScaler(StandardScaler::new()),
         )
-        .add_categorical("city", vec![0], OneHotEncoder::new())
+        .add_categorical(
+            "city",
+            vec![0],
+            CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new()),
+        )
         .remainder(Remainder::Passthrough);
     let original = ct.fit_transform(&table).unwrap();
 

@@ -2,12 +2,26 @@ use std::collections::HashMap;
 
 use crate::error::{DatarustError, Result};
 use crate::matrix::{Matrix, StrMatrix};
+use crate::traits::{default_input_names, CategoricalTransformer, FeatureNames};
+
+/// Strategy for handling unknown categories during transform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum UnknownFrequency {
+    /// Return an error when an unseen category is encountered.
+    Error,
+    /// Map unknown categories to 0.0.
+    #[default]
+    Zero,
+}
 
 /// Replace each category with its frequency (count or normalized proportion),
 /// mirroring a common "frequency / count encoder".
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FrequencyEncoder {
     normalized: bool,
+    handle_unknown: UnknownFrequency,
     /// Per-column mapping: category -> frequency value.
     mappings: Vec<HashMap<String, f64>>,
     fitted: bool,
@@ -19,15 +33,24 @@ impl FrequencyEncoder {
     pub fn new(normalized: bool) -> Self {
         Self {
             normalized,
+            handle_unknown: UnknownFrequency::Zero,
             mappings: vec![],
             fitted: false,
         }
     }
 
+    /// Returns whether frequencies are normalized to proportions.
     pub fn normalized(&self) -> bool {
         self.normalized
     }
 
+    /// Sets the strategy for handling unknown categories during transform.
+    pub fn handle_unknown(mut self, strategy: UnknownFrequency) -> Self {
+        self.handle_unknown = strategy;
+        self
+    }
+
+    /// Learns the per-column frequency of each category.
     pub fn fit(&mut self, x: &StrMatrix) -> Result<()> {
         let ncols = x.ncols();
         let n = x.nrows();
@@ -51,6 +74,7 @@ impl FrequencyEncoder {
         Ok(())
     }
 
+    /// Replaces each category with its learned frequency.
     pub fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("FrequencyEncoder".into()));
@@ -62,21 +86,99 @@ impl FrequencyEncoder {
             });
         }
         let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-        for (i, out_row) in out.iter_mut().enumerate() {
-            for (j, cell) in out_row.iter_mut().enumerate() {
-                let val = x.get(i, j);
-                *cell = match self.mappings[j].get(val) {
-                    Some(&v) => v,
-                    None => 0.0,
-                };
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            let mappings = &self.mappings;
+            let handle_unknown = self.handle_unknown;
+            let x_data = &x.data;
+            out.par_iter_mut()
+                .enumerate()
+                .try_for_each(|(i, out_row)| {
+                    for (j, cell) in out_row.iter_mut().enumerate() {
+                        let val = &x_data[i][j];
+                        *cell = match mappings[j].get(val) {
+                            Some(&v) => v,
+                            None => match handle_unknown {
+                                UnknownFrequency::Zero => 0.0,
+                                UnknownFrequency::Error => {
+                                    return Err(DatarustError::UnknownCategory(format!(
+                                        "column {} value '{}'",
+                                        j, val
+                                    )))
+                                }
+                            },
+                        };
+                    }
+                    Ok(())
+                })?;
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            for (i, out_row) in out.iter_mut().enumerate() {
+                for (j, cell) in out_row.iter_mut().enumerate() {
+                    let val = x.get(i, j);
+                    *cell = match self.mappings[j].get(val) {
+                        Some(&v) => v,
+                        None => match self.handle_unknown {
+                            UnknownFrequency::Zero => 0.0,
+                            UnknownFrequency::Error => {
+                                return Err(DatarustError::UnknownCategory(format!(
+                                    "column {} value '{}'",
+                                    j, val
+                                )))
+                            }
+                        },
+                    };
+                }
             }
         }
+
         Matrix::new(out)
     }
 
+    /// Fits the encoder and transforms the input in one step.
     pub fn fit_transform(&mut self, x: &StrMatrix) -> Result<Matrix> {
         self.fit(x)?;
         self.transform(x)
+    }
+}
+
+impl Default for FrequencyEncoder {
+    fn default() -> Self {
+        Self::new(false)
+    }
+}
+
+impl CategoricalTransformer for FrequencyEncoder {
+    fn name(&self) -> &'static str {
+        "FrequencyEncoder"
+    }
+
+    fn fit(&mut self, x: &StrMatrix) -> Result<()> {
+        self.fit(x)
+    }
+
+    fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
+        self.transform(x)
+    }
+
+    fn is_fitted(&self) -> bool {
+        self.fitted
+    }
+}
+
+impl FeatureNames for FrequencyEncoder {
+    fn feature_names_out(&self, input_features: Option<&[String]>) -> Vec<String> {
+        let n = self.mappings.len();
+        match input_features {
+            Some(fs) => (0..n)
+                .map(|i| fs.get(i).cloned().unwrap_or_else(|| format!("x{}", i)))
+                .collect(),
+            None => default_input_names(n),
+        }
     }
 }
 
@@ -159,5 +261,27 @@ mod tests {
         // counts: A=2 -> two rows of 2 = 4 ; B=1 -> one row of 1 ; C=3 -> three rows of 3 = 9
         // sum = 4 + 1 + 9 = 14
         assert!((s - 14.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn unknown_error_mode() {
+        let x = StrMatrix::from_column(["A", "B"]).unwrap();
+        let mut fe = FrequencyEncoder::new(false).handle_unknown(UnknownFrequency::Error);
+        fe.fit(&x).unwrap();
+        let x2 = StrMatrix::from_column(["A", "Z"]).unwrap();
+        assert!(matches!(
+            fe.transform(&x2),
+            Err(DatarustError::UnknownCategory(_))
+        ));
+    }
+
+    #[test]
+    fn feature_names_short_input_pads_with_synthetic() {
+        let x = StrMatrix::from_strings(vec![vec!["a", "x"], vec!["b", "y"]]).unwrap();
+        let mut fe = FrequencyEncoder::new(false);
+        fe.fit(&x).unwrap();
+        // 2 columns but only 1 name provided
+        let names = fe.feature_names_out(Some(&["city".into()]));
+        assert_eq!(names, vec!["city", "x1"]);
     }
 }

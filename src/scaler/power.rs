@@ -35,6 +35,7 @@ pub struct PowerTransformer {
 }
 
 impl PowerTransformer {
+    /// Creates a new transformer with default settings.
     pub fn new() -> Self {
         Self {
             method: PowerMethod::YeoJohnson,
@@ -47,16 +48,19 @@ impl PowerTransformer {
         }
     }
 
+    /// Builder: set the power transform method.
     pub fn method(mut self, m: PowerMethod) -> Self {
         self.method = m;
         self
     }
 
+    /// Builder: enable or disable post-transform standardization (default true).
     pub fn standardize(mut self, s: bool) -> Self {
         self.standardize = s;
         self
     }
 
+    /// Returns the fitted lambda per column.
     pub fn lambdas(&self) -> &[f64] {
         &self.lambdas
     }
@@ -88,7 +92,6 @@ impl PowerTransformer {
     }
 
     /// Inverse of the power transform for a single value.
-    #[allow(dead_code)]
     fn inverse_one(x: f64, lam: f64, method: PowerMethod) -> f64 {
         match method {
             PowerMethod::BoxCox => {
@@ -251,6 +254,31 @@ impl Transformer for PowerTransformer {
         Matrix::new(out)
     }
 
+    fn inverse_transform(&self, x: &Matrix) -> Result<Matrix> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("PowerTransformer".into()));
+        }
+        if x.ncols() != self.n_features {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} features", self.n_features),
+                actual: format!("{} features", x.ncols()),
+            });
+        }
+        let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
+        for (i, out_row) in out.iter_mut().enumerate() {
+            for (j, cell) in out_row.iter_mut().enumerate() {
+                // Undo optional standardization, then undo the power transform.
+                let val = if self.standardize {
+                    x.get(i, j) * self.stds[j] + self.means[j]
+                } else {
+                    x.get(i, j)
+                };
+                *cell = Self::inverse_one(val, self.lambdas[j], self.method);
+            }
+        }
+        Matrix::new(out)
+    }
+
     fn is_fitted(&self) -> bool {
         self.fitted
     }
@@ -264,8 +292,6 @@ impl FeatureNames for PowerTransformer {
         }
     }
 }
-
-// Silence unused import warning.
 
 #[cfg(test)]
 mod tests {
@@ -341,6 +367,50 @@ mod tests {
         assert!(approx(mean, 0.0, 1e-6));
         let variance: f64 = (0..5).map(|i| (out.get(i, 0) - mean).powi(2)).sum::<f64>() / 5.0;
         assert!(approx(variance, 1.0, 1e-4));
+    }
+
+    #[test]
+    fn inverse_transform_yeo_johnson() {
+        let x = Matrix::new(vec![
+            vec![1.0, 4.0],
+            vec![2.0, 8.0],
+            vec![3.0, 15.0],
+            vec![10.0, 30.0],
+            vec![50.0, 90.0],
+        ])
+        .unwrap();
+        let mut pt = PowerTransformer::new();
+        let transformed = pt.fit_transform(&x).unwrap();
+        let restored = pt.inverse_transform(&transformed).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!(
+                    approx(x.get(i, j), restored.get(i, j), 1e-4),
+                    "mismatch at ({},{}): {} vs {}",
+                    i,
+                    j,
+                    x.get(i, j),
+                    restored.get(i, j)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_transform_box_cox() {
+        let x = Matrix::new(vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0], vec![5.0]]).unwrap();
+        let mut pt = PowerTransformer::new().method(PowerMethod::BoxCox);
+        let transformed = pt.fit_transform(&x).unwrap();
+        let restored = pt.inverse_transform(&transformed).unwrap();
+        for i in 0..x.nrows() {
+            assert!(
+                approx(x.get(i, 0), restored.get(i, 0), 1e-4),
+                "mismatch at row {}: {} vs {}",
+                i,
+                x.get(i, 0),
+                restored.get(i, 0)
+            );
+        }
     }
 
     #[test]

@@ -25,6 +25,7 @@ pub struct FunctionTransformer {
 }
 
 impl FunctionTransformer {
+    /// Creates a new transformer applying `func` during transform.
     pub fn new(func: fn(&Matrix) -> Result<Matrix>) -> Self {
         Self {
             func: Some(func),
@@ -34,15 +35,18 @@ impl FunctionTransformer {
         }
     }
 
+    /// Sets the inverse function used by `inverse_transform`.
     pub fn with_inverse(mut self, inv_func: fn(&Matrix) -> Result<Matrix>) -> Self {
         self.inv_func = Some(inv_func);
         self
     }
 
+    /// Replaces the forward function (e.g. after deserialization).
     pub fn set_func(&mut self, func: fn(&Matrix) -> Result<Matrix>) {
         self.func = Some(func);
     }
 
+    /// Replaces the inverse function (e.g. after deserialization).
     pub fn set_inv_func(&mut self, inv_func: fn(&Matrix) -> Result<Matrix>) {
         self.inv_func = Some(inv_func);
     }

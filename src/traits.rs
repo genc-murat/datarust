@@ -1,5 +1,7 @@
+//! Core traits shared by the numeric and categorical transformers.
+
 use crate::error::{DatarustError, Result};
-use crate::matrix::Matrix;
+use crate::matrix::{Matrix, StrMatrix};
 
 /// Trait for numeric transformers operating on `Matrix -> Matrix`.
 ///
@@ -65,10 +67,105 @@ pub trait Transformer {
 /// `input_features` are the names of the columns fed to `fit`. When `None`,
 /// implementations generate synthetic names (e.g. `x0`, `x1`).
 pub trait FeatureNames {
+    /// Returns the output feature names given the optional input feature names.
     fn feature_names_out(&self, input_features: Option<&[String]>) -> Vec<String>;
 }
 
 /// Helper: generate default input names `x0..x{n-1}`.
 pub fn default_input_names(n: usize) -> Vec<String> {
     (0..n).map(|i| format!("x{}", i)).collect()
+}
+
+/// Trait for categorical (string) transformers operating on `StrMatrix -> Matrix`.
+///
+/// All categorical encoders that accept a [`StrMatrix`](crate::StrMatrix) and
+/// produce a [`Matrix`] implement this trait.
+pub trait CategoricalTransformer {
+    /// Human-readable name of the transformer.
+    fn name(&self) -> &'static str;
+
+    /// Fit the transformer on categorical training data.
+    fn fit(&mut self, x: &StrMatrix) -> Result<()>;
+
+    /// Transform categorical data using fitted parameters, returning a numeric
+    /// [`Matrix`].
+    fn transform(&self, x: &StrMatrix) -> Result<Matrix>;
+
+    /// Convenience: fit then transform.
+    fn fit_transform(&mut self, x: &StrMatrix) -> Result<Matrix> {
+        self.fit(x)?;
+        self.transform(x)
+    }
+
+    /// Reverse the transformation, recovering category strings from numeric
+    /// codes.  Not all encoders support this; the default implementation
+    /// returns an error.
+    fn inverse_transform(&self, _y: &Matrix) -> Result<StrMatrix> {
+        Err(DatarustError::InvalidInput(format!(
+            "{} does not support inverse_transform",
+            self.name()
+        )))
+    }
+
+    /// Whether the transformer has been fitted.
+    fn is_fitted(&self) -> bool;
+}
+
+/// Trait for supervised encoders that require target values during `fit`.
+///
+/// Input is a [`StrMatrix`] of categorical features and a slice of target
+/// values `&[f64]`.  Output is a numeric [`Matrix`].
+pub trait TargetTransformer {
+    /// Human-readable name of the transformer.
+    fn name(&self) -> &'static str;
+
+    /// Fit the transformer on categorical features and target values.
+    fn fit(&mut self, x: &StrMatrix, y: &[f64]) -> Result<()>;
+
+    /// Transform categorical data using fitted parameters.
+    fn transform(&self, x: &StrMatrix) -> Result<Matrix>;
+
+    /// Convenience: fit then transform.
+    fn fit_transform(&mut self, x: &StrMatrix, y: &[f64]) -> Result<Matrix> {
+        self.fit(x, y)?;
+        self.transform(x)
+    }
+
+    /// Reverse the transformation.  Not all supervised encoders support this;
+    /// the default implementation returns an error.
+    fn inverse_transform(&self, _y: &Matrix) -> Result<StrMatrix> {
+        Err(DatarustError::InvalidInput(format!(
+            "{} does not support inverse_transform",
+            self.name()
+        )))
+    }
+
+    /// Whether the transformer has been fitted.
+    fn is_fitted(&self) -> bool;
+}
+
+/// Trait for 1-D label encoders that map `&[String]` to `Vec<usize>`.
+///
+/// Used to encode target labels for supervised learning.
+pub trait LabelTransformer {
+    /// Human-readable name of the transformer.
+    fn name(&self) -> &'static str;
+
+    /// Fit on label data, learning the unique sorted classes.
+    fn fit(&mut self, x: &[String]) -> Result<()>;
+
+    /// Transform labels to integer indices.
+    fn transform(&self, x: &[String]) -> Result<Vec<usize>>;
+
+    /// Reverses the transformation: indices back to strings.
+    fn inverse_transform(&self, x: &[usize]) -> Result<Vec<String>>;
+
+    /// Convenience: fit then transform.
+    fn fit_transform(&mut self, x: &[String]) -> Result<Vec<usize>> {
+        self.fit(x)?;
+        self.transform(x)
+    }
+
+    /// Whether the transformer has been fitted.
+    fn is_fitted(&self) -> bool;
 }

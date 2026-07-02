@@ -54,7 +54,7 @@ fn bench_standard_scaler(c: &mut Criterion) {
             &x,
             |bencher, x| {
                 bencher.iter_batched(
-                    || StandardScaler::new(),
+                    StandardScaler::new,
                     |mut s| s.fit_transform(x),
                     BatchSize::SmallInput,
                 )
@@ -73,7 +73,7 @@ fn bench_minmax_scaler(c: &mut Criterion) {
             &x,
             |bencher, x| {
                 bencher.iter_batched(
-                    || MinMaxScaler::new(),
+                    MinMaxScaler::new,
                     |mut s| s.fit_transform(x),
                     BatchSize::SmallInput,
                 )
@@ -133,7 +133,7 @@ fn bench_robust_scaler(c: &mut Criterion) {
             &x,
             |bencher, x| {
                 bencher.iter_batched(
-                    || RobustScaler::new(),
+                    RobustScaler::new,
                     |mut s| s.fit_transform(x),
                     BatchSize::SmallInput,
                 )

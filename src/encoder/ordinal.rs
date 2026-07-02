@@ -2,13 +2,14 @@ use std::collections::HashMap;
 
 use crate::error::{DatarustError, Result};
 use crate::matrix::{Matrix, StrMatrix};
-use crate::traits::{default_input_names, FeatureNames};
+use crate::traits::{default_input_names, CategoricalTransformer, FeatureNames};
 
 /// How to determine categories for ordinal encoding.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OrdinalCategories {
     /// Infer categories from the training data (sorted lexicographically per column).
+    #[default]
     Auto,
     /// Provide explicit category order per column. If used, every column's categories
     /// must be specified; each list determines the ordinal mapping.
@@ -34,6 +35,7 @@ pub enum OrdinalHandleUnknown {
 ///
 /// Categories per column are sorted lexicographically by default (sklearn
 /// default), or can be user-specified via [`OrdinalCategories::Manual`].
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OrdinalEncoder {
     categories: OrdinalCategories,
@@ -44,6 +46,7 @@ pub struct OrdinalEncoder {
 }
 
 impl OrdinalEncoder {
+    /// Creates a new ordinal encoder with the given category config.
     pub fn new(categories: OrdinalCategories) -> Self {
         Self {
             categories,
@@ -54,15 +57,18 @@ impl OrdinalEncoder {
         }
     }
 
+    /// Sets how unknown categories are handled during transform.
     pub fn handle_unknown(mut self, h: OrdinalHandleUnknown) -> Self {
         self.handle_unknown = h;
         self
     }
 
+    /// Returns the learned categories per column.
     pub fn categories(&self) -> &[Vec<String>] {
         &self.category_lists
     }
 
+    /// Learns the category-to-index mapping per column.
     pub fn fit(&mut self, x: &StrMatrix) -> Result<()> {
         let ncols = x.ncols();
         match &self.categories {
@@ -119,6 +125,7 @@ impl OrdinalEncoder {
     }
 
     #[allow(clippy::needless_range_loop)]
+    /// Encodes the input as ordinal integer codes.
     pub fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("OrdinalEncoder".into()));
@@ -130,32 +137,64 @@ impl OrdinalEncoder {
             });
         }
         let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-        for i in 0..x.nrows() {
-            for j in 0..x.ncols() {
-                let val = x.get(i, j);
-                out[i][j] = match self.category_indices[j].get(val) {
-                    Some(&idx) => idx as f64,
-                    None => match self.handle_unknown {
-                        OrdinalHandleUnknown::Error => {
-                            return Err(DatarustError::UnknownCategory(format!(
-                                "column {} value '{}'",
-                                j, val
-                            )))
-                        }
-                        OrdinalHandleUnknown::UseNegOne => -1.0,
-                    },
-                };
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            let category_indices = &self.category_indices;
+            let handle_unknown = self.handle_unknown;
+            let x_data = &x.data;
+            out.par_iter_mut().enumerate().try_for_each(|(i, row)| {
+                for (j, indices) in category_indices.iter().enumerate() {
+                    row[j] = match indices.get(&x_data[i][j]) {
+                        Some(&idx) => idx as f64,
+                        None => match handle_unknown {
+                            OrdinalHandleUnknown::Error => {
+                                return Err(DatarustError::UnknownCategory(format!(
+                                    "column {} value '{}'",
+                                    j, &x_data[i][j]
+                                )))
+                            }
+                            OrdinalHandleUnknown::UseNegOne => -1.0,
+                        },
+                    };
+                }
+                Ok(())
+            })?;
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            for i in 0..x.nrows() {
+                for j in 0..x.ncols() {
+                    let val = x.get(i, j);
+                    out[i][j] = match self.category_indices[j].get(val) {
+                        Some(&idx) => idx as f64,
+                        None => match self.handle_unknown {
+                            OrdinalHandleUnknown::Error => {
+                                return Err(DatarustError::UnknownCategory(format!(
+                                    "column {} value '{}'",
+                                    j, val
+                                )))
+                            }
+                            OrdinalHandleUnknown::UseNegOne => -1.0,
+                        },
+                    };
+                }
             }
         }
+
         Matrix::new(out)
     }
 
+    /// Fits the encoder and transforms the input in one step.
     pub fn fit_transform(&mut self, x: &StrMatrix) -> Result<Matrix> {
         self.fit(x)?;
         self.transform(x)
     }
 
     #[allow(clippy::needless_range_loop)]
+    /// Decodes ordinal integer codes back to category strings.
     pub fn inverse_transform(&self, y: &Matrix) -> Result<StrMatrix> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("OrdinalEncoder".into()));
@@ -171,13 +210,17 @@ impl OrdinalEncoder {
             let mut row = Vec::with_capacity(y.ncols());
             for j in 0..y.ncols() {
                 let idx = y.get(i, j) as isize;
-                if idx < 0 || idx as usize >= self.category_lists[j].len() {
+                if idx == -1 {
+                    // Sentinel for unknown categories (UseNegOne)
+                    row.push(String::new());
+                } else if idx < 0 || idx as usize >= self.category_lists[j].len() {
                     return Err(DatarustError::UnknownLabel(format!(
                         "index {} out of range for column {}",
                         idx, j
                     )));
+                } else {
+                    row.push(self.category_lists[j][idx as usize].clone());
                 }
-                row.push(self.category_lists[j][idx as usize].clone());
             }
             out.push(row);
         }
@@ -185,14 +228,43 @@ impl OrdinalEncoder {
     }
 }
 
+impl CategoricalTransformer for OrdinalEncoder {
+    fn name(&self) -> &'static str {
+        "OrdinalEncoder"
+    }
+
+    fn fit(&mut self, x: &StrMatrix) -> Result<()> {
+        self.fit(x)
+    }
+
+    fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
+        self.transform(x)
+    }
+
+    fn inverse_transform(&self, y: &Matrix) -> Result<StrMatrix> {
+        self.inverse_transform(y)
+    }
+
+    fn is_fitted(&self) -> bool {
+        self.fitted
+    }
+}
+
+impl Default for OrdinalEncoder {
+    fn default() -> Self {
+        Self::new(OrdinalCategories::default())
+    }
+}
+
 impl FeatureNames for OrdinalEncoder {
     fn feature_names_out(&self, input_features: Option<&[String]>) -> Vec<String> {
+        let n = self.category_lists.len();
         let names: Vec<String> = match input_features {
-            Some(fs) => fs.to_vec(),
-            None => default_input_names(self.category_lists.len()),
+            Some(fs) => (0..n)
+                .map(|i| fs.get(i).cloned().unwrap_or_else(|| format!("x{}", i)))
+                .collect(),
+            None => default_input_names(n),
         };
-        // OrdinalEncoder: 1 output column per input column (passthrough names).
-        // If we wanted sklearn compatibility (`x0` naming), we'd do this.
         names
     }
 }
@@ -337,5 +409,31 @@ mod tests {
             let json = crate::serialize::to_json(&enc).unwrap();
             let _restored: OrdinalEncoder = crate::serialize::from_json(&json).unwrap();
         }
+    }
+
+    #[test]
+    fn inverse_transform_sentinel_decodes_to_empty() {
+        let s = StrMatrix::from_column(["cat", "dog"]).unwrap();
+        let mut enc = OrdinalEncoder::new(OrdinalCategories::Auto)
+            .handle_unknown(OrdinalHandleUnknown::UseNegOne);
+        enc.fit(&s).unwrap();
+        // unknown value 'fox' encodes to -1.0
+        let x = StrMatrix::from_column(["cat", "fox"]).unwrap();
+        let coded = enc.transform(&x).unwrap();
+        assert_eq!(coded.get(1, 0), -1.0);
+        let decoded = enc.inverse_transform(&coded).unwrap();
+        assert_eq!(decoded.get(0, 0), "cat");
+        assert_eq!(decoded.get(1, 0), "");
+    }
+
+    #[test]
+    fn feature_names_short_input_pads_with_synthetic() {
+        let s =
+            StrMatrix::from_strings(vec![vec!["a", "x"], vec!["b", "y"], vec!["c", "z"]]).unwrap();
+        let mut enc = OrdinalEncoder::new(OrdinalCategories::Auto);
+        enc.fit(&s).unwrap();
+        // 2 columns but only 1 name provided
+        let names = enc.feature_names_out(Some(&["city".into()]));
+        assert_eq!(names, vec!["city", "x1"]);
     }
 }

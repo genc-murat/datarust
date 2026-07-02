@@ -101,6 +101,55 @@ pub trait Transformer {
 }
 ```
 
+### CategoricalTransformer Trait
+
+Categorical encoders (OneHot, Ordinal, Frequency) implement the [`CategoricalTransformer`](https://docs.rs/datarust/latest/datarust/trait.CategoricalTransformer.html) trait (`StrMatrix → Matrix`):
+
+```rust
+pub trait CategoricalTransformer {
+    fn name(&self) -> &'static str;
+    fn fit(&mut self, x: &StrMatrix) -> Result<()>;
+    fn transform(&self, x: &StrMatrix) -> Result<Matrix>;
+    fn fit_transform(&mut self, x: &StrMatrix) -> Result<Matrix> { ... }
+    fn inverse_transform(&self, _y: &Matrix) -> Result<StrMatrix> { ... }
+    fn is_fitted(&self) -> bool;
+}
+```
+
+OneHotEncoder and OrdinalEncoder provide real `inverse_transform`; FrequencyEncoder returns an error (non-injective).
+
+### TargetTransformer Trait
+
+The [`TargetTransformer`](https://docs.rs/datarust/latest/datarust/trait.TargetTransformer.html) trait extends categorical encoding to supervised transformers that require target values during `fit`:
+
+```rust
+pub trait TargetTransformer {
+    fn name(&self) -> &'static str;
+    fn fit(&mut self, x: &StrMatrix, y: &[f64]) -> Result<()>;
+    fn transform(&self, x: &StrMatrix) -> Result<Matrix>;
+    fn fit_transform(&mut self, x: &StrMatrix, y: &[f64]) -> Result<Matrix> { ... }
+    fn inverse_transform(&self, _y: &Matrix) -> Result<StrMatrix> { ... }
+    fn is_fitted(&self) -> bool;
+}
+```
+
+All target transformers (currently only `TargetEncoder`) support `fit_transform` with target values and a default `inverse_transform` that returns an error.
+
+### LabelTransformer Trait
+
+The [`LabelTransformer`](https://docs.rs/datarust/latest/datarust/trait.LabelTransformer.html) trait maps 1-D string labels to integer indices (`&[String] → &[usize]`), used by `LabelEncoder`:
+
+```rust
+pub trait LabelTransformer {
+    fn name(&self) -> &'static str;
+    fn fit(&mut self, x: &[String]) -> Result<()>;
+    fn transform(&self, x: &[String]) -> Result<Vec<usize>>;
+    fn inverse_transform(&self, x: &[usize]) -> Result<Vec<String>>;
+    fn fit_transform(&mut self, x: &[String]) -> Result<Vec<usize>> { ... }
+    fn is_fitted(&self) -> bool;
+}
+```
+
 ### Errors
 
 Operations return `Result<T, DatarustError>` with variants for `NotFitted`, `InvalidInput`, `ShapeMismatch`, `EmptyInput`, `AllMissing`, `UnknownCategory`, `UnknownLabel`, `InvalidConfig`, and `Singular`.
@@ -260,32 +309,45 @@ let mut ohe = OneHotEncoder::new()
     .handle_unknown(HandleUnknown::Ignore);
 let dense = ohe.fit_transform(&s)?;  // Matrix
 let sparse = ohe.fit_transform_sparse(&s)?;  // SparseMatrix (CSR)
+
+// Inverse transform reconstructs categories from one-hot codes
+let decoded = ohe.inverse_transform(&dense)?;
+assert_eq!(decoded.get(0, 0), "Red");
+
+// Sparse inverse via conversion
+let decoded_sparse = ohe.inverse_transform_sparse(&sparse)?;
 ```
 
-The CSR [`SparseMatrix`](#sparsematrix-csr) output stores only the `1.0` positions, saving significant memory for high-cardinality columns.
+The CSR [`SparseMatrix`](#sparsematrix-csr) output stores only the `1.0` positions, saving significant memory for high-cardinality columns. `transform_sparse` and `inverse_transform` are both parallelized under the `rayon` feature.
 
 #### OrdinalEncoder
 
 Encode categorical features as integer codes with optional user-defined ordering.
 
 ```rust
-use datarust::encoder::{OrdinalEncoder, OrdinalCategories};
+use datarust::encoder::{OrdinalEncoder, OrdinalCategories, OrdinalHandleUnknown};
 
 // Auto: sorted lexicographically
-let mut enc = OrdinalEncoder::new();
+let mut enc = OrdinalEncoder::new(OrdinalCategories::Auto);
 let out = enc.fit_transform(&s)?;
 
-// Manual: custom order
-let mut enc = OrdinalEncoder::new()
-    .categories(OrdinalCategories::Manual(vec![
-        vec!["small", "medium", "large"],
-    ]));
+// Manual: custom order (categories per column)
+let mut enc = OrdinalEncoder::new(OrdinalCategories::Manual(vec![
+    vec!["small".into(), "medium".into(), "large".into()],
+]));
 let out = enc.fit_transform(&s)?;
+
+// Handle unknown categories with -1.0 sentinel
+let mut enc = OrdinalEncoder::new(OrdinalCategories::Auto)
+    .handle_unknown(OrdinalHandleUnknown::UseNegOne);
+enc.fit(&s)?;
+let out = enc.transform(&unknown_data)?;
+// Unknown category → -1.0; inverse_transform → empty string ""
 ```
 
 #### TargetEncoder
 
-Replace categories with the smoothed mean of the target variable.
+Replace categories with the smoothed mean of the target variable. Implements [`TargetTransformer`](#targettransformer-trait) (requires `y` during `fit`).
 
 ```rust
 use datarust::encoder::TargetEncoder;
@@ -295,14 +357,22 @@ te.fit(&categorical, &target)?;
 let out = te.transform(&categorical)?;
 ```
 
+Controlled via [`UnknownTarget`](https://docs.rs/datarust/latest/datarust/encoder/enum.UnknownTarget.html): `GlobalMean` (default), `NaN`, or `Error` for unseen categories.
+
 #### FrequencyEncoder
 
-Replace categories with their frequency (count or proportion).
+Replace categories with their frequency (count or proportion). Implements [`CategoricalTransformer`](#categoricaltransformer-trait) with configurable unknown handling.
 
 ```rust
-use datarust::encoder::FrequencyEncoder;
+use datarust::encoder::{FrequencyEncoder, UnknownFrequency};
 
-let mut fe = FrequencyEncoder::new(true); // normalized = proportion
+// Raw counts
+let mut fe = FrequencyEncoder::new(false);
+let out = fe.fit_transform(&s)?;
+
+// Normalized proportions with error on unknown categories
+let mut fe = FrequencyEncoder::new(true)
+    .handle_unknown(UnknownFrequency::Error);
 let out = fe.fit_transform(&s)?;
 ```
 
@@ -427,10 +497,10 @@ All 17 transformer types are available as `TransformerKind` variants, enabling t
 
 ### ColumnTransformer
 
-Apply different transformers to different columns of a mixed numeric/categorical dataset.
+Apply different transformers to different columns of a mixed numeric/categorical dataset. Returns a combined numeric matrix or an [`Output`](#output) preserving the numeric/categorical split.
 
 ```rust
-use datarust::compose::{ColumnTransformer, Remainder, Table};
+use datarust::compose::{ColumnTransformer, Remainder, Table, Output};
 use datarust::encoder::OneHotEncoder;
 use datarust::scaler::StandardScaler;
 use datarust::transformer_kind::TransformerKind;
@@ -442,6 +512,28 @@ let mut ct = ColumnTransformer::new()
     .add_numeric("scale", vec![0, 1], TransformerKind::StandardScaler(StandardScaler::new()))
     .add_categorical("city", vec![0], OneHotEncoder::new());
 let out = ct.fit_transform(&table)?;
+
+// Preserve the numeric/categorical split
+let output: Output = ct.fit_transform_to_table(&table)?;
+// output.numeric → Matrix, output.categorical → StrMatrix
+
+// Target specs require fit_with_target
+let mut ct = ColumnTransformer::new()
+    .add_target("te", vec![0], TargetEncoder::new(5.0)?);
+ct.fit_with_target(&table, &y)?;  // fit() would error — use fit_with_target()
+
+// Feature names compose from all sub-transformers
+let names = ct.feature_names_out(Some(&["age", "salary", "city"]));
+assert_eq!(names, vec!["age", "salary", "city_Istanbul", "city_Ankara", "city_Izmir"]);
+```
+
+### Output
+
+The [`Output`](https://docs.rs/datarust/latest/datarust/compose/struct.Output.html) struct returned by `transform_to_table` preserves numeric and categorical columns in separate matrices. Validates row-count consistency at construction:
+
+```rust
+let output = Output::new(numeric_matrix, categorical_matrix)?;
+assert_eq!(output.numeric.nrows(), output.categorical.nrows());
 ```
 
 ### Feature Names
@@ -468,26 +560,39 @@ Pipeline chains names through all steps; OneHotEncoder appends `_category` suffi
 
 ### Inverse Transform
 
-Several transformers support reversing the transformation via `inverse_transform` on the [`Transformer`](https://docs.rs/datarust/latest/datarust/trait.Transformer.html) trait, returning an approximation of the original input:
+Several transformers support reversing the transformation via `inverse_transform`, returning an approximation of the original input:
 
-| Transformer | Notes |
-|---|---|
-| StandardScaler | `x = z * std + mean` |
-| MinMaxScaler | `x = z * (max - min) + min` |
-| RobustScaler | `x = z * iqr + median` |
-| MaxAbsScaler | `x = z * max_abs` |
-| PCA | via `components_` matrix multiply |
-| TruncatedSVD | via `components_` matrix multiply |
-| OneHotEncoder | `Matrix` → `StrMatrix` (dense + sparse) |
+| Transformer | Trait | Notes |
+|---|---|---|
+| StandardScaler | [`Transformer`](https://docs.rs/datarust/latest/datarust/trait.Transformer.html) | `x = z * std + mean` |
+| MinMaxScaler | `Transformer` | `x = z * (max - min) + min` |
+| RobustScaler | `Transformer` | `x = z * iqr + median` |
+| MaxAbsScaler | `Transformer` | `x = z * max_abs` |
+| PowerTransformer | `Transformer` | `x = inverse_power(z)`, un-standardizes first |
+| PCA | `Transformer` | via `components_` matrix multiply |
+| TruncatedSVD | `Transformer` | via `components_` matrix multiply |
+| OneHotEncoder | [`CategoricalTransformer`](#categoricaltransformer-trait) | `Matrix` → `StrMatrix` (dense + sparse via `inverse_transform_sparse`) |
+| OrdinalEncoder | `CategoricalTransformer` | `-1.0` sentinel → empty string |
+| LabelEncoder | [`LabelTransformer`](#labeltransformer-trait) | `usize::MAX` sentinel → empty string |
 
 ```rust
 let mut s = StandardScaler::new();
 let transformed = s.fit_transform(&x)?;
 let reconstructed = s.inverse_transform(&transformed)?;
 // reconstructed ≈ x (within floating-point precision)
+
+// Categorical inverse_transform via trait
+let mut ohe = OneHotEncoder::new();
+let encoded = ohe.fit_transform(&cats)?;
+let decoded: StrMatrix = ohe.inverse_transform(&encoded)?;
+
+// Label inverse via LabelTransformer
+let mut le = LabelEncoder::new();
+let indices = le.fit_transform(&labels)?;
+let back: Vec<String> = le.inverse_transform(&indices)?;
 ```
 
-Transformers that do not support inverse (e.g. Binarizer, Normalizer) return an error.
+Transformers that do not support inverse return an error (e.g. Binarizer, Normalizer, FrequencyEncoder, TargetEncoder).
 
 ### FunctionTransformer
 
@@ -612,6 +717,7 @@ When enabled, the following use parallel iterators:
 
 - **Statistics:** `column_mean`, `column_variance`, `column_min`, `column_max`, `column_median`, `column_mode`, `column_quantile`
 - **Scalers:** StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, Normalizer
+- **Encoders:** OneHotEncoder (dense + sparse transform, inverse_transform), OrdinalEncoder (transform), FrequencyEncoder (transform), TargetEncoder (transform)
 - **Imputation:** KNN Imputer distance computation
 
 ## Feature Comparison: datarust vs sklearn
@@ -630,8 +736,8 @@ When enabled, the following use parallel iterators:
 | LabelEncoder | ✓ (handle_unknown: Error/Ignore) | ✓ |
 | OrdinalEncoder | ✓ (auto + manual) | ✓ |
 | OneHotEncoder | ✓ (drop, handle_unknown, sparse CSR) | ✓ |
-| TargetEncoder | ✓ (smoothed mean) | ✓ |
-| FrequencyEncoder | ✓ (count/proportion) | — |
+| TargetEncoder | ✓ (smoothed mean, UnknownTarget: GlobalMean/NaN/Error) | ✓ |
+| FrequencyEncoder | ✓ (count/proportion, UnknownFrequency: Zero/Error) | — |
 | SimpleImputer | ✓ (mean/median/most_frequent/constant) | ✓ |
 | KNN Imputer | ✓ (uniform/distance) | ✓ |
 | PolynomialFeatures | ✓ (degree, interaction_only, bias) | ✓ |
@@ -640,10 +746,10 @@ When enabled, the following use parallel iterators:
 | PCA | ✓ (Jacobi EV, count/variance/all, whiten) | ✓ |
 | TruncatedSVD | ✓ (SVDComponents: Count/Variance/All) | ✓ |
 | Pipeline | ✓ (TransformerKind, serde) | ✓ |
-| ColumnTransformer | ✓ (numeric + onehot, remainder passthrough) | ✓ |
+| ColumnTransformer | ✓ (Numeric + Categorical + Target specs, Output table, duplicate detection, remainder passthrough) | ✓ |
 | FunctionTransformer | ✓ (optional inverse, closure-based) | ✓ |
-| FeatureNames | ✓ (trait, all transformers) | ✓ |
-| inverse_transform | ✓ (scalers, PCA, SVD, OneHotEncoder) | ✓ |
+| FeatureNames | ✓ (trait, all transformers, short-input padding) | ✓ |
+| inverse_transform | ✓ (scalers, PowerTransformer, PCA, SVD, OneHotEncoder, OrdinalEncoder, LabelEncoder) | ✓ |
 | Pipeline Ergonomics | ✓ (get_step, step, set_step, insert, remove) | — |
 | Matrix Slicing | ✓ (select_columns, select_rows) | — |
 | Covariance / Correlation | ✓ (ddof-configurable) | — |

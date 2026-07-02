@@ -17,6 +17,7 @@ pub struct Binarizer {
 }
 
 impl Binarizer {
+    /// Creates a new binarizer with a default threshold of 0.0.
     pub fn new() -> Self {
         Self {
             threshold: 0.0,
@@ -31,6 +32,7 @@ impl Binarizer {
         self
     }
 
+    /// Returns the configured decision threshold.
     pub fn threshold_value(&self) -> f64 {
         self.threshold
     }

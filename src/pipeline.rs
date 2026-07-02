@@ -25,31 +25,38 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
+    /// Creates a new empty pipeline.
     pub fn new() -> Self {
         Self { steps: vec![] }
     }
 
+    /// Appends a named transformer step to the end of the pipeline.
     pub fn push<S: Into<String>>(mut self, name: S, t: TransformerKind) -> Self {
         self.steps.push((name.into(), t));
         self
     }
 
+    /// Returns the number of steps in the pipeline.
     pub fn len(&self) -> usize {
         self.steps.len()
     }
 
+    /// Returns whether the pipeline contains no steps.
     pub fn is_empty(&self) -> bool {
         self.steps.is_empty()
     }
 
+    /// Returns the names of the steps in order.
     pub fn names(&self) -> Vec<&str> {
         self.steps.iter().map(|(n, _)| n.as_str()).collect()
     }
 
+    /// Returns the ordered list of (name, transformer) steps.
     pub fn steps(&self) -> &[(String, TransformerKind)] {
         &self.steps
     }
 
+    /// Returns mutable access to the ordered list of steps.
     pub fn steps_mut(&mut self) -> &mut Vec<(String, TransformerKind)> {
         &mut self.steps
     }

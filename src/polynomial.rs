@@ -20,6 +20,7 @@ pub struct PolynomialFeatures {
 }
 
 impl PolynomialFeatures {
+    /// Creates a new generator for polynomial features of the given `degree`.
     pub fn new(degree: usize) -> Self {
         Self {
             degree,
@@ -31,20 +32,24 @@ impl PolynomialFeatures {
         }
     }
 
+    /// Sets whether to include a bias (constant 1) column.
     pub fn include_bias(mut self, b: bool) -> Self {
         self.include_bias = b;
         self
     }
 
+    /// Sets whether to produce only interaction features (no repeated powers).
     pub fn interaction_only(mut self, b: bool) -> Self {
         self.interaction_only = b;
         self
     }
 
+    /// Returns the number of output features determined during fit.
     pub fn n_output_features(&self) -> usize {
         self.combinations.len()
     }
 
+    /// Returns the configured polynomial degree.
     pub fn degree(&self) -> usize {
         self.degree
     }

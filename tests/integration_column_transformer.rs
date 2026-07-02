@@ -5,6 +5,7 @@ use datarust::encoder::{DropStrategy, HandleUnknown, OneHotEncoder};
 use datarust::imputer::{ImputeStrategy, SimpleImputer};
 use datarust::scaler::{MinMaxScaler, StandardScaler};
 use datarust::transformer_kind::TransformerKind;
+use datarust::CategoricalTransformerKind;
 use datarust::{Matrix, StrMatrix};
 
 #[test]
@@ -31,7 +32,11 @@ fn mixed_numeric_categorical_workflow() {
             vec![0, 1],
             TransformerKind::SimpleImputer(SimpleImputer::new(ImputeStrategy::Mean)),
         )
-        .add_categorical("city", vec![0], OneHotEncoder::new());
+        .add_categorical(
+            "city",
+            vec![0],
+            CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new()),
+        );
 
     let out = ct.fit_transform(&table).unwrap();
     assert_eq!(out.ncols(), 5);
@@ -59,7 +64,9 @@ fn column_transformer_with_drop_first_and_passthrough() {
         .add_categorical(
             "cat",
             vec![0],
-            OneHotEncoder::new().drop(DropStrategy::First),
+            CategoricalTransformerKind::OneHotEncoder(
+                OneHotEncoder::new().drop(DropStrategy::First),
+            ),
         )
         .add_numeric(
             "num",
@@ -82,7 +89,9 @@ fn train_then_inference_with_new_categories() {
         .add_categorical(
             "cat",
             vec![0],
-            OneHotEncoder::new().handle_unknown(HandleUnknown::Ignore),
+            CategoricalTransformerKind::OneHotEncoder(
+                OneHotEncoder::new().handle_unknown(HandleUnknown::Ignore),
+            ),
         )
         .add_numeric(
             "num",
@@ -111,7 +120,11 @@ fn column_transformer_unknown_category_errors_by_default() {
     let train = Table::new(numeric, categorical).unwrap();
 
     let mut ct = ColumnTransformer::new()
-        .add_categorical("cat", vec![0], OneHotEncoder::new())
+        .add_categorical(
+            "cat",
+            vec![0],
+            CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new()),
+        )
         .add_numeric(
             "num",
             vec![0],

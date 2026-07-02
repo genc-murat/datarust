@@ -38,6 +38,7 @@ pub struct PCA {
 }
 
 impl PCA {
+    /// Creates a new PCA with the given component selection.
     pub fn new(n_components: PCAComponents) -> Self {
         Self {
             n_components,
@@ -53,19 +54,23 @@ impl PCA {
         }
     }
 
+    /// Sets whether to whiten the projected components.
     pub fn whiten(mut self, b: bool) -> Self {
         self.whiten = b;
         self
     }
 
+    /// Returns the principal axes (one row per component).
     pub fn components(&self) -> &[Vec<f64>] {
         &self.components
     }
 
+    /// Returns the variance explained by each kept component.
     pub fn explained_variance(&self) -> &[f64] {
         &self.explained_variance
     }
 
+    /// Returns the fraction of total variance explained by each kept component.
     pub fn explained_variance_ratio(&self) -> &[f64] {
         &self.explained_variance_ratio
     }
@@ -83,10 +88,12 @@ impl PCA {
         }
     }
 
+    /// Returns the per-feature mean estimated during fit.
     pub fn mean(&self) -> &[f64] {
         &self.mean
     }
 
+    /// Returns the number of components kept after fit.
     pub fn n_components(&self) -> usize {
         self.n_components_
     }
@@ -139,7 +146,9 @@ impl Transformer for PCA {
         // Center
         let xc = self.centered(x);
         let cov = jacobi::covariance(&xc, 1);
-        let (mut vals, vecs) = jacobi::eigh(&cov);
+        let (mut vals, vecs) = jacobi::eigh(&cov).ok_or_else(|| {
+            DatarustError::Singular("covariance matrix is empty or non-square".into())
+        })?;
         // Clip tiny negative eigenvalues from numerical noise
         for v in vals.iter_mut() {
             if *v < 0.0 && v.abs() < 1e-10 {

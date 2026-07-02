@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use crate::error::{DatarustError, Result};
+use crate::traits::LabelTransformer;
 
 /// How to handle unknown labels in [`LabelEncoder::transform`].
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LabelHandleUnknown {
     /// Return an error when an unknown label is encountered (default).
@@ -18,6 +19,7 @@ pub enum LabelHandleUnknown {
 /// `sklearn.preprocessing.LabelEncoder`. Classes are sorted (sklearn default).
 ///
 /// Operates on `Vec<String>` (1-D) input.
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LabelEncoder {
     classes: Vec<String>,
@@ -27,6 +29,7 @@ pub struct LabelEncoder {
 }
 
 impl LabelEncoder {
+    /// Creates a new label encoder.
     pub fn new() -> Self {
         Self {
             classes: vec![],
@@ -42,10 +45,12 @@ impl LabelEncoder {
         self
     }
 
+    /// Returns the sorted class labels.
     pub fn classes(&self) -> &[String] {
         &self.classes
     }
 
+    /// Learns the sorted class labels from the input.
     pub fn fit<I, S>(&mut self, labels: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
@@ -69,6 +74,7 @@ impl LabelEncoder {
         Ok(())
     }
 
+    /// Maps each label to its class index.
     pub fn transform<I>(&self, labels: I) -> Result<Vec<usize>>
     where
         I: IntoIterator,
@@ -93,6 +99,7 @@ impl LabelEncoder {
         Ok(out)
     }
 
+    /// Fits the encoder and transforms the labels in one step.
     pub fn fit_transform<I, S>(&mut self, labels: I) -> Result<Vec<usize>>
     where
         I: IntoIterator<Item = S>,
@@ -103,16 +110,21 @@ impl LabelEncoder {
         self.transform(collected.iter())
     }
 
+    /// Maps class indices back to their labels.
     pub fn inverse_transform(&self, indices: &[usize]) -> Result<Vec<String>> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("LabelEncoder".into()));
         }
         let mut out = Vec::with_capacity(indices.len());
         for &i in indices {
-            if i >= self.classes.len() {
+            if i == usize::MAX {
+                // Sentinel for unknown labels (HandleUnknown::Ignore)
+                out.push(String::new());
+            } else if i >= self.classes.len() {
                 return Err(DatarustError::UnknownLabel(format!("index {}", i)));
+            } else {
+                out.push(self.classes[i].clone());
             }
-            out.push(self.classes[i].clone());
         }
         Ok(out)
     }
@@ -121,6 +133,28 @@ impl LabelEncoder {
 impl Default for LabelEncoder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl LabelTransformer for LabelEncoder {
+    fn name(&self) -> &'static str {
+        "LabelEncoder"
+    }
+
+    fn fit(&mut self, x: &[String]) -> Result<()> {
+        self.fit(x.iter().cloned())
+    }
+
+    fn transform(&self, x: &[String]) -> Result<Vec<usize>> {
+        self.transform(x.iter())
+    }
+
+    fn inverse_transform(&self, x: &[usize]) -> Result<Vec<String>> {
+        self.inverse_transform(x)
+    }
+
+    fn is_fitted(&self) -> bool {
+        self.fitted
     }
 }
 
@@ -218,5 +252,15 @@ mod tests {
             le.transform(["z"]),
             Err(DatarustError::UnknownLabel(_))
         ));
+    }
+
+    #[test]
+    fn inverse_transform_sentinel_decodes_to_empty() {
+        let mut le = LabelEncoder::new().handle_unknown(LabelHandleUnknown::Ignore);
+        le.fit(["a", "b"]).unwrap();
+        let out = le.transform(["a", "z", "b"]).unwrap();
+        assert_eq!(out, vec![0, usize::MAX, 1]);
+        let decoded = le.inverse_transform(&out).unwrap();
+        assert_eq!(decoded, vec!["a", "", "b"]);
     }
 }

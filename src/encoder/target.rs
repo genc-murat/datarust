@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::error::{DatarustError, Result};
 use crate::matrix::{Matrix, StrMatrix};
+use crate::traits::{default_input_names, FeatureNames, TargetTransformer};
 
 /// Strategy for categories unseen during `fit` when transforming.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -24,6 +25,7 @@ pub enum UnknownTarget {
 ///   (n_c * mean_c + smoothing * global_mean) / (n_c + smoothing)
 /// ```
 /// Operates on a 2-D [`StrMatrix`] and a 1-D target vector.
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TargetEncoder {
     smoothing: f64,
@@ -35,6 +37,7 @@ pub struct TargetEncoder {
 }
 
 impl TargetEncoder {
+    /// Creates a new target encoder with the given smoothing.
     pub fn new(smoothing: f64) -> Result<Self> {
         if smoothing < 0.0 {
             return Err(DatarustError::InvalidConfig(format!(
@@ -51,15 +54,18 @@ impl TargetEncoder {
         })
     }
 
+    /// Sets how unknown categories are handled during transform.
     pub fn unknown(mut self, u: UnknownTarget) -> Self {
         self.unknown = u;
         self
     }
 
+    /// Returns the smoothing factor.
     pub fn smoothing(&self) -> f64 {
         self.smoothing
     }
 
+    /// Learns the smoothed per-category target means.
     pub fn fit(&mut self, x: &StrMatrix, y: &[f64]) -> Result<()> {
         if y.len() != x.nrows() {
             return Err(DatarustError::ShapeMismatch {
@@ -95,6 +101,7 @@ impl TargetEncoder {
         Ok(())
     }
 
+    /// Replaces each category with its encoded target mean.
     pub fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("TargetEncoder".into()));
@@ -106,30 +113,96 @@ impl TargetEncoder {
             });
         }
         let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-        for (i, out_row) in out.iter_mut().enumerate() {
-            for (j, cell) in out_row.iter_mut().enumerate() {
-                let val = x.get(i, j);
-                *cell = match self.mappings[j].get(val) {
-                    Some(&v) => v,
-                    None => match self.unknown {
-                        UnknownTarget::GlobalMean => self.global_means[j],
-                        UnknownTarget::NaN => f64::NAN,
-                        UnknownTarget::Error => {
-                            return Err(DatarustError::UnknownCategory(format!(
-                                "column {} value '{}'",
-                                j, val
-                            )))
-                        }
-                    },
-                };
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            let mappings = &self.mappings;
+            let global_means = &self.global_means;
+            let unknown = self.unknown;
+            let x_data = &x.data;
+            out.par_iter_mut()
+                .enumerate()
+                .try_for_each(|(i, out_row)| {
+                    for (j, cell) in out_row.iter_mut().enumerate() {
+                        let val = &x_data[i][j];
+                        *cell = match mappings[j].get(val) {
+                            Some(&v) => v,
+                            None => match unknown {
+                                UnknownTarget::GlobalMean => global_means[j],
+                                UnknownTarget::NaN => f64::NAN,
+                                UnknownTarget::Error => {
+                                    return Err(DatarustError::UnknownCategory(format!(
+                                        "column {} value '{}'",
+                                        j, val
+                                    )))
+                                }
+                            },
+                        };
+                    }
+                    Ok(())
+                })?;
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            for (i, out_row) in out.iter_mut().enumerate() {
+                for (j, cell) in out_row.iter_mut().enumerate() {
+                    let val = x.get(i, j);
+                    *cell = match self.mappings[j].get(val) {
+                        Some(&v) => v,
+                        None => match self.unknown {
+                            UnknownTarget::GlobalMean => self.global_means[j],
+                            UnknownTarget::NaN => f64::NAN,
+                            UnknownTarget::Error => {
+                                return Err(DatarustError::UnknownCategory(format!(
+                                    "column {} value '{}'",
+                                    j, val
+                                )))
+                            }
+                        },
+                    };
+                }
             }
         }
+
         Matrix::new(out)
     }
 
+    /// Fits the encoder and transforms the input in one step.
     pub fn fit_transform(&mut self, x: &StrMatrix, y: &[f64]) -> Result<Matrix> {
         self.fit(x, y)?;
         self.transform(x)
+    }
+}
+
+impl TargetTransformer for TargetEncoder {
+    fn name(&self) -> &'static str {
+        "TargetEncoder"
+    }
+
+    fn fit(&mut self, x: &StrMatrix, y: &[f64]) -> Result<()> {
+        self.fit(x, y)
+    }
+
+    fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
+        self.transform(x)
+    }
+
+    fn is_fitted(&self) -> bool {
+        self.fitted
+    }
+}
+
+impl FeatureNames for TargetEncoder {
+    fn feature_names_out(&self, input_features: Option<&[String]>) -> Vec<String> {
+        let n = self.mappings.len();
+        match input_features {
+            Some(fs) => (0..n)
+                .map(|i| fs.get(i).cloned().unwrap_or_else(|| format!("x{}", i)))
+                .collect(),
+            None => default_input_names(n),
+        }
     }
 }
 
@@ -238,5 +311,36 @@ mod tests {
         let te = TargetEncoder::new(0.0).unwrap();
         let x = StrMatrix::from_column(["a"]).unwrap();
         assert!(matches!(te.transform(&x), Err(DatarustError::NotFitted(_))));
+    }
+
+    #[test]
+    fn transform_large_multi_column() {
+        let x = StrMatrix::from_strings(vec![
+            vec!["a", "x"],
+            vec!["b", "y"],
+            vec!["a", "x"],
+            vec!["b", "y"],
+            vec!["a", "x"],
+            vec!["b", "y"],
+        ])
+        .unwrap();
+        let y = vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0];
+        let mut te = TargetEncoder::new(0.0).unwrap();
+        let out = te.fit_transform(&x, &y).unwrap();
+        assert_eq!(out.nrows(), 6);
+        assert_eq!(out.ncols(), 2);
+        assert!(approx(out.get(0, 0), 1.0, 1e-12));
+        assert!(approx(out.get(1, 0), 0.0, 1e-12));
+    }
+
+    #[test]
+    fn feature_names_short_input_pads_with_synthetic() {
+        let x = StrMatrix::from_strings(vec![vec!["a", "x"], vec!["b", "y"]]).unwrap();
+        let y = vec![1.0, 0.0];
+        let mut te = TargetEncoder::new(0.0).unwrap();
+        te.fit(&x, &y).unwrap();
+        // 2 columns but only 1 name provided
+        let names = te.feature_names_out(Some(&["city".into()]));
+        assert_eq!(names, vec!["city", "x1"]);
     }
 }

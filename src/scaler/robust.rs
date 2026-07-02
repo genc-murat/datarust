@@ -25,6 +25,7 @@ pub struct RobustScaler {
 }
 
 impl RobustScaler {
+    /// Creates a new scaler with default settings.
     pub fn new() -> Self {
         Self {
             with_centering: true,
@@ -55,14 +56,17 @@ impl RobustScaler {
         self
     }
 
+    /// Fitted per-column centers (medians).
     pub fn center(&self) -> &[f64] {
         &self.center
     }
 
+    /// Fitted per-column scales (IQR).
     pub fn scale(&self) -> &[f64] {
         &self.scale
     }
 
+    /// Returns the configured quantile range.
     pub fn quantile_range_value(&self) -> (f64, f64) {
         self.quantile_range
     }

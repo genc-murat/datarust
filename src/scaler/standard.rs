@@ -27,6 +27,7 @@ pub struct StandardScaler {
 }
 
 impl StandardScaler {
+    /// Creates a new scaler with default settings.
     pub fn new() -> Self {
         Self {
             with_mean: true,
