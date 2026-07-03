@@ -468,7 +468,7 @@ pub fn column_quantiles_many(data: &[Vec<f64>], qs: &[f64]) -> Result<Vec<Vec<f6
     #[cfg(feature = "rayon")]
     let iter = (0..cols).into_par_iter();
     #[cfg(not(feature = "rayon"))]
-    let iter = (0..cols).into_iter();
+    let iter = 0..cols;
     // For each column: sort once, then read off every requested quantile.
     let per_col: Vec<Vec<f64>> = iter
         .map(|j| {
@@ -513,7 +513,7 @@ pub fn column_quantiles_many_flat(
     #[cfg(feature = "rayon")]
     let iter = (0..cols).into_par_iter();
     #[cfg(not(feature = "rayon"))]
-    let iter = (0..cols).into_iter();
+    let iter = 0..cols;
     let per_col: Vec<Vec<f64>> = iter
         .map(|j| {
             let mut col: Vec<f64> = (0..rows).map(|i| data[i * cols + j]).collect();
