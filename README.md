@@ -56,14 +56,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-datarust = "0.1"
+datarust = "0.2"
 ```
 
 ### Optional features
 
 ```toml
 [dependencies]
-datarust = { version = "0.1", features = ["serde", "rayon"] }
+datarust = { version = "0.2", features = ["serde", "rayon"] }
 ```
 
 - **`serde`** — enables JSON serialization/deserialization of fitted transformers via `datarust::serialize::{save_json, load_json, to_json, from_json}`.
@@ -698,7 +698,7 @@ PCA also exposes [`noise_variance()`](https://docs.rs/datarust/latest/datarust/d
 Enable the `serde` feature for JSON save/load of fitted transformers.
 
 ```toml
-datarust = { version = "0.1", features = ["serde"] }
+datarust = { version = "0.2", features = ["serde"] }
 ```
 
 ```rust
@@ -723,7 +723,7 @@ All leaf transformers, `Pipeline` (via `TransformerKind`), and `ColumnTransforme
 Enable the `rayon` feature for parallel column operations on large datasets.
 
 ```toml
-datarust = { version = "0.1", features = ["rayon"] }
+datarust = { version = "0.2", features = ["rayon"] }
 ```
 
 When enabled, the following use parallel iterators:

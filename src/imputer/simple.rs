@@ -5,10 +5,11 @@ use crate::traits::{default_input_names, FeatureNames};
 use crate::Transformer;
 
 /// Imputation strategy, mirroring `sklearn.impute.SimpleImputer`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ImputeStrategy {
     /// Fill missing values with the column mean.
+    #[default]
     Mean,
     /// Fill missing values with the column median.
     Median,
