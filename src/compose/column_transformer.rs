@@ -601,9 +601,10 @@ impl ColumnTransformer {
             }
             Matrix::new(out)?
         } else {
-            Matrix {
-                data: vec![vec![]; nrows],
-            }
+            // No numeric columns: build a dummy nrows×1 matrix so the row-count
+            // invariant of `Table` holds; its single (unused) column is ignored
+            // by callers that consume only the categorical side.
+            Matrix::zeros(nrows, 1)?
         };
 
         // Build the categorical (string) matrix.

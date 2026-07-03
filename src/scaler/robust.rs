@@ -4,9 +4,6 @@ use crate::stats;
 use crate::traits::{default_input_names, FeatureNames};
 use crate::Transformer;
 
-#[cfg(feature = "rayon")]
-use rayon::prelude::*;
-
 /// Scale features using statistics that are robust to outliers, mirroring
 /// `sklearn.preprocessing.RobustScaler`.
 ///
@@ -100,10 +97,17 @@ impl Transformer for RobustScaler {
                 q_lo, q_hi
             )));
         }
-        let data = x.rows_ref();
-        let q1 = stats::quantile_column(data, q_lo)?;
-        let q3 = stats::quantile_column(data, q_hi)?;
-        let median = stats::median_column(data);
+        // Single sort per column over flat storage replaces the previous three
+        // separate gather+sort passes. Result rows: [q1_row, q3_row, median_row].
+        let qs = stats::column_quantiles_many_flat(
+            x.as_slice(),
+            x.nrows(),
+            x.ncols(),
+            &[q_lo, q_hi, 0.5],
+        )?;
+        let q1 = &qs[0];
+        let q3 = &qs[1];
+        let median = &qs[2];
         let scale: Vec<f64> = (0..x.ncols())
             .map(|j| {
                 if self.with_scaling {
@@ -132,45 +136,61 @@ impl Transformer for RobustScaler {
                 actual: format!("{} features", x.ncols()),
             });
         }
-        x.validate_no_nan()?;
+        // Flat-storage transform with fused NaN check.
+        let nrows = x.nrows();
+        let ncols = x.ncols();
+        let center = &self.center;
+        let scale = &self.scale;
+        let src = x.as_slice();
+        let mut out = vec![0.0; nrows * ncols];
         #[cfg(feature = "rayon")]
         {
-            let center = &self.center;
-            let scale = &self.scale;
-            let rows: Vec<Vec<f64>> = x
-                .rows_ref()
-                .par_iter()
-                .map(|row| {
-                    row.iter()
-                        .enumerate()
-                        .map(|(j, &v)| {
-                            let s = scale[j];
-                            if s == 0.0 {
-                                (v - center[j]) * 0.0
-                            } else {
-                                (v - center[j]) / s
-                            }
-                        })
-                        .collect()
-                })
-                .collect();
-            Matrix::new(rows)
-        }
-        #[cfg(not(feature = "rayon"))]
-        {
-            let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-            for (i, row) in x.rows_ref().iter().enumerate() {
-                for (j, &v) in row.iter().enumerate() {
-                    let s = self.scale[j];
-                    if s == 0.0 {
-                        out[i][j] = (v - self.center[j]) * 0.0;
-                    } else {
-                        out[i][j] = (v - self.center[j]) / s;
+            use rayon::prelude::*;
+            out.par_chunks_mut(ncols)
+                .zip(src.par_chunks(ncols))
+                .for_each(|(out_row, in_row)| {
+                    for (j, &v) in in_row.iter().enumerate() {
+                        let s = scale[j];
+                        out_row[j] = if s == 0.0 {
+                            (v - center[j]) * 0.0
+                        } else {
+                            (v - center[j]) / s
+                        };
+                    }
+                });
+            if out.par_iter().any(|v| v.is_nan()) {
+                for i in 0..nrows {
+                    for j in 0..ncols {
+                        if src[i * ncols + j].is_nan() {
+                            return Err(DatarustError::InvalidInput(format!(
+                                "NaN value at position ({i}, {j})"
+                            )));
+                        }
                     }
                 }
             }
-            Matrix::new(out)
         }
+        #[cfg(not(feature = "rayon"))]
+        {
+            for i in 0..nrows {
+                let base = i * ncols;
+                for j in 0..ncols {
+                    let v = src[base + j];
+                    if v.is_nan() {
+                        return Err(DatarustError::InvalidInput(format!(
+                            "NaN value at position ({i}, {j})"
+                        )));
+                    }
+                    let s = scale[j];
+                    out[base + j] = if s == 0.0 {
+                        (v - center[j]) * 0.0
+                    } else {
+                        (v - center[j]) / s
+                    };
+                }
+            }
+        }
+        Matrix::from_flat(nrows, ncols, out)
     }
 
     fn inverse_transform(&self, x: &Matrix) -> Result<Matrix> {
@@ -183,32 +203,33 @@ impl Transformer for RobustScaler {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        let nrows = x.nrows();
+        let ncols = x.ncols();
+        let center = &self.center;
+        let scale = &self.scale;
+        let src = x.as_slice();
+        let mut out = vec![0.0; nrows * ncols];
         #[cfg(feature = "rayon")]
         {
-            let center = &self.center;
-            let scale = &self.scale;
-            let rows: Vec<Vec<f64>> = x
-                .rows_ref()
-                .par_iter()
-                .map(|row| {
-                    row.iter()
-                        .enumerate()
-                        .map(|(j, &z)| z * scale[j] + center[j])
-                        .collect()
-                })
-                .collect();
-            Matrix::new(rows)
+            use rayon::prelude::*;
+            out.par_chunks_mut(ncols)
+                .zip(src.par_chunks(ncols))
+                .for_each(|(out_row, in_row)| {
+                    for (j, &z) in in_row.iter().enumerate() {
+                        out_row[j] = z * scale[j] + center[j];
+                    }
+                });
         }
         #[cfg(not(feature = "rayon"))]
         {
-            let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-            for (i, row) in x.rows_ref().iter().enumerate() {
-                for (j, &z) in row.iter().enumerate() {
-                    out[i][j] = z * self.scale[j] + self.center[j];
+            for i in 0..nrows {
+                let base = i * ncols;
+                for j in 0..ncols {
+                    out[base + j] = src[base + j] * scale[j] + center[j];
                 }
             }
-            Matrix::new(out)
         }
+        Matrix::from_flat(nrows, ncols, out)
     }
 
     fn is_fitted(&self) -> bool {

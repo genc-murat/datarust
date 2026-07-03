@@ -1,6 +1,6 @@
 [package]
 name = "datarust"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.70"
 description = "Scikit-Learn Preprocessing in Rust"
@@ -21,11 +21,17 @@ default = []
 serde = ["dep:serde", "dep:serde_json"]
 # Enable parallelism via rayon for large datasets.
 rayon = ["dep:rayon"]
+# Enable a tuned pure-Rust GEMM (via the `matrixmultiply` crate) for matrix
+# products and covariance computation. Significantly speeds up PCA,
+# TruncatedSVD and `Matrix::matmul` on large dense inputs. The default build
+# remains zero-external-dependency; opt in with this feature.
+matrixmultiply = ["dep:matrixmultiply"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 rayon = { version = "1", optional = true }
+matrixmultiply = { version = "0.3", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -48,5 +54,5 @@ name = "target_encoding"
 path = "examples/target_encoding.rs"
 
 [package.metadata.docs.rs]
-features = ["serde", "rayon"]
+features = ["serde", "rayon", "matrixmultiply"]
 rustdoc-args = ["--cfg", "docsrs"]

@@ -4,9 +4,6 @@ use crate::stats;
 use crate::traits::{default_input_names, FeatureNames};
 use crate::Transformer;
 
-#[cfg(feature = "rayon")]
-use rayon::prelude::*;
-
 /// Standardize features by removing the mean and scaling to unit variance.
 ///
 /// Mirrors `sklearn.preprocessing.StandardScaler`. Uses population
@@ -61,16 +58,14 @@ impl StandardScaler {
     }
 
     fn compute(x: &Matrix, with_mean: bool, with_std: bool) -> (Vec<f64>, Vec<f64>) {
-        let data = x.rows_ref();
-        let mean = if with_mean {
-            stats::column_mean(data)
-        } else {
-            vec![0.0; x.ncols()]
-        };
+        let ncols = x.ncols();
+        // Single fused Welford pass over flat storage (1 pass, stride-1 reads).
+        let (mean, var) = stats::column_mean_var_flat(x.as_slice(), x.nrows(), x.ncols(), 0);
+        let mean = if with_mean { mean } else { vec![0.0; ncols] };
         let std = if with_std {
-            stats::column_std(data, 0)
+            var.iter().map(|v| v.sqrt()).collect()
         } else {
-            vec![1.0; x.ncols()]
+            vec![1.0; ncols]
         };
         (mean, std)
     }
@@ -124,33 +119,56 @@ impl Transformer for StandardScaler {
                 actual: format!("{} features", x.ncols()),
             });
         }
-        x.validate_no_nan()?;
+        // Flat-storage transform: write directly into a contiguous output buffer
+        // with stride-1 reads from the input. NaN check is fused into the loop.
+        let nrows = x.nrows();
+        let ncols = x.ncols();
+        let mean = &self.mean;
+        let std = &self.std;
+        let src = x.as_slice();
+        let mut out = vec![0.0; nrows * ncols];
         #[cfg(feature = "rayon")]
         {
-            let mean = &self.mean;
-            let std = &self.std;
-            let rows: Vec<Vec<f64>> = x
-                .rows_ref()
-                .par_iter()
-                .map(|row| {
-                    row.iter()
-                        .enumerate()
-                        .map(|(j, &v)| Self::scale(v, mean[j], std[j]))
-                        .collect()
-                })
-                .collect();
-            Matrix::new(rows)
+            use rayon::prelude::*;
+            // Paralel chunks: disjoint mutable row slices, stride-1 reads/writes.
+            out.par_chunks_mut(ncols)
+                .zip(src.par_chunks(ncols))
+                .for_each(|(out_row, in_row)| {
+                    for (j, &v) in in_row.iter().enumerate() {
+                        out_row[j] = Self::scale(v, mean[j], std[j]);
+                    }
+                });
+            // NaN check after transform: any NaN in input produces NaN in output
+            // (arithmetic propagates it), so a single par_any pass suffices.
+            if out.par_iter().any(|v| v.is_nan()) {
+                // Locate the offending position for a helpful error message.
+                for i in 0..nrows {
+                    for j in 0..ncols {
+                        if src[i * ncols + j].is_nan() {
+                            return Err(DatarustError::InvalidInput(format!(
+                                "NaN value at position ({i}, {j})"
+                            )));
+                        }
+                    }
+                }
+            }
         }
         #[cfg(not(feature = "rayon"))]
         {
-            let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-            for (i, row) in x.rows_ref().iter().enumerate() {
-                for (j, &v) in row.iter().enumerate() {
-                    out[i][j] = Self::scale(v, self.mean[j], self.std[j]);
+            for i in 0..nrows {
+                let base = i * ncols;
+                for j in 0..ncols {
+                    let v = src[base + j];
+                    if v.is_nan() {
+                        return Err(DatarustError::InvalidInput(format!(
+                            "NaN value at position ({i}, {j})"
+                        )));
+                    }
+                    out[base + j] = Self::scale(v, mean[j], std[j]);
                 }
             }
-            Matrix::new(out)
         }
+        Matrix::from_flat(nrows, ncols, out)
     }
 
     fn inverse_transform(&self, x: &Matrix) -> Result<Matrix> {
@@ -163,42 +181,41 @@ impl Transformer for StandardScaler {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        let nrows = x.nrows();
+        let ncols = x.ncols();
+        let mean = &self.mean;
+        let std = &self.std;
+        let src = x.as_slice();
+        let mut out = vec![0.0; nrows * ncols];
         #[cfg(feature = "rayon")]
         {
-            let mean = &self.mean;
-            let std = &self.std;
-            let rows: Vec<Vec<f64>> = x
-                .rows_ref()
-                .par_iter()
-                .map(|row| {
-                    row.iter()
-                        .enumerate()
-                        .map(|(j, &z)| {
-                            if std[j] == 0.0 {
-                                mean[j]
-                            } else {
-                                z * std[j] + mean[j]
-                            }
-                        })
-                        .collect()
-                })
-                .collect();
-            Matrix::new(rows)
+            use rayon::prelude::*;
+            out.par_chunks_mut(ncols)
+                .zip(src.par_chunks(ncols))
+                .for_each(|(out_row, in_row)| {
+                    for (j, &z) in in_row.iter().enumerate() {
+                        out_row[j] = if std[j] == 0.0 {
+                            mean[j]
+                        } else {
+                            z * std[j] + mean[j]
+                        };
+                    }
+                });
         }
         #[cfg(not(feature = "rayon"))]
         {
-            let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-            for (i, row) in x.rows_ref().iter().enumerate() {
-                for (j, &z) in row.iter().enumerate() {
-                    out[i][j] = if self.std[j] == 0.0 {
-                        self.mean[j]
+            for i in 0..nrows {
+                let base = i * ncols;
+                for j in 0..ncols {
+                    out[base + j] = if std[j] == 0.0 {
+                        mean[j]
                     } else {
-                        z * self.std[j] + self.mean[j]
+                        src[base + j] * std[j] + mean[j]
                     };
                 }
             }
-            Matrix::new(out)
         }
+        Matrix::from_flat(nrows, ncols, out)
     }
 
     fn is_fitted(&self) -> bool {
@@ -243,8 +260,9 @@ mod tests {
     fn property_zero_mean_unit_std() {
         let mut s = StandardScaler::new();
         let out = s.fit_transform(&m1()).unwrap();
-        let means = stats::column_mean(out.rows_ref());
-        let stds = stats::column_std(out.rows_ref(), 0);
+        let means = out.column_mean();
+        let (_, vars) = stats::column_mean_var_flat(out.as_slice(), out.nrows(), out.ncols(), 0);
+        let stds: Vec<f64> = vars.iter().map(|v| v.sqrt()).collect();
         for m in &means {
             assert!(m.abs() < 1e-9, "mean not zero: {}", m);
         }

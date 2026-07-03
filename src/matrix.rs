@@ -2,10 +2,17 @@
 
 use crate::error::{DatarustError, Result};
 
-/// Row-major dense matrix of `f64` backed by `Vec<Vec<f64>>`.
+/// Row-major dense matrix of `f64` backed by a single contiguous `Vec<f64>`.
+///
+/// The flat layout (one allocation, stride-1 row traversal) keeps every numeric
+/// hot loop cache-friendly and auto-vectorizable — a substantial speedup over
+/// the previous `Vec<Vec<f64>>` representation on large dense inputs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Matrix {
-    pub(crate) data: Vec<Vec<f64>>,
+    /// Flat row-major data, length `rows * cols`.
+    data: Vec<f64>,
+    rows: usize,
+    cols: usize,
 }
 
 impl Matrix {
@@ -26,7 +33,16 @@ impl Matrix {
                 });
             }
         }
-        Ok(Self { data })
+        let rows = data.len();
+        let mut flat = Vec::with_capacity(rows * cols);
+        for row in data {
+            flat.extend(row);
+        }
+        Ok(Self {
+            data: flat,
+            rows,
+            cols,
+        })
     }
 
     /// Creates a matrix from a nested vector of rows.
@@ -35,6 +51,9 @@ impl Matrix {
     }
 
     /// Creates a matrix from row-major flat data of the given shape.
+    ///
+    /// With the flat internal representation this stores the buffer directly,
+    /// with no per-row chunking or copy.
     pub fn from_flat(rows: usize, cols: usize, flat: Vec<f64>) -> Result<Self> {
         if rows == 0 || cols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
@@ -51,12 +70,11 @@ impl Matrix {
                 actual: format!("{} elements", flat.len()),
             });
         }
-        let mut data = Vec::with_capacity(rows);
-        for r in 0..rows {
-            let start = r * cols;
-            data.push(flat[start..start + cols].to_vec());
-        }
-        Ok(Self { data })
+        Ok(Self {
+            data: flat,
+            rows,
+            cols,
+        })
     }
 
     /// Creates a matrix filled with zeros of the given shape.
@@ -65,7 +83,9 @@ impl Matrix {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
         }
         Ok(Self {
-            data: vec![vec![0.0; cols]; rows],
+            data: vec![0.0; rows * cols],
+            rows,
+            cols,
         })
     }
 
@@ -74,23 +94,43 @@ impl Matrix {
         if n == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
         }
-        let mut data = vec![vec![0.0; n]; n];
-        for (i, row) in data.iter_mut().enumerate() {
-            row[i] = 1.0;
+        let mut data = vec![0.0; n * n];
+        for i in 0..n {
+            data[i * n + i] = 1.0;
         }
-        Ok(Self { data })
+        Ok(Self {
+            data,
+            rows: n,
+            cols: n,
+        })
     }
 
     /// Returns the number of rows.
     #[inline]
     pub fn nrows(&self) -> usize {
-        self.data.len()
+        self.rows
     }
 
     /// Returns the number of columns.
     #[inline]
     pub fn ncols(&self) -> usize {
-        self.data[0].len()
+        self.cols
+    }
+
+    /// Returns the underlying flat row-major data as a slice.
+    ///
+    /// Elements are laid out so that element `(i, j)` is at index `i * ncols + j`.
+    /// Use this for cache-friendly, auto-vectorizable numeric loops in preference
+    /// to per-element [`get`](Self::get) calls.
+    #[inline]
+    pub fn as_slice(&self) -> &[f64] {
+        &self.data
+    }
+
+    /// Returns the underlying flat row-major data as a mutable slice.
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [f64] {
+        &mut self.data
     }
 
     /// Returns the element at row `i`, column `j`.
@@ -102,115 +142,172 @@ impl Matrix {
     #[inline]
     pub fn get(&self, i: usize, j: usize) -> f64 {
         debug_assert!(
-            i < self.data.len() && j < self.data[i].len(),
+            i < self.rows && j < self.cols,
             "Matrix::get: index ({}, {}) out of bounds for {}×{}",
             i,
             j,
-            self.data.len(),
-            self.data[0].len()
+            self.rows,
+            self.cols
         );
-        self.data[i][j]
+        // SAFETY: debug_assert above + the struct invariant (data.len() == rows*cols).
+        unsafe { *self.data.get_unchecked(i * self.cols + j) }
     }
 
     /// Returns `Some(element)` at row `i`, column `j`, or `None` if the indices
     /// are out of bounds.
     #[inline]
     pub fn checked_get(&self, i: usize, j: usize) -> Option<f64> {
-        self.data.get(i)?.get(j).copied()
+        if i < self.rows && j < self.cols {
+            Some(self.data[i * self.cols + j])
+        } else {
+            None
+        }
     }
 
     /// Sets the element at row `i`, column `j`.
     #[inline]
     pub fn set(&mut self, i: usize, j: usize, v: f64) {
-        self.data[i][j] = v;
+        self.data[i * self.cols + j] = v;
     }
 
     /// Returns `Ok(())` if the matrix contains no NaN values.
     pub fn validate_no_nan(&self) -> Result<()> {
-        for (i, row) in self.data.iter().enumerate() {
-            for (j, &v) in row.iter().enumerate() {
-                if v.is_nan() {
-                    return Err(DatarustError::InvalidInput(format!(
-                        "NaN value at position ({}, {})",
-                        i, j
-                    )));
-                }
+        for (flat_idx, &v) in self.data.iter().enumerate() {
+            if v.is_nan() {
+                let i = flat_idx / self.cols;
+                let j = flat_idx % self.cols;
+                return Err(DatarustError::InvalidInput(format!(
+                    "NaN value at position ({}, {})",
+                    i, j
+                )));
             }
         }
         Ok(())
     }
 
-    /// Returns the row at index `i` as a slice.
+    /// Returns the row at index `i` as a contiguous slice.
+    #[inline]
     pub fn row(&self, i: usize) -> &[f64] {
-        &self.data[i]
+        let start = i * self.cols;
+        &self.data[start..start + self.cols]
     }
 
     /// Returns column `j` as a new vector.
     pub fn col(&self, j: usize) -> Vec<f64> {
-        self.data.iter().map(|r| r[j]).collect()
+        (0..self.rows)
+            .map(|i| self.data[i * self.cols + j])
+            .collect()
     }
 
-    /// Iterates over the rows as slices.
+    /// Iterates over the rows as contiguous slices.
     pub fn iter_rows(&self) -> impl Iterator<Item = &[f64]> {
-        self.data.iter().map(|v| v.as_slice())
+        self.data.chunks_exact(self.cols)
     }
 
-    /// Borrows the underlying vector of rows.
-    pub fn rows_ref(&self) -> &Vec<Vec<f64>> {
-        &self.data
-    }
-
-    /// Consumes the matrix and returns the underlying rows.
-    pub fn into_rows(self) -> Vec<Vec<f64>> {
+    /// Returns the rows as a nested `Vec<Vec<f64>>`.
+    ///
+    /// This allocates and copies — prefer [`as_slice`](Self::as_slice) or
+    /// [`iter_rows`](Self::iter_rows) in hot loops. Kept for callers that
+    /// need the nested shape (e.g. passing to `stats` functions that still
+    /// take `&[Vec<f64>]`).
+    #[doc(hidden)]
+    pub fn rows_ref(&self) -> Vec<Vec<f64>> {
         self.data
+            .chunks_exact(self.cols)
+            .map(|chunk| chunk.to_vec())
+            .collect()
+    }
+
+    /// Consumes the matrix and returns the rows as a nested `Vec<Vec<f64>>`.
+    #[doc(hidden)]
+    pub fn into_rows(self) -> Vec<Vec<f64>> {
+        let cols = self.cols;
+        self.data.chunks(cols).map(|chunk| chunk.to_vec()).collect()
     }
 
     /// Returns the transpose of the matrix.
     pub fn transpose(&self) -> Matrix {
-        let rows = self.nrows();
-        let cols = self.ncols();
-        let mut out = vec![vec![0.0; rows]; cols];
-        for (i, row) in self.data.iter().enumerate() {
-            for (j, &v) in row.iter().enumerate() {
-                out[j][i] = v;
+        let rows = self.rows;
+        let cols = self.cols;
+        let mut out = vec![0.0; rows * cols];
+        for i in 0..rows {
+            for j in 0..cols {
+                out[j * rows + i] = self.data[i * cols + j];
             }
         }
-        Matrix { data: out }
+        Matrix {
+            data: out,
+            rows: cols,
+            cols: rows,
+        }
     }
 
     /// Multiplies two matrices and returns the product.
     #[allow(clippy::needless_range_loop)]
     pub fn matmul(&self, other: &Matrix) -> Result<Matrix> {
-        if self.ncols() != other.nrows() {
+        if self.cols != other.rows {
             return Err(DatarustError::ShapeMismatch {
-                expected: format!("second operand with {} rows", self.ncols()),
-                actual: format!("{} rows", other.nrows()),
+                expected: format!("second operand with {} rows", self.cols),
+                actual: format!("{} rows", other.rows),
             });
         }
-        let m = self.nrows();
-        let k = self.ncols();
-        let n = other.ncols();
-        let mut out = vec![vec![0.0; n]; m];
-        // Indexed inner loops retained for cache-friendly row-major access.
-        for (i, out_row) in out.iter_mut().enumerate() {
-            let self_row = &self.data[i];
-            for l in 0..k {
-                let a = self_row[l];
-                if a == 0.0 {
-                    continue;
-                }
-                let other_row = &other.data[l];
-                for j in 0..n {
-                    out_row[j] += a * other_row[j];
+        let m = self.rows;
+        let k = self.cols;
+        let n = other.cols;
+        let mut out = vec![0.0; m * n];
+
+        #[cfg(feature = "matrixmultiply")]
+        {
+            // Tuned pure-Rust GEMM: C(m×n) = 1.0*A(m×k)·B(k×n) + 0.0*C, row-major.
+            // dgemm takes isize strides.
+            unsafe {
+                matrixmultiply::dgemm(
+                    m,
+                    k,
+                    n,
+                    1.0,
+                    self.data.as_ptr(),
+                    k as isize,
+                    1,
+                    other.data.as_ptr(),
+                    n as isize,
+                    1,
+                    0.0,
+                    out.as_mut_ptr(),
+                    n as isize,
+                    1,
+                );
+            }
+        }
+
+        #[cfg(not(feature = "matrixmultiply"))]
+        {
+            // Indexed inner loops retained for cache-friendly row-major access.
+            for i in 0..m {
+                let out_base = i * n;
+                let self_base = i * k;
+                for l in 0..k {
+                    let a = self.data[self_base + l];
+                    if a == 0.0 {
+                        continue;
+                    }
+                    let other_base = l * n;
+                    for j in 0..n {
+                        out[out_base + j] += a * other.data[other_base + j];
+                    }
                 }
             }
         }
-        Ok(Matrix { data: out })
+        Ok(Matrix {
+            data: out,
+            rows: m,
+            cols: n,
+        })
     }
 
     /// Returns the mean of each column.
     pub fn column_mean(&self) -> Vec<f64> {
-        crate::stats::column_mean(&self.data)
+        crate::stats::column_mean_flat(&self.data, self.rows, self.cols)
     }
 
     /// Creates a matrix from a vector of columns.
@@ -227,13 +324,18 @@ impl Matrix {
                 });
             }
         }
-        let mut data = vec![vec![0.0; cols.len()]; rows];
+        let ncols = cols.len();
+        let mut data = vec![0.0; rows * ncols];
         for (j, col) in cols.iter().enumerate() {
             for (i, &v) in col.iter().enumerate() {
-                data[i][j] = v;
+                data[i * ncols + j] = v;
             }
         }
-        Ok(Self { data })
+        Ok(Self {
+            data,
+            rows,
+            cols: ncols,
+        })
     }
 
     /// Select a subset of columns by index (0-based).
@@ -255,7 +357,7 @@ impl Matrix {
         if indices.is_empty() {
             return Err(DatarustError::EmptyInput("no columns selected".into()));
         }
-        let ncols = self.ncols();
+        let ncols = self.cols;
         for &c in indices {
             if c >= ncols {
                 return Err(DatarustError::InvalidInput(format!(
@@ -264,12 +366,19 @@ impl Matrix {
                 )));
             }
         }
-        let out: Vec<Vec<f64>> = self
-            .data
-            .iter()
-            .map(|row| indices.iter().map(|&c| row[c]).collect())
-            .collect();
-        Ok(Self { data: out })
+        let out_cols = indices.len();
+        let mut out = Vec::with_capacity(self.rows * out_cols);
+        for i in 0..self.rows {
+            let base = i * ncols;
+            for &c in indices {
+                out.push(self.data[base + c]);
+            }
+        }
+        Ok(Self {
+            data: out,
+            rows: self.rows,
+            cols: out_cols,
+        })
     }
 
     /// Select a subset of rows by index (0-based).
@@ -292,7 +401,7 @@ impl Matrix {
         if indices.is_empty() {
             return Err(DatarustError::EmptyInput("no rows selected".into()));
         }
-        let nrows = self.nrows();
+        let nrows = self.rows;
         for &r in indices {
             if r >= nrows {
                 return Err(DatarustError::InvalidInput(format!(
@@ -301,8 +410,16 @@ impl Matrix {
                 )));
             }
         }
-        let out: Vec<Vec<f64>> = indices.iter().map(|&r| self.data[r].clone()).collect();
-        Ok(Self { data: out })
+        let mut out = Vec::with_capacity(indices.len() * self.cols);
+        for &r in indices {
+            let start = r * self.cols;
+            out.extend_from_slice(&self.data[start..start + self.cols]);
+        }
+        Ok(Self {
+            data: out,
+            rows: indices.len(),
+            cols: self.cols,
+        })
     }
 }
 
@@ -313,8 +430,11 @@ impl serde::Serialize for Matrix {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
+        // Preserve the nested `{"data":[[...]]}` wire format even though the
+        // internal storage is now flat row-major.
+        let rows: Vec<&[f64]> = self.data.chunks_exact(self.cols).collect();
         let mut s = serializer.serialize_struct("Matrix", 1)?;
-        s.serialize_field("data", &self.data)?;
+        s.serialize_field("data", &rows)?;
         s.end()
     }
 }
@@ -713,8 +833,8 @@ mod assert_macros {
                 $crate::matrix::approx_eq_matrices(&$a, &$b, $tol),
                 "matrices not equal within tolerance {}\n left: {:?}\nright: {:?}",
                 $tol,
-                $a.rows_ref(),
-                $b.rows_ref()
+                $a.as_slice(),
+                $b.as_slice()
             );
         }};
     }

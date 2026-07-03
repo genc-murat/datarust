@@ -34,6 +34,26 @@ pub fn column_mean(data: &[Vec<f64>]) -> Vec<f64> {
     }
 }
 
+/// Per-column mean over flat row-major data (single fused pass).
+///
+/// This is the flat-storage counterpart of [`column_mean`], walking the
+/// contiguous buffer once with stride-1 inner access instead of gathering
+/// column-by-column across scattered row allocations.
+pub fn column_mean_flat(data: &[f64], rows: usize, cols: usize) -> Vec<f64> {
+    if rows == 0 || cols == 0 {
+        return vec![];
+    }
+    let n = rows as f64;
+    let mut sums = vec![0.0; cols];
+    for i in 0..rows {
+        let base = i * cols;
+        for j in 0..cols {
+            sums[j] += data[base + j];
+        }
+    }
+    sums.iter().map(|&s| s / n).collect()
+}
+
 /// Returns the variance of each column using the given delta degrees of freedom.
 pub fn column_variance(data: &[Vec<f64>], ddof: usize) -> Vec<f64> {
     if data.is_empty() {
@@ -306,16 +326,233 @@ pub fn column_sum(data: &[Vec<f64>]) -> Vec<f64> {
     sums
 }
 
+/// Per-column mean and variance in a single row-major sweep using Welford's
+/// online algorithm.
+///
+/// This replaces the previous `column_mean` + `column_variance` pair (which
+/// made three full passes over the data: two for the mean, one for the
+/// variance) with a single fused, numerically stable pass. Returns
+/// `(means, variances)` where the variance uses the supplied delta degrees of
+/// freedom. If the denominator is non-positive (`ddof >= n`), variances are
+/// `NaN`, mirroring [`column_variance`].
+pub fn column_mean_var(data: &[Vec<f64>], ddof: usize) -> (Vec<f64>, Vec<f64>) {
+    if data.is_empty() {
+        return (vec![], vec![]);
+    }
+    let cols = data[0].len();
+    let n = data.len();
+    let mut mean = vec![0.0; cols];
+    let mut m2 = vec![0.0; cols];
+    // Welford: for each x, count++, delta = x - mean, mean += delta/count,
+    // m2 += delta * (x - mean). Single row-major pass, cache-friendly.
+    for (count, row) in data.iter().enumerate() {
+        let c = (count + 1) as f64;
+        for (j, &x) in row.iter().enumerate() {
+            let delta = x - mean[j];
+            mean[j] += delta / c;
+            m2[j] += delta * (x - mean[j]);
+        }
+    }
+    let denom = (n - ddof) as f64;
+    let var = if denom > 0.0 {
+        m2.iter().map(|&m| m / denom).collect()
+    } else {
+        vec![f64::NAN; cols]
+    };
+    (mean, var)
+}
+
+/// Flat-storage counterpart of [`column_mean_var`]: single fused Welford pass
+/// over contiguous row-major `data` of shape `rows × cols`. Used by scalers
+/// that operate directly on the flat buffer returned by
+/// [`Matrix::as_slice`](crate::matrix::Matrix::as_slice).
+pub fn column_mean_var_flat(
+    data: &[f64],
+    rows: usize,
+    cols: usize,
+    ddof: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    if rows == 0 || cols == 0 {
+        return (vec![], vec![]);
+    }
+    let mut mean = vec![0.0; cols];
+    let mut m2 = vec![0.0; cols];
+    for count in 0..rows {
+        let c = (count + 1) as f64;
+        let base = count * cols;
+        for j in 0..cols {
+            let x = data[base + j];
+            let delta = x - mean[j];
+            mean[j] += delta / c;
+            m2[j] += delta * (x - mean[j]);
+        }
+    }
+    let denom = (rows - ddof) as f64;
+    let var = if denom > 0.0 {
+        m2.iter().map(|&m| m / denom).collect()
+    } else {
+        vec![f64::NAN; cols]
+    };
+    (mean, var)
+}
+
+/// Per-column minimum and maximum in a single fused row-major pass.
+///
+/// Replaces the separate [`column_min`] + [`column_max`] pair (two passes)
+/// with one pass, halving memory traffic on row-major data.
+pub fn column_min_max(data: &[Vec<f64>]) -> (Vec<f64>, Vec<f64>) {
+    if data.is_empty() {
+        return (vec![], vec![]);
+    }
+    let cols = data[0].len();
+    let mut min = vec![f64::INFINITY; cols];
+    let mut max = vec![f64::NEG_INFINITY; cols];
+    for row in data {
+        for (j, &v) in row.iter().enumerate() {
+            if v < min[j] {
+                min[j] = v;
+            }
+            if v > max[j] {
+                max[j] = v;
+            }
+        }
+    }
+    (min, max)
+}
+
+/// Flat-storage counterpart of [`column_min_max`].
+pub fn column_min_max_flat(data: &[f64], rows: usize, cols: usize) -> (Vec<f64>, Vec<f64>) {
+    if rows == 0 || cols == 0 {
+        return (vec![], vec![]);
+    }
+    let mut min = vec![f64::INFINITY; cols];
+    let mut max = vec![f64::NEG_INFINITY; cols];
+    for i in 0..rows {
+        let base = i * cols;
+        for j in 0..cols {
+            let v = data[base + j];
+            if v < min[j] {
+                min[j] = v;
+            }
+            if v > max[j] {
+                max[j] = v;
+            }
+        }
+    }
+    (min, max)
+}
+
+/// Multiple quantiles of each column computed from a single sort per column.
+///
+/// For each column the values are gathered and sorted **once**, then every
+/// requested quantile is read off the same sorted buffer via linear
+/// interpolation. This replaces the previous pattern of calling
+/// [`quantile_column`] (or [`median_column`]) separately for each quantile,
+/// which re-sorted the same column data redundantly.
+///
+/// `qs` must be in `[0, 1]`; an empty `qs` yields an empty `Vec` per column.
+/// The result has shape `qs.len() × cols` (one row per requested quantile).
+pub fn column_quantiles_many(data: &[Vec<f64>], qs: &[f64]) -> Result<Vec<Vec<f64>>> {
+    if qs.iter().any(|&q| !(0.0..=1.0).contains(&q)) {
+        return Err(DatarustError::InvalidInput(format!(
+            "quantiles must be in [0, 1], got {:?}",
+            qs
+        )));
+    }
+    if data.is_empty() {
+        return Ok(vec![vec![]; qs.len()]);
+    }
+    let cols = data[0].len();
+    let nqs = qs.len();
+    let mut out: Vec<Vec<f64>> = (0..nqs).map(|_| Vec::with_capacity(cols)).collect();
+    #[cfg(feature = "rayon")]
+    let iter = (0..cols).into_par_iter();
+    #[cfg(not(feature = "rayon"))]
+    let iter = (0..cols).into_iter();
+    // For each column: sort once, then read off every requested quantile.
+    let per_col: Vec<Vec<f64>> = iter
+        .map(|j| {
+            let mut col: Vec<f64> = data.iter().map(|r| r[j]).collect();
+            col.sort_by(|a, b| a.total_cmp(b));
+            qs.iter()
+                .map(|&q| quantile(&col, q).expect("non-empty column with q in [0,1]"))
+                .collect()
+        })
+        .collect();
+    // Transpose per_col (cols × nqs) into out (nqs × cols).
+    for col_vals in per_col {
+        for (qi, v) in col_vals.into_iter().enumerate() {
+            out[qi].push(v);
+        }
+    }
+    Ok(out)
+}
+
+/// Flat-storage counterpart of [`column_quantiles_many`].
+///
+/// Each column is gathered from the contiguous `data` buffer once, sorted once,
+/// and every requested quantile is read off the same sorted buffer. Result
+/// shape is `qs.len() × cols`.
+pub fn column_quantiles_many_flat(
+    data: &[f64],
+    rows: usize,
+    cols: usize,
+    qs: &[f64],
+) -> Result<Vec<Vec<f64>>> {
+    if qs.iter().any(|&q| !(0.0..=1.0).contains(&q)) {
+        return Err(DatarustError::InvalidInput(format!(
+            "quantiles must be in [0, 1], got {:?}",
+            qs
+        )));
+    }
+    if rows == 0 || cols == 0 {
+        return Ok(vec![vec![]; qs.len()]);
+    }
+    let nqs = qs.len();
+    let mut out: Vec<Vec<f64>> = (0..nqs).map(|_| Vec::with_capacity(cols)).collect();
+    #[cfg(feature = "rayon")]
+    let iter = (0..cols).into_par_iter();
+    #[cfg(not(feature = "rayon"))]
+    let iter = (0..cols).into_iter();
+    let per_col: Vec<Vec<f64>> = iter
+        .map(|j| {
+            let mut col: Vec<f64> = (0..rows).map(|i| data[i * cols + j]).collect();
+            col.sort_by(|a, b| a.total_cmp(b));
+            qs.iter()
+                .map(|&q| quantile(&col, q).expect("non-empty column with q in [0,1]"))
+                .collect()
+        })
+        .collect();
+    for col_vals in per_col {
+        for (qi, v) in col_vals.into_iter().enumerate() {
+            out[qi].push(v);
+        }
+    }
+    Ok(out)
+}
+
 /// Covariance of already-centered data: `(1/(n-ddof)) * Xcᵀ Xc`.
 ///
 /// This is the single canonical centered-covariance routine shared by
 /// [`covariance_matrix`] (raw-data entry point), PCA and Truncated SVD.
 /// `x_centered` is row-major `n × p`. A non-positive denominator (`ddof >= n`)
 /// leaves the scale unchanged rather than producing infinities.
+///
+/// When the `matrixmultiply` feature is enabled, the `Xcᵀ Xc` product is
+/// computed with a tuned pure-Rust GEMM (no system BLAS); otherwise a scalar
+/// row-major accumulation is used.
 #[allow(clippy::needless_range_loop)]
 pub(crate) fn covariance_centered(x_centered: &[Vec<f64>], ddof: usize) -> Vec<Vec<f64>> {
     let n = x_centered.len();
     let p = if n > 0 { x_centered[0].len() } else { 0 };
+
+    #[cfg(feature = "matrixmultiply")]
+    {
+        if n > 0 && p > 0 {
+            return covariance_centered_gemm(x_centered, n, p, ddof);
+        }
+    }
+
     let mut cov = vec![vec![0.0; p]; p];
     for row in x_centered {
         for i in 0..p {
@@ -334,6 +571,60 @@ pub(crate) fn covariance_centered(x_centered: &[Vec<f64>], ddof: usize) -> Vec<V
         for i in 0..p {
             for j in 0..p {
                 cov[i][j] *= inv;
+            }
+        }
+    }
+    cov
+}
+
+/// `matrixmultiply`-backed centered covariance: `C = (1/(n-ddof)) · Xcᵀ · Xc`.
+///
+/// `Xc` is row-major `n × p`. We compute `C = Xcᵀ · Xc` as a single `dgemm`.
+/// The same flat buffer is used for both operands: as `A` it is read with the
+/// strides of a column-major `Xcᵀ` (rsa=1, csa=p), as `B` with the strides of
+/// a row-major `Xc` (rsb=p, csb=1). The result lands in row-major `C` (p×p).
+#[cfg(feature = "matrixmultiply")]
+fn covariance_centered_gemm(
+    x_centered: &[Vec<f64>],
+    n: usize,
+    p: usize,
+    ddof: usize,
+) -> Vec<Vec<f64>> {
+    use matrixmultiply::dgemm;
+    // Flatten the centered data once (rows may live in separate Vecs).
+    let mut flat = Vec::with_capacity(n * p);
+    for row in x_centered {
+        flat.extend_from_slice(row);
+    }
+    let mut cov_flat = vec![0.0; p * p];
+    // dgemm signature: dgemm(m, k, n, alpha, a, rsa, csa, b, rsb, csb, beta, c, rsc, csc)
+    // computes C(m×n) = alpha * A(m×k) · B(k×n) + beta * C.
+    // Here C(p×p) = 1.0 * Xcᵀ(p×n) · Xc(n×p) + 0.0 * C, so m=p, k=n, n=p.
+    unsafe {
+        dgemm(
+            p,                     // m: rows of A (= Xcᵀ) and of C
+            n,                     // k: inner dimension (rows of Xc)
+            p,                     // n: cols of B (= Xc) and of C
+            1.0,                   // alpha
+            flat.as_ptr(),         // A = Xcᵀ read col-major over flat
+            1,                     // rsa: stride between rows of A — adjacent in a column of Xcᵀ
+            p as isize, // csa: stride between cols of A — one column of Xcᵀ = one row of Xc
+            flat.as_ptr(), // B = Xc read row-major
+            p as isize, // rsb: stride between rows of B (one row of Xc)
+            1,          // csb: stride between cols of B (adjacent in a row of Xc)
+            0.0,        // beta
+            cov_flat.as_mut_ptr(), // C row-major p×p
+            p as isize, // rsc
+            1,          // csc
+        );
+    }
+    let denom = (n - ddof) as f64;
+    let mut cov: Vec<Vec<f64>> = cov_flat.chunks_exact(p).map(|row| row.to_vec()).collect();
+    if denom > 0.0 {
+        let inv = 1.0 / denom;
+        for row in cov.iter_mut() {
+            for v in row.iter_mut() {
+                *v *= inv;
             }
         }
     }

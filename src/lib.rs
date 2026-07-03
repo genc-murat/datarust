@@ -37,7 +37,10 @@
 //! # Features
 //!
 //! - `serde` — enables JSON serialization via [`serialize`].
-//! - `rayon` — enables parallel column operations for large datasets.
+//! - `rayon` — enables parallel column/row operations for large datasets.
+//! - `matrixmultiply` — enables a tuned pure-Rust GEMM (no system BLAS) for
+//!   `Matrix::matmul` and covariance computation, speeding up PCA and
+//!   TruncatedSVD on large dense inputs.
 //!
 //! The default build has **zero external dependencies**.
 

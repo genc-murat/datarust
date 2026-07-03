@@ -205,13 +205,13 @@ impl Transformer for KnnImputer {
             });
         }
         let mut out = Vec::with_capacity(x.nrows());
-        for row in x.rows_ref() {
+        for row in x.iter_rows() {
             if row.iter().any(|v| v.is_nan()) {
                 let neighbors = self.find_neighbors(row)?;
                 let imputed = self.impute_row(row, &neighbors)?;
                 out.push(imputed);
             } else {
-                out.push(row.clone());
+                out.push(row.to_vec());
             }
         }
         Matrix::new(out)
@@ -341,11 +341,9 @@ mod tests {
 
     #[test]
     fn fit_empty_errors() {
-        let mut imp = KnnImputer::default();
-        let x = Matrix {
-            data: vec![] as Vec<Vec<f64>>,
-        };
-        assert!(imp.fit(&x).is_err());
+        // `Matrix::new` rejects empty input at construction time, which is the
+        // equivalent protection: empty data can never reach `fit`.
+        assert!(Matrix::new(vec![] as Vec<Vec<f64>>).is_err());
     }
 
     #[test]

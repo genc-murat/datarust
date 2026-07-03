@@ -77,8 +77,9 @@ impl Transformer for VarianceThreshold {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
-        // sklearn uses population variance (ddof=0)
-        self.variances = stats::column_variance(x.rows_ref(), 0);
+        // sklearn uses population variance (ddof=0); single fused Welford pass.
+        let (_, variances) = stats::column_mean_var_flat(x.as_slice(), x.nrows(), x.ncols(), 0);
+        self.variances = variances;
         self.support_mask = self.variances.iter().map(|&v| v > self.threshold).collect();
         if !self.support_mask.iter().any(|&b| b) {
             return Err(DatarustError::InvalidConfig(format!(

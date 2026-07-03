@@ -5,10 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-03
+
+### Added
+- `matrixmultiply` feature: optional tuned pure-Rust GEMM (via the `matrixmultiply` crate, no system BLAS) for `Matrix::matmul` and centered-covariance computation. ~3.5× speedup on PCA at 50 000 × 200. The default build remains zero-external-dependency.
+- `Matrix::as_slice()` / `Matrix::as_mut_slice()` — flat row-major accessors for cache-friendly, auto-vectorizable numeric loops.
+- `stats::column_mean_var_flat`, `stats::column_min_max_flat`, `stats::column_quantiles_many_flat` — flat-storage counterparts of the fused statistics functions, used by the scalers.
+- `stats::column_mean_flat` — single-pass flat column mean.
+- `stats::column_mean_var` — Welford single-pass mean+variance (replaces the 3-pass `column_mean` + `column_variance` pair in scaler `fit`).
+- `stats::column_min_max` — fused single-pass min+max (replaces the 2-pass separate calls).
+- `stats::column_quantiles_many` — multiple quantiles from a single sort per column (replaces the 3× redundant sort in `RobustScaler`).
+
+### Changed
+- **BREAKING:** `Matrix` internal storage switched from `Vec<Vec<f64>>` (one heap allocation per row) to a single contiguous `Vec<f64>` + `(rows, cols)`. This is the dominant performance win for large dense inputs: ~13× on `RobustScaler`, ~5× on `StandardScaler`, ~8× on `Pipeline` at 50 000 × 200 (with `rayon`).
+- **BREAKING:** `Matrix::rows_ref()` now returns `Vec<Vec<f64>>` (owned, allocating) instead of `&Vec<Vec<f64>>`, and is marked `#[doc(hidden)]`. Prefer `Matrix::as_slice()` / `Matrix::iter_rows()` in new code; `rows_ref` is retained only for transitional compatibility and will be removed in a future release.
+- **BREAKING:** `Matrix::into_rows()` is marked `#[doc(hidden)]`; prefer `as_slice` / `from_flat`.
+- `StandardScaler`, `MinMaxScaler`, `RobustScaler` `transform`/`inverse_transform` now write directly into flat output buffers with stride-1 reads (replacing per-row `Vec` allocation).
+- `RobustScaler::fit` gathers and sorts each column once for q1/median/q3 (previously three separate gather+sort passes).
+- NaN validation is fused into the scaler transform loops (no separate `validate_no_nan` pass).
+- `Matrix::from_flat` now stores the flat buffer directly instead of re-chunking into rows.
+- `Matrix::get` uses `get_unchecked` after a `debug_assert!` on the hot path.
+- `Matrix::matmul` and centered-covariance dispatch to `matrixmultiply::dgemm` when the feature is enabled.
+
+### Performance
+Measured on Apple M5 Pro (18 cores, arm64), Rust 1.96 release, median of 15 runs after one warmup, `fit_transform` on deterministic synthetic data (seed 42):
+
+| Workload (50 000 × 200) | 0.2.0 | 0.3.0 (default) | 0.3.0 (+rayon) | 0.3.0 (+matrixmultiply) |
+|---|---:|---:|---:|---:|
+| StandardScaler | 115 ms | 8.4 ms | 4.6 ms | — |
+| MinMaxScaler | 81 ms | 12.2 ms | 7.3 ms | — |
+| RobustScaler | 459 ms | 137 ms | 14.6 ms | — |
+| Pipeline (3 scalers) | 662 ms | 152 ms | 28 ms | — |
+| PCA | 1056 ms | 1008 ms | 1028 ms | **303 ms** |
+| OneHotEncoder | 88 ms | 98 ms | 88 ms | — |
+
+For the full sklearn comparison table and methodology, see the "Performance: datarust vs scikit-learn" section of the README.
+
+### Fixed
+- `validate_no_nan` correctly reports the flat buffer index → (row, col) position.
+- `transform_to_table` no longer constructs an invalid zero-column `Matrix` when only categorical columns are present (builds a dummy `nrows × 1` matrix to satisfy the `Table` row-count invariant).
+
 ## [Unreleased]
 
 ### Added
 - `ImputeStrategy` now derives `Default` (default variant `Mean`), for consistency with the other config enums (`BinStrategy`, `Norm`, `HandleUnknown`, `OrdinalCategories`).
+- `examples/bench_compare_rust.rs` and `benches/compare_sklearn.py` — mirrored Rust/Python harnesses for the README performance comparison.
+- README "Performance: datarust vs scikit-learn" section with measured median `fit_transform` times across Standard/MinMax/Robust scalers, PCA, Pipeline, OneHotEncoder and ColumnTransformer at three dataset sizes, plus methodology notes and a non-throughput advantages summary.
 
 ### Changed
 - README installation/feature examples now reference `0.2` instead of the stale `0.1`.

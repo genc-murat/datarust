@@ -1,7 +1,6 @@
 use crate::decomposition::jacobi;
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
-use crate::stats;
 use crate::Transformer;
 
 /// How to specify the number of principal components, mirroring sklearn's
@@ -160,7 +159,7 @@ impl Transformer for PCA {
         let n = x.nrows();
         let p = x.ncols();
         self.n_samples_ = n;
-        self.mean = stats::column_mean(x.rows_ref());
+        self.mean = x.column_mean();
         // Center
         let xc = self.centered(x);
         let cov = jacobi::covariance(&xc, 1);
@@ -402,8 +401,9 @@ mod tests {
         let out = pca.fit_transform(&x).unwrap();
         // whitened components should have variance ~1 when measured with the
         // same ddof (=1) the covariance/eigenvalues use.
-        let means = crate::stats::column_mean(out.rows_ref());
-        let vars = crate::stats::column_variance(out.rows_ref(), 1);
+        let means = out.column_mean();
+        let (_, vars) =
+            crate::stats::column_mean_var_flat(out.as_slice(), out.nrows(), out.ncols(), 1);
         for (k, &v) in vars.iter().enumerate() {
             // skip near-zero-variance components (degenerate eigenvalue)
             if pca.explained_variance()[k] > 1e-6 {
