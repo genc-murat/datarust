@@ -113,16 +113,60 @@ impl TruncatedSVD {
         self.n_components_
     }
 
-    fn xtx(x: &Matrix) -> Vec<Vec<f64>> {
-        let p = x.ncols();
+    /// Flat XᵀX (p×p) from a flat row-major n×p buffer, via GEMM when available.
+    fn xtx_flat(x: &[f64], n: usize, p: usize) -> Vec<Vec<f64>> {
+        if n == 0 || p == 0 {
+            return vec![];
+        }
+        #[cfg(feature = "matrixmultiply")]
+        {
+            Self::xtx_flat_gemm(x, n, p)
+        }
+        #[cfg(not(feature = "matrixmultiply"))]
+        {
+            Self::xtx_flat_scalar(x, n, p)
+        }
+    }
+
+    #[cfg(feature = "matrixmultiply")]
+    fn xtx_flat_gemm(x: &[f64], n: usize, p: usize) -> Vec<Vec<f64>> {
+        use matrixmultiply::dgemm;
+        let mut out = vec![0.0; p * p];
+        // C(p×p) = Xᵀ(p×n) · X(n×p)
+        unsafe {
+            dgemm(
+                p,
+                n,
+                p,
+                1.0,
+                x.as_ptr(),
+                1,
+                p as isize,
+                x.as_ptr(),
+                p as isize,
+                1,
+                0.0,
+                out.as_mut_ptr(),
+                p as isize,
+                1,
+            );
+        }
+        out.chunks_exact(p).map(|r| r.to_vec()).collect()
+    }
+
+    #[cfg(not(feature = "matrixmultiply"))]
+    #[allow(clippy::needless_range_loop)]
+    fn xtx_flat_scalar(x: &[f64], n: usize, p: usize) -> Vec<Vec<f64>> {
         let mut m = vec![vec![0.0; p]; p];
-        for row in x.rows_ref() {
-            for i in 0..p {
-                if row[i] == 0.0 {
+        for i in 0..n {
+            let base = i * p;
+            for a in 0..p {
+                let xa = x[base + a];
+                if xa == 0.0 {
                     continue;
                 }
-                for j in 0..p {
-                    m[i][j] += row[i] * row[j];
+                for b in 0..p {
+                    m[a][b] += xa * x[base + b];
                 }
             }
         }
@@ -186,8 +230,10 @@ impl Transformer for TruncatedSVD {
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
         let n = x.nrows();
+        let p = x.ncols();
         self.n_samples_ = n;
-        let m = Self::xtx(x);
+        // XᵀX (p×p) via flat centered-style product (no centering for SVD).
+        let m = Self::xtx_flat(x.as_slice(), n, p);
         let (mut vals, vecs) = jacobi::eigh(&m)
             .ok_or_else(|| DatarustError::Singular("XᵀX matrix is empty or non-square".into()))?;
         for v in vals.iter_mut() {
@@ -224,19 +270,19 @@ impl Transformer for TruncatedSVD {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        let n = x.nrows();
+        let p = x.ncols();
         let k = self.n_components_;
-        let mut out = vec![vec![0.0; k]; x.nrows()];
-        for (i, row) in x.rows_ref().iter().enumerate() {
-            for j in 0..k {
-                let comp = &self.components[j];
-                let mut s = 0.0;
-                for c in 0..row.len() {
-                    s += row[c] * comp[c];
-                }
-                out[i][j] = s;
+        // Components transposed into a flat p×k buffer for X·Cᵀ.
+        let mut comps_t = vec![0.0; p * k];
+        for j in 0..k {
+            for c in 0..p {
+                comps_t[c * k + j] = self.components[j][c];
             }
         }
-        Matrix::new(out)
+        let mut out = vec![0.0; n * k];
+        crate::decomposition::pca::matmul_flat(&mut out, x.as_slice(), &comps_t, n, p, k);
+        Matrix::from_flat(n, k, out)
     }
 
     fn inverse_transform(&self, x: &Matrix) -> Result<Matrix> {
@@ -249,17 +295,14 @@ impl Transformer for TruncatedSVD {
                 actual: format!("{} columns", x.ncols()),
             });
         }
+        let n = x.nrows();
         let p = self.components[0].len();
         let k = self.n_components_;
-        let mut out = vec![vec![0.0; p]; x.nrows()];
-        for (i, row) in x.rows_ref().iter().enumerate() {
-            for (j, comp) in self.components.iter().enumerate().take(k) {
-                for c in 0..p {
-                    out[i][c] += row[j] * comp[c];
-                }
-            }
-        }
-        Matrix::new(out)
+        // Components as a flat k×p buffer for projected·C.
+        let comps_flat: Vec<f64> = self.components.iter().flatten().copied().collect();
+        let mut out = vec![0.0; n * p];
+        crate::decomposition::pca::matmul_flat(&mut out, x.as_slice(), &comps_flat, n, k, p);
+        Matrix::from_flat(n, p, out)
     }
 
     fn is_fitted(&self) -> bool {

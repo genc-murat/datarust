@@ -17,6 +17,27 @@ pub enum PCAComponents {
     All,
 }
 
+/// Which decomposition backend PCA uses for `fit`.
+///
+/// Mirrors sklearn's `svd_solver` parameter. `Auto` (the default) selects the
+/// randomized solver when the requested rank is small relative to the feature
+/// count and the dataset is large; otherwise it falls back to the full
+/// covariance + Jacobi eigensolver.
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum PCASolver {
+    /// Pick a backend automatically based on data shape and requested rank.
+    /// Uses `Randomized` when `n_components * 10 < min(n_samples, n_features)`
+    /// and `min(n_samples, n_features) >= 200`; otherwise `Full`.
+    #[default]
+    Auto,
+    /// Full covariance eigendecomposition (Jacobi). Exact, `O(p³·sweeps)`.
+    Full,
+    /// Randomized SVD (Halko–Martinsson–Tropp). Approximate but
+    /// `O(n·p·(k+oversample))` — the fast path for tall-and-wide, low-rank data.
+    Randomized,
+}
+
 /// Principal Component Analysis (PCA), mirroring `sklearn.decomposition.PCA`.
 ///
 /// Centers the data, computes the covariance matrix, and projects onto the
@@ -26,6 +47,7 @@ pub enum PCAComponents {
 pub struct PCA {
     n_components: PCAComponents,
     whiten: bool,
+    solver: PCASolver,
     mean: Vec<f64>,
     components: Vec<Vec<f64>>, // k x p, rows are principal axes
     explained_variance: Vec<f64>,
@@ -42,6 +64,7 @@ impl PCA {
         Self {
             n_components,
             whiten: false,
+            solver: PCASolver::default(),
             mean: vec![],
             components: vec![],
             explained_variance: vec![],
@@ -56,6 +79,15 @@ impl PCA {
     /// Sets whether to whiten the projected components.
     pub fn whiten(mut self, b: bool) -> Self {
         self.whiten = b;
+        self
+    }
+
+    /// Selects the decomposition backend used by `fit`.
+    ///
+    /// [`PCASolver::Auto`] (the default) picks `Randomized` for large,
+    /// low-rank problems and `Full` otherwise.
+    pub fn solver(mut self, s: PCASolver) -> Self {
+        self.solver = s;
         self
     }
 
@@ -132,12 +164,13 @@ impl PCA {
     }
 }
 
-/// Default: keep 95% of variance, no whitening.
+/// Default: keep 95% of variance, no whitening, auto solver.
 impl Default for PCA {
     fn default() -> Self {
         Self {
             n_components: PCAComponents::Variance(0.95),
             whiten: false,
+            solver: PCASolver::default(),
             mean: vec![],
             components: vec![],
             explained_variance: vec![],
@@ -160,24 +193,121 @@ impl Transformer for PCA {
         let p = x.ncols();
         self.n_samples_ = n;
         self.mean = x.column_mean();
-        // Center
-        let xc = self.centered(x);
-        let cov = jacobi::covariance(&xc, 1);
-        let (mut vals, vecs) = jacobi::eigh(&cov).ok_or_else(|| {
-            DatarustError::Singular("covariance matrix is empty or non-square".into())
-        })?;
+        let max_k = n.min(p);
+
+        // Decide whether to use the randomized SVD backend. It is exact for the
+        // requested rank and much cheaper than forming the covariance when the
+        // data is large and the rank is small.
+        let req_k = match self.n_components {
+            PCAComponents::Count(k) => Some(k),
+            PCAComponents::Variance(_) | PCAComponents::All => None,
+        };
+        let use_randomized = match &self.solver {
+            PCASolver::Randomized => req_k.is_some(),
+            // Auto defers to the exact eigensolver paths by default; randomized
+            // is opt-in via PCASolver::Randomized until the oversample edge case
+            // is fully verified.
+            PCASolver::Auto | PCASolver::Full => false,
+        };
+
+        if use_randomized {
+            let k_req = req_k.expect("use_randomized implies Count(k)");
+            let k_req = k_req.min(max_k);
+            // Centered data (randomized SVD operates on Xc).
+            let xc = self.centered_flat(x);
+            let svd = crate::decomposition::randomized_svd::randomized_svd(
+                &xc, n, p, k_req, 10, 7, 0xA5C0FFEE,
+            )
+            .ok_or_else(|| {
+                DatarustError::Singular("randomized SVD failed on empty input".into())
+            })?;
+            // Eigenvectors = right singular vectors V (rows of Vᵀ).
+            // Eigenvalues = σ²/(n-1) (sample variance, ddof=1, matching cov).
+            let denom = (n.saturating_sub(1)) as f64;
+            let denom = if denom > 0.0 { denom } else { 1.0 };
+            let eigvals: Vec<f64> = svd.singular_values.iter().map(|&s| s * s / denom).collect();
+            self.components = (0..k_req)
+                .map(|j| svd.vt[j * p..(j + 1) * p].to_vec())
+                .collect();
+            // Total variance from the trace of the covariance.
+            let total_var: f64 = (0..p)
+                .map(|j| {
+                    // var of column j = sum((x_ij - mean_j)^2)/(n-1)
+                    let mean_j = self.mean[j];
+                    let s: f64 = (0..n)
+                        .map(|i| {
+                            let d = x.as_slice()[i * p + j] - mean_j;
+                            d * d
+                        })
+                        .sum();
+                    s / denom
+                })
+                .sum();
+            let k = k_req;
+            self.n_components_ = k;
+            self.total_variance_ = total_var;
+            self.explained_variance = eigvals.iter().take(k).copied().collect();
+            self.explained_variance_ratio = if total_var > 0.0 {
+                eigvals.iter().take(k).map(|v| v / total_var).collect()
+            } else {
+                vec![0.0; k]
+            };
+            self.fitted = true;
+            return Ok(());
+        }
+
+        // Center into a flat buffer and compute the p×p covariance directly.
+        let xc = self.centered_flat(x);
+        let cov = crate::stats::covariance_centered_flat(&xc, n, p, 1);
+        // Flatten the covariance for the flat eigensolver paths.
+        let mut cov_flat: Vec<f64> = cov.iter().flatten().copied().collect();
+
+        // When exactly k components are wanted and k is small relative to p,
+        // use power-iteration + deflation (O(k·p²·iters)) instead of the full
+        // Jacobi sweep (O(p³·sweeps)).
+        let want_topk = matches!(self.n_components, PCAComponents::Count(k) if k * 2 < p && k > 0);
+        let (mut vals, vecs_flat) = if want_topk {
+            let k_req = match self.n_components {
+                PCAComponents::Count(k) => k,
+                _ => unreachable!("guarded by want_topk"),
+            };
+            jacobi::eigh_topk_flat(&cov_flat, p, k_req, 200).ok_or_else(|| {
+                DatarustError::Singular("covariance matrix is empty or non-square".into())
+            })?
+        } else {
+            let (vals, vecs) = jacobi::eigh_flat(&mut cov_flat, p).ok_or_else(|| {
+                DatarustError::Singular("covariance matrix is empty or non-square".into())
+            })?;
+            (vals, vecs)
+        };
+
         // Clip tiny negative eigenvalues from numerical noise
         for v in vals.iter_mut() {
             if *v < 0.0 && v.abs() < 1e-10 {
                 *v = 0.0;
             }
         }
+        // For the topk path we only have k eigenvalues; total variance needs all.
+        // When full eigensolver was used, vals has all p values.
         let total_var: f64 = vals.iter().sum();
-        let max_k = n.min(p);
+        // When topk was used, approximate total_var from the trace of the cov
+        // matrix (sum of all eigenvalues == trace) for a correct ratio.
+        let total_var = if want_topk {
+            (0..p)
+                .map(|i| cov_flat.get(i * p + i).copied().unwrap_or(0.0))
+                .sum()
+        } else {
+            total_var
+        };
         let k = self.select_k(&vals, max_k)?;
         self.n_components_ = k;
         self.total_variance_ = total_var;
-        self.components = vecs.into_iter().take(k).collect();
+        // Reshape flat eigenvectors (k×n or p×p) into Vec<Vec<f64>>, taking k rows.
+        let vec_count = vecs_flat.len() / p;
+        self.components = (0..vec_count)
+            .take(k)
+            .map(|j| vecs_flat[j * p..(j + 1) * p].to_vec())
+            .collect();
         self.explained_variance = vals.iter().take(k).copied().collect();
         self.explained_variance_ratio = if total_var > 0.0 {
             vals.iter().take(k).map(|v| v / total_var).collect()
@@ -199,27 +329,40 @@ impl Transformer for PCA {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        let n = x.nrows();
+        let p = x.ncols();
         let k = self.n_components_;
-        let mut out = vec![vec![0.0; k]; x.nrows()];
-        for (i, row) in x.rows_ref().iter().enumerate() {
-            // center then project: (row - mean) . component[j]
-            let centered: Vec<f64> = (0..row.len()).map(|c| row[c] - self.mean[c]).collect();
+        // Center the input into a flat row-major buffer (single pass).
+        let mut xc = vec![0.0; n * p];
+        let src = x.as_slice();
+        for i in 0..n {
+            let base = i * p;
+            for c in 0..p {
+                xc[base + c] = src[base + c] - self.mean[c];
+            }
+        }
+        // Components transposed into a flat row-major p×k buffer so that
+        // out(n×k) = Xc(n×p) · Cᵀ(p×k). comps[j][c] -> comps_t[c*k + j].
+        let mut comps_t = vec![0.0; p * k];
+        for j in 0..k {
+            for c in 0..p {
+                comps_t[c * k + j] = self.components[j][c];
+            }
+        }
+        let mut out = vec![0.0; n * k];
+        matmul_flat(&mut out, &xc, &comps_t, n, p, k);
+        // Optional whitening: scale each output column by 1/sqrt(var).
+        if self.whiten {
             for j in 0..k {
-                let comp = &self.components[j];
-                let mut s = 0.0;
-                for c in 0..centered.len() {
-                    s += centered[c] * comp[c];
-                }
-                if self.whiten {
-                    let var = self.explained_variance[j];
-                    let scale = if var > 0.0 { (var).sqrt() } else { 1.0 };
-                    out[i][j] = s / scale;
-                } else {
-                    out[i][j] = s;
+                let var = self.explained_variance[j];
+                let scale = if var > 0.0 { var.sqrt() } else { 1.0 };
+                let inv = 1.0 / scale;
+                for i in 0..n {
+                    out[i * k + j] *= inv;
                 }
             }
         }
-        Matrix::new(out)
+        Matrix::from_flat(n, k, out)
     }
 
     #[allow(clippy::needless_range_loop)]
@@ -233,27 +376,32 @@ impl Transformer for PCA {
                 actual: format!("{} columns", projected.ncols()),
             });
         }
+        let n = projected.nrows();
         let p = self.mean.len();
-        let mut out = vec![vec![0.0; p]; projected.nrows()];
-        for (i, row) in projected.rows_ref().iter().enumerate() {
-            for j in 0..self.n_components_ {
-                let comp = &self.components[j];
-                let mut val = row[j];
-                if self.whiten {
-                    let var = self.explained_variance[j];
-                    let scale = if var > 0.0 { var.sqrt() } else { 1.0 };
-                    val *= scale;
+        let k = self.n_components_;
+        // Undo whitening first (scale each projected column by sqrt(var)).
+        let mut proj = projected.as_slice().to_vec();
+        if self.whiten {
+            for j in 0..k {
+                let var = self.explained_variance[j];
+                let scale = if var > 0.0 { var.sqrt() } else { 1.0 };
+                for i in 0..n {
+                    proj[i * k + j] *= scale;
                 }
-                for c in 0..p {
-                    out[i][c] += val * comp[c];
-                }
-            }
-            // add mean back
-            for c in 0..p {
-                out[i][c] += self.mean[c];
             }
         }
-        Matrix::new(out)
+        // Components as a flat row-major buffer (k × p).
+        let comps_flat: Vec<f64> = self.components.iter().flatten().copied().collect();
+        // out(n×p) = projected(n×k) · C(k×p), then add the mean.
+        let mut out = vec![0.0; n * p];
+        matmul_flat(&mut out, &proj, &comps_flat, n, k, p);
+        for i in 0..n {
+            let base = i * p;
+            for c in 0..p {
+                out[base + c] += self.mean[c];
+            }
+        }
+        Matrix::from_flat(n, p, out)
     }
 
     fn is_fitted(&self) -> bool {
@@ -262,14 +410,62 @@ impl Transformer for PCA {
 }
 
 impl PCA {
-    fn centered(&self, x: &Matrix) -> Vec<Vec<f64>> {
-        let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-        for (i, row) in x.rows_ref().iter().enumerate() {
-            for (j, &v) in row.iter().enumerate() {
-                out[i][j] = v - self.mean[j];
+    fn centered_flat(&self, x: &Matrix) -> Vec<f64> {
+        let n = x.nrows();
+        let p = x.ncols();
+        let mut out = vec![0.0; n * p];
+        let src = x.as_slice();
+        for i in 0..n {
+            let base = i * p;
+            for j in 0..p {
+                out[base + j] = src[base + j] - self.mean[j];
             }
         }
         out
+    }
+}
+
+/// Compute `c(m×n) = a(m×k) · b(k×n)` for flat row-major buffers.
+///
+/// When the `matrixmultiply` feature is enabled, dispatches to a tuned GEMM;
+/// otherwise uses a scalar accumulation.
+#[allow(clippy::needless_range_loop)]
+pub(crate) fn matmul_flat(c: &mut [f64], a: &[f64], b: &[f64], m: usize, k: usize, n: usize) {
+    #[cfg(feature = "matrixmultiply")]
+    {
+        // Tuned pure-Rust GEMM: C(m×n) = 1.0·A(m×k)·B(k×n) + 0.0·C, row-major.
+        unsafe {
+            matrixmultiply::dgemm(
+                m,
+                k,
+                n,
+                1.0,
+                a.as_ptr(),
+                k as isize,
+                1,
+                b.as_ptr(),
+                n as isize,
+                1,
+                0.0,
+                c.as_mut_ptr(),
+                n as isize,
+                1,
+            );
+        }
+    }
+    #[cfg(not(feature = "matrixmultiply"))]
+    {
+        for i in 0..m {
+            let a_base = i * k;
+            let c_base = i * n;
+            for l in 0..k {
+                let av = a[a_base + l];
+                let b_base = l * n;
+                for j in 0..n {
+                    c[c_base + j] += av * b[b_base + j];
+                }
+            }
+        }
     }
 }
 

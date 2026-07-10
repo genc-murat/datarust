@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `PCASolver` enum (`Auto` / `Full` / `Randomized`) on `PCA`, selectable via `PCA::solver(...)`. `Randomized` uses a Halko–Martinsson–Tropp randomized SVD (`src/decomposition/randomized_svd.rs`) — the fast path for tall-and-wide, low-rank inputs. `Auto` (default) keeps the exact eigensolver paths while the oversampling edge case is verified.
+- `jacobi::eigh_topk_flat` — power-iteration + deflation that computes only the top-`k` eigenpairs of a flat symmetric matrix in `O(k·n²·iters)` instead of `O(n³·sweeps)`. Used by `PCA` when `n_components` is small.
+- `pca::matmul_flat` — shared flat matmul helper (GEMM when `matrixmultiply` is enabled, scalar otherwise), now used by `PCA` and `TruncatedSVD` transforms.
+- `stats::covariance_centered_flat` — flat-storage centered covariance (GEMM-backed when `matrixmultiply` is enabled).
+
+### Changed
+- **PCA / TruncatedSVD eigensolver now flat.** `jacobi::eigh_flat` operates on a single contiguous buffer (better cache locality + auto-vectorisation) instead of `Vec<Vec<f64>>`. PCA 50 000 × 200 dropped from ~320 ms to ~104 ms with `matrixmultiply`.
+- **PCA / TruncatedSVD transforms now flat + matmul.** `transform`/`inverse_transform` write directly into contiguous output buffers and dispatch to `matmul_flat` (GEMM when enabled), replacing the per-row `Vec` allocation and manual dot products.
+- **TruncatedSVD `xtx` now GEMM-backed** when `matrixmultiply` is enabled (was a scalar nested loop).
+- **Scaler `transform` rayon threshold.** `StandardScaler`/`MinMaxScaler`/`RobustScaler` now use the scalar loop below 4 096 rows and the `rayon` parallel path above it. This fixes a regression where the rayon build was slower than the default build on small inputs (e.g. 1 000 × 10 `StandardScaler`: 0.36 ms → 0.016 ms, a 22× improvement on the rayon build).
+
+### Performance
+Measured on Apple M5 Pro (18 cores, arm64), Rust 1.96 release, median of 11 runs after one warmup, `fit_transform` on deterministic synthetic data (seed 42):
+
+| Workload (50 000 × 200) | 0.3.0 default | 0.3.1 default | 0.3.1 +rayon |
+|---|---:|---:|---:|
+| StandardScaler | 8.0 ms | 8.2 ms | **4.7 ms** |
+| MinMaxScaler | 11.4 ms | 10.8 ms | **7.5 ms** |
+| RobustScaler | 127 ms | 123 ms | **14.0 ms** |
+| Pipeline (3 scalers) | 148 ms | 144 ms | **26.7 ms** |
+| OneHotEncoder | 93 ms | 89 ms | **80 ms** |
+
+| Workload (50 000 × 200) | 0.3.0 +matrixmultiply | 0.3.1 +matrixmultiply |
+|---|---:|---:|
+| PCA | 303 ms | **104 ms** |
+
+The PCA gap vs scikit-learn narrowed from ~85× (0.2.0) to ~8× (0.3.1 +matrixmultiply); the randomized-SVD solver closes it further for low-rank inputs.
+
 ## [0.3.0] - 2026-07-03
 
 ### Added

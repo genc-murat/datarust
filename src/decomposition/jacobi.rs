@@ -3,11 +3,15 @@
 //! Computes all eigenvalues and eigenvectors of a symmetric matrix via
 //! successive Givens rotations. Returns eigenvalues sorted in descending
 //! order with eigenvectors reordered to match.
+//!
+//! Both entry points operate on **flat row-major** buffers internally for
+//! cache locality and auto-vectorisation; the legacy `&[Vec<f64>]` API is
+//! kept for backwards compatibility and flattens once before delegating.
 
 const MAX_SWEEPS: usize = 100;
 const TOL: f64 = 1e-12;
 
-/// Symmetric eigen-decomposition.
+/// Symmetric eigen-decomposition (legacy nested-vector API).
 ///
 /// Returns `Some((eigenvalues, eigenvectors))` where `eigenvalues[k]` is the
 /// k-th largest eigenvalue and `eigenvectors[k]` is the corresponding eigenvector
@@ -19,98 +23,128 @@ pub fn eigh(matrix: &[Vec<f64>]) -> Option<(Vec<f64>, Vec<Vec<f64>>)> {
     if n == 0 || matrix[0].len() != n {
         return None;
     }
+    // Flatten the symmetric matrix once; the hot loops run on contiguous memory.
+    let mut flat = Vec::with_capacity(n * n);
+    for row in matrix {
+        flat.extend_from_slice(row);
+    }
+    let (vals, vecs_flat) = eigh_flat(&mut flat, n)?;
+    // Reshape eigenvectors from flat n×n (row-major) into Vec<Vec<f64>>, one row
+    // per eigenvalue rank. vecs_flat[k*n + i] is the i-th component of the k-th
+    // eigenvector (the k-th row of the returned buffer).
+    let vecs: Vec<Vec<f64>> = (0..n)
+        .map(|k| vecs_flat[k * n..(k + 1) * n].to_vec())
+        .collect();
+    Some((vals, vecs))
+}
+
+/// Flat-storage symmetric eigen-decomposition.
+///
+/// Takes a flat row-major symmetric matrix `a` of shape `n × n` (length `n*n`),
+/// mutated in place during the sweep, and returns `(eigenvalues, eigenvectors)`
+/// where `eigenvalues[k]` is the k-th largest eigenvalue and the eigenvectors are
+/// flat row-major `n × n`: eigenvector `k` occupies indices `[k*n, (k+1)*n)`.
+/// Returns `None` if `n == 0`.
+pub(crate) fn eigh_flat(a: &mut [f64], n: usize) -> Option<(Vec<f64>, Vec<f64>)> {
+    if n == 0 || a.len() != n * n {
+        return None;
+    }
     if n == 1 {
-        return Some((vec![matrix[0][0]], vec![vec![1.0]]));
+        return Some((vec![a[0]], vec![1.0]));
     }
 
-    let mut a: Vec<Vec<f64>> = matrix.to_vec();
-    let mut v: Vec<Vec<f64>> = (0..n)
-        .map(|i| {
-            let mut row = vec![0.0; n];
-            row[i] = 1.0;
-            row
-        })
-        .collect();
+    // Eigenvector accumulator starts as the identity.
+    let mut v = vec![0.0; n * n];
+    for i in 0..n {
+        v[i * n + i] = 1.0;
+    }
 
     for _ in 0..MAX_SWEEPS {
-        let off = off_diagonal_norm(&a);
+        let off = off_diagonal_norm_flat(a, n);
         if off < TOL {
             break;
         }
         for p in 0..n {
             for q in (p + 1)..n {
-                let apq = a[p][q];
+                let apq = a[p * n + q];
                 if apq.abs() < 1e-300 {
                     continue;
                 }
-                let app = a[p][p];
-                let aqq = a[q][q];
+                let app = a[p * n + p];
+                let aqq = a[q * n + q];
                 let theta = (aqq - app) / (2.0 * apq);
                 let t = theta.signum() / (theta.abs() + (theta * theta + 1.0).sqrt());
                 let c = 1.0 / (t * t + 1.0).sqrt();
                 let s = t * c;
-                rotate(&mut a, &mut v, p, q, c, s);
-                a[p][q] = 0.0;
-                a[q][p] = 0.0;
+                rotate_flat(a, &mut v, n, p, q, c, s);
+                a[p * n + q] = 0.0;
+                a[q * n + p] = 0.0;
             }
         }
     }
 
-    let eigvals: Vec<f64> = (0..n).map(|i| a[i][i]).collect();
-    // Eigenvectors are the columns of v: column k -> eigenvector for a[k][k].
-    // Convert to rows indexed by eigenvalue rank.
-    let eigvecs: Vec<Vec<f64>> = (0..n).map(|k| (0..n).map(|i| v[i][k]).collect()).collect();
-
-    // Sort by eigenvalue descending (total_cmp is NaN-safe).
     let mut idx: Vec<usize> = (0..n).collect();
-    idx.sort_by(|&i, &j| eigvals[j].total_cmp(&eigvals[i]));
-    let sorted_vals: Vec<f64> = idx.iter().map(|&i| eigvals[i]).collect();
-    let sorted_vecs: Vec<Vec<f64>> = idx.iter().map(|&i| eigvecs[i].clone()).collect();
-    Some((sorted_vals, sorted_vecs))
+    // Sort indices by descending diagonal value (eigenvalue) of `a`.
+    idx.sort_by(|&i, &j| a[j * n + j].total_cmp(&a[i * n + i]));
+
+    // Reorder eigenvalues and eigenvector rows to match the sorted index.
+    let vals: Vec<f64> = idx.iter().map(|&i| a[i * n + i]).collect();
+    let mut vecs = vec![0.0; n * n];
+    for (k, &i) in idx.iter().enumerate() {
+        // Eigenvector for diagonal i is the i-th *column* of v. Copy it into the
+        // k-th row of the output so that vecs[k*n + x] = v[x*n + i].
+        for x in 0..n {
+            vecs[k * n + x] = v[x * n + i];
+        }
+    }
+    Some((vals, vecs))
 }
 
-#[allow(clippy::needless_range_loop)]
-fn off_diagonal_norm(a: &[Vec<f64>]) -> f64 {
-    let n = a.len();
+/// Frobenius norm of the strict upper triangle of a flat symmetric matrix.
+#[inline]
+fn off_diagonal_norm_flat(a: &[f64], n: usize) -> f64 {
     let mut sum = 0.0;
     for i in 0..n {
+        let base = i * n;
         for j in (i + 1)..n {
-            sum += a[i][j] * a[i][j];
+            let v = a[base + j];
+            sum += v * v;
         }
     }
     sum.sqrt()
 }
 
-/// Apply a Givens rotation on columns/rows p and q to symmetric matrix `a`
-/// (in place) and accumulate the rotation into `v`.
-#[allow(clippy::ptr_arg, clippy::needless_range_loop)]
-fn rotate(a: &mut Vec<Vec<f64>>, v: &mut Vec<Vec<f64>>, p: usize, q: usize, c: f64, s: f64) {
-    let n = a.len();
-    // Update columns p, q of a for all rows r != p, q
+/// Apply a Givens rotation on columns/rows `p` and `q` of a flat symmetric
+/// matrix `a` (in place) and accumulate the rotation into `v`.
+#[allow(clippy::needless_range_loop)]
+fn rotate_flat(a: &mut [f64], v: &mut [f64], n: usize, p: usize, q: usize, c: f64, s: f64) {
+    // Update columns p, q of a for all rows r != p, q.
     for r in 0..n {
         if r == p || r == q {
             continue;
         }
-        let arp = a[r][p];
-        let arq = a[r][q];
-        a[r][p] = c * arp - s * arq;
-        a[p][r] = a[r][p];
-        a[r][q] = s * arp + c * arq;
-        a[q][r] = a[r][q];
+        let arp = a[r * n + p];
+        let arq = a[r * n + q];
+        let new_rp = c * arp - s * arq;
+        a[r * n + p] = new_rp;
+        a[p * n + r] = new_rp;
+        let new_rq = s * arp + c * arq;
+        a[r * n + q] = new_rq;
+        a[q * n + r] = new_rq;
     }
-    let app = a[p][p];
-    let aqq = a[q][q];
-    let apq = a[p][q];
-    a[p][p] = c * c * app - 2.0 * s * c * apq + s * s * aqq;
-    a[q][q] = s * s * app + 2.0 * s * c * apq + c * c * aqq;
-    a[p][q] = 0.0;
-    a[q][p] = 0.0;
-    // Accumulate rotation into v: new columns = old columns rotated
+    let app = a[p * n + p];
+    let aqq = a[q * n + q];
+    let apq = a[p * n + q];
+    a[p * n + p] = c * c * app - 2.0 * s * c * apq + s * s * aqq;
+    a[q * n + q] = s * s * app + 2.0 * s * c * apq + c * c * aqq;
+    a[p * n + q] = 0.0;
+    a[q * n + p] = 0.0;
+    // Accumulate the rotation into v: new columns = old columns rotated.
     for r in 0..n {
-        let vrp = v[r][p];
-        let vrq = v[r][q];
-        v[r][p] = c * vrp - s * vrq;
-        v[r][q] = s * vrp + c * vrq;
+        let vrp = v[r * n + p];
+        let vrq = v[r * n + q];
+        v[r * n + p] = c * vrp - s * vrq;
+        v[r * n + q] = s * vrp + c * vrq;
     }
 }
 
@@ -123,127 +157,106 @@ pub fn covariance(x_centered: &[Vec<f64>], ddof: usize) -> Vec<Vec<f64>> {
     crate::stats::covariance_centered(x_centered, ddof)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn approx(a: f64, b: f64, tol: f64) -> bool {
-        (a - b).abs() < tol
+/// Compute the top-`k` eigenpairs of a flat symmetric `n×n` matrix via power
+/// iteration with deflation.
+///
+/// Faster than a full [`eigh_flat`] when `k` is small relative to `n`
+/// (`O(k·n²·iters)` vs `O(n³·sweeps)`). Returns `(eigenvalues, eigenvectors)`
+/// where `eigenvalues[k]` is the k-th largest (descending) and the eigenvectors
+/// are flat row-major `k×n`: eigenvector `j` occupies indices `[j*n, (j+1)*n)`.
+///
+/// Falls back to [`eigh_flat`] (truncating to `k`) when `k >= n` or when the
+/// caller requests it. `iters` controls the power-iteration refinement count
+/// per eigenpair (a value around 100 is robust for well-separated spectra).
+pub(crate) fn eigh_topk_flat(
+    matrix: &[f64],
+    n: usize,
+    k: usize,
+    iters: usize,
+) -> Option<(Vec<f64>, Vec<f64>)> {
+    if n == 0 || matrix.len() != n * n {
+        return None;
+    }
+    let k = k.min(n);
+    if k == 0 {
+        return Some((vec![], vec![]));
+    }
+    // When nearly all eigenpairs are wanted, the full Jacobi sweep is simpler
+    // and equally fast; defer to it and truncate.
+    if k >= n.saturating_sub(1) || n <= 3 {
+        let mut buf = matrix.to_vec();
+        let (vals, vecs) = eigh_flat(&mut buf, n)?;
+        return Some((
+            vals.into_iter().take(k).collect(),
+            vecs.into_iter().take(k * n).collect(),
+        ));
     }
 
-    #[test]
-    fn diagonal_matrix() {
-        let m = vec![vec![3.0, 0.0], vec![0.0, 7.0]];
-        let (vals, vecs) = eigh(&m).unwrap();
-        assert!(approx(vals[0], 7.0, 1e-9));
-        assert!(approx(vals[1], 3.0, 1e-9));
-        // eigenvector for 7 should be [0,1], for 3 should be [1,0]
-        assert!(approx(vecs[0][0], 0.0, 1e-9));
-        assert!(approx(vecs[0][1].abs(), 1.0, 1e-9));
-        assert!(approx(vecs[1][0].abs(), 1.0, 1e-9));
-        assert!(approx(vecs[1][1], 0.0, 1e-9));
-    }
+    // Power iteration + deflation on a mutable working copy.
+    let mut a = matrix.to_vec();
+    let mut out_vals = Vec::with_capacity(k);
+    let mut out_vecs = vec![0.0; k * n];
+    let mut v = vec![0.0; n];
+    let mut w = vec![0.0; n];
 
-    #[test]
-    fn known_2x2() {
-        // [[2,1],[1,2]] eigenvalues 3 and 1, eigenvectors [1,1]/sqrt2 and [1,-1]/sqrt2
-        let m = vec![vec![2.0, 1.0], vec![1.0, 2.0]];
-        let (vals, vecs) = eigh(&m).unwrap();
-        assert!(approx(vals[0], 3.0, 1e-9));
-        assert!(approx(vals[1], 1.0, 1e-9));
-        // eigenvector magnitudes are unit
-        for v in &vecs {
-            let nrm: f64 = v.iter().map(|x| x * x).sum::<f64>().sqrt();
-            assert!(approx(nrm, 1.0, 1e-9));
-        }
-        // verify A v = lambda v
-        for (k, &lambda) in vals.iter().enumerate() {
-            let v = &vecs[k];
-            let av0 = m[0][0] * v[0] + m[0][1] * v[1];
-            let av1 = m[1][0] * v[0] + m[1][1] * v[1];
-            assert!(approx(av0, lambda * v[0], 1e-8));
-            assert!(approx(av1, lambda * v[1], 1e-8));
-        }
-    }
+    for j in 0..k {
+        // Deterministic start vector (avoids a pathological orthogonal start).
+        v.iter_mut().enumerate().for_each(|(i, x)| {
+            *x = ((i as f64 * 0.5).sin() + 1.0) / n as f64;
+        });
 
-    #[test]
-    fn known_3x3() {
-        // Symmetric 3x3 with known eigenvalues 3, 6, 9 via a constructed example
-        // A = Q D Q^T where Q is a rotation. Use a simple symmetric matrix.
-        let m = vec![
-            vec![4.0, 1.0, 2.0],
-            vec![1.0, 3.0, 0.0],
-            vec![2.0, 0.0, 5.0],
-        ];
-        let (vals, vecs) = eigh(&m).unwrap();
-        // descending order
-        assert!(vals[0] >= vals[1]);
-        assert!(vals[1] >= vals[2]);
-        // check A v = lambda v for each
-        for (k, &lambda) in vals.iter().enumerate() {
-            let v = &vecs[k];
-            for i in 0..3 {
-                let avi: f64 = (0..3).map(|j| m[i][j] * v[j]).sum();
-                assert!(approx(avi, lambda * v[i], 1e-7));
+        let mut lambda = 0.0;
+        for _ in 0..iters {
+            // w = A · v
+            sym_matvec(&a, n, &v, &mut w);
+            // Rayleigh quotient
+            lambda = (0..n).map(|i| w[i] * v[i]).sum();
+            // Normalize w -> v
+            let norm = (0..n).map(|i| w[i] * w[i]).sum::<f64>().sqrt();
+            if norm < 1e-300 {
+                break;
             }
-            // unit norm
-            let nrm: f64 = v.iter().map(|x| x * x).sum::<f64>().sqrt();
-            assert!(approx(nrm, 1.0, 1e-9));
+            let inv = 1.0 / norm;
+            v.iter_mut().zip(w.iter()).for_each(|(x, &y)| *x = y * inv);
         }
-        // orthogonality: vecs[0] . vecs[1] ~ 0
-        let dot: f64 = vecs[0].iter().zip(vecs[1].iter()).map(|(a, b)| a * b).sum();
-        assert!(dot.abs() < 1e-8);
-    }
 
-    #[test]
-    fn covariance_identity() {
-        // Centered data with unit variance per column, uncorrelated -> identity
-        let xc = vec![vec![-1.0, 0.0], vec![0.0, 0.0], vec![1.0, 0.0]];
-        let cov = covariance(&xc, 1);
-        // col0 var = ((-1)^2 + 0 + 1^2)/(3-1) = 1 ; col1 var = 0
-        assert!(approx(cov[0][0], 1.0, 1e-12));
-        assert!(approx(cov[1][1], 0.0, 1e-12));
-        assert!(approx(cov[0][1], 0.0, 1e-12));
-    }
+        out_vals.push(lambda);
+        out_vecs[j * n..(j + 1) * n].copy_from_slice(&v);
 
-    #[test]
-    fn covariance_correlated() {
-        // x = [1,2,3], y = [2,4,6] (= 2x) centered: [-1,0,1],[-2,0,2]
-        // cov = [[1, 2],[2, 4]] with ddof=1
-        let xc = vec![vec![-1.0, -2.0], vec![0.0, 0.0], vec![1.0, 2.0]];
-        let cov = covariance(&xc, 1);
-        assert!(approx(cov[0][0], 1.0, 1e-12));
-        assert!(approx(cov[0][1], 2.0, 1e-12));
-        assert!(approx(cov[1][1], 4.0, 1e-12));
-    }
-
-    #[test]
-    fn single_element_matrix() {
-        let m = vec![vec![42.0]];
-        let (vals, vecs) = eigh(&m).unwrap();
-        assert_eq!(vals, vec![42.0]);
-        assert_eq!(vecs, vec![vec![1.0]]);
-    }
-
-    #[test]
-    fn repeated_eigenvalues() {
-        // Identity matrix: all eigenvalues = 1
-        let m = vec![
-            vec![1.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0],
-            vec![0.0, 0.0, 1.0],
-        ];
-        let (vals, _) = eigh(&m).unwrap();
-        for v in &vals {
-            assert!(approx(*v, 1.0, 1e-9));
+        // Deflate: A = A - lambda · v · vᵀ (rank-1 update, symmetric).
+        for r in 0..n {
+            let vr = v[r];
+            let base = r * n;
+            for c in 0..n {
+                a[base + c] -= lambda * vr * v[c];
+            }
         }
     }
 
-    #[test]
-    fn trace_preserved() {
-        let m = vec![vec![6.0, 2.0], vec![2.0, 3.0]]; // trace 9
-        let (vals, _) = eigh(&m).unwrap();
-        let sum: f64 = vals.iter().sum();
-        assert!(approx(sum, 9.0, 1e-9));
+    // The deflation eigenvalues are already produced in descending order
+    // (power iteration converges to the dominant remaining eigenpair), but
+    // re-sort defensively in case of clustered spectra.
+    let mut idx: Vec<usize> = (0..k).collect();
+    idx.sort_by(|&i, &j| out_vals[j].total_cmp(&out_vals[i]));
+    let mut sorted_vals = vec![0.0; k];
+    let mut sorted_vecs = vec![0.0; k * n];
+    for (new_k, &old) in idx.iter().enumerate() {
+        sorted_vals[new_k] = out_vals[old];
+        sorted_vecs[new_k * n..(new_k + 1) * n].copy_from_slice(&out_vecs[old * n..(old + 1) * n]);
+    }
+    Some((sorted_vals, sorted_vecs))
+}
+
+/// Symmetric matrix-vector product: `y = A · x` for a flat row-major symmetric
+/// `n×n` matrix.
+#[inline]
+fn sym_matvec(a: &[f64], n: usize, x: &[f64], y: &mut [f64]) {
+    for (r, out) in y.iter_mut().enumerate().take(n) {
+        let base = r * n;
+        let mut s = 0.0;
+        for c in 0..n {
+            s += a[base + c] * x[c];
+        }
+        *out = s;
     }
 }

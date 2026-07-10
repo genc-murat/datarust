@@ -56,24 +56,25 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-datarust = "0.2"
+datarust = "0.3"
 ```
 
 ### Optional features
 
 ```toml
 [dependencies]
-datarust = { version = "0.2", features = ["serde", "rayon"] }
+datarust = { version = "0.3", features = ["serde", "rayon"] }
 ```
 
 - **`serde`** — enables JSON serialization/deserialization of fitted transformers via `datarust::serialize::{save_json, load_json, to_json, from_json}`.
 - **`rayon`** — enables parallel column statistics and transforms for large datasets.
+- **`matrixmultiply`** — enables a tuned pure-Rust GEMM (no system BLAS) for matrix products and covariance computation, speeding up PCA and TruncatedSVD on large dense inputs. The default build remains zero-external-dependency.
 
 ## Core Concepts
 
 ### Matrix
 
-The fundamental data container is [`Matrix`](https://docs.rs/datarust/latest/datarust/struct.Matrix.html), a row-major `Vec<Vec<f64>>` with validation:
+The fundamental data container is [`Matrix`](https://docs.rs/datarust/latest/datarust/struct.Matrix.html), a row-major dense matrix backed by a single contiguous `Vec<f64>` buffer with validation:
 
 ```rust
 let m = Matrix::new(vec![
@@ -698,7 +699,7 @@ PCA also exposes [`noise_variance()`](https://docs.rs/datarust/latest/datarust/d
 Enable the `serde` feature for JSON save/load of fitted transformers.
 
 ```toml
-datarust = { version = "0.2", features = ["serde"] }
+datarust = { version = "0.3", features = ["serde"] }
 ```
 
 ```rust
@@ -723,7 +724,7 @@ All leaf transformers, `Pipeline` (via `TransformerKind`), and `ColumnTransforme
 Enable the `rayon` feature for parallel column operations on large datasets.
 
 ```toml
-datarust = { version = "0.2", features = ["rayon"] }
+datarust = { version = "0.3", features = ["rayon"] }
 ```
 
 When enabled, the following use parallel iterators:
@@ -756,7 +757,7 @@ When enabled, the following use parallel iterators:
 | PolynomialFeatures | ✓ (degree, interaction_only, bias) | ✓ |
 | VarianceThreshold | ✓ | ✓ |
 | SelectKBest | ✓ (F-classif / Chi2 / Mutual Info) | ✓ |
-| PCA | ✓ (Jacobi EV, count/variance/all, whiten) | ✓ |
+| PCA | ✓ (Jacobi EV + power-iteration deflation + randomized SVD, count/variance/all, whiten, `PCASolver`) | ✓ |
 | TruncatedSVD | ✓ (SVDComponents: Count/Variance/All) | ✓ |
 | Pipeline | ✓ (TransformerKind, serde) | ✓ |
 | ColumnTransformer | ✓ (Numeric + Categorical + Target specs, Output table, duplicate detection, remainder passthrough) | ✓ |
@@ -787,34 +788,42 @@ benefits from the `matrixmultiply` feature, shown in the notes below the table.
 
 | Workload | Size (rows × cols) | datarust default (ms) | datarust +rayon (ms) | sklearn (ms) | best ratio |
 |---|---|---:|---:|---:|---:|
-| StandardScaler | 1 000 × 10 | 0.028 | 0.36 | 0.144 | 5.2× |
-| StandardScaler | 10 000 × 100 | 1.05 | 1.03 | 2.55 | 2.5× |
-| StandardScaler | 50 000 × 200 | 8.0 | 4.6 | 21.3 | **4.6×** |
-| MinMaxScaler | 1 000 × 10 | 0.029 | 0.38 | 0.114 | 3.9× |
-| MinMaxScaler | 10 000 × 100 | 1.47 | 1.21 | 1.36 | 1.1× |
-| MinMaxScaler | 50 000 × 200 | 11.4 | 7.3 | 10.9 | **1.5×** |
-| RobustScaler | 1 000 × 10 | 0.16 | 0.41 | 0.476 | 2.9× |
-| RobustScaler | 10 000 × 100 | 11.4 | 1.88 | 22.8 | 12× |
-| RobustScaler | 50 000 × 200 | 127 | 14.6 | 191.3 | **13×** |
-| PCA (k = min(10, cols/2)) | 1 000 × 10 | 0.21 | 0.17 | 0.164 | 0.8× |
-| PCA | 10 000 × 100 | 53 | 55 | 1.56 | 0.03× |
-| PCA | 50 000 × 200 | 987 | 1028 | 11.7 | 0.01× |
-| Pipeline (Standard→MinMax→Robust) | 1 000 × 10 | 0.13 | 1.04 | 0.932 | 7.3× |
-| Pipeline | 10 000 × 100 | 13.3 | 4.1 | 27.08 | 6.6× |
-| Pipeline | 50 000 × 200 | 148 | 28 | 224.8 | **8×** |
-| OneHotEncoder (string) | 1 000 × 5 | 0.39 | 0.58 | 0.757 | 1.9× |
-| OneHotEncoder | 10 000 × 10 | 7.7 | 7.1 | 8.91 | 1.3× |
-| OneHotEncoder | 50 000 × 20 | 93 | 88 | 164.6 | **1.9×** |
-| ColumnTransformer (num + cat) | 1 000 × 5 | 0.027 | 0.027 | 4.287 | 159× |
-| ColumnTransformer | 10 000 × 10 | 0.24 | 0.23 | 74.57 | **310×** |
-| ColumnTransformer | 50 000 × 20 | 1.35 | 1.34 | 792.7 | **587×** |
+| StandardScaler | 1 000 × 10 | 0.023 | 0.016 | 0.280 | **17.5×** |
+| StandardScaler | 10 000 × 100 | 1.24 | 1.20 | 2.46 | 2.0× |
+| StandardScaler | 50 000 × 200 | 8.2 | 4.7 | 22.4 | **4.8×** |
+| MinMaxScaler | 1 000 × 10 | 0.025 | 0.014 | 0.202 | **14.4×** |
+| MinMaxScaler | 10 000 × 100 | 1.70 | 1.47 | 1.32 | 0.9× |
+| MinMaxScaler | 50 000 × 200 | 10.8 | 7.5 | 11.6 | **1.5×** |
+| RobustScaler | 1 000 × 10 | 0.17 | 0.13 | 0.768 | **5.8×** |
+| RobustScaler | 10 000 × 100 | 11.2 | 2.09 | 21.4 | **10×** |
+| RobustScaler | 50 000 × 200 | 123 | 14.0 | 193.5 | **13.8×** |
+| PCA (k = min(10, cols/2)) | 1 000 × 10 | 0.18 | 0.10 | 0.226 | 2.2× |
+| PCA | 10 000 × 100 | 45 | 41 | 1.39 | 0.03× |
+| PCA | 50 000 × 200 | 838 | 819 | 12.2 | 0.01× |
+| Pipeline (Standard→MinMax→Robust) | 1 000 × 10 | 0.20 | 0.21 | 1.02 | **4.9×** |
+| Pipeline | 10 000 × 100 | 13.2 | 4.1 | 25.2 | 6.1× |
+| Pipeline | 50 000 × 200 | 144 | 26.7 | 229.6 | **8.6×** |
+| OneHotEncoder (string) | 1 000 × 5 | 0.38 | 0.55 | 0.800 | 1.5× |
+| OneHotEncoder | 10 000 × 10 | 7.4 | 6.8 | 9.9 | 1.5× |
+| OneHotEncoder | 50 000 × 20 | 89 | 80 | 205 | **2.6×** |
+| ColumnTransformer (num + cat) | 1 000 × 5 | 0.026 | 0.026 | 4.6 | **179×** |
+| ColumnTransformer | 10 000 × 10 | 0.23 | 0.24 | 79.8 | **347×** |
+| ColumnTransformer | 50 000 × 20 | 1.31 | 1.32 | 812.8 | **620×** |
 
 **PCA with the `matrixmultiply` feature.** The default and `rayon` builds compute the
 covariance `Xcᵀ Xc` with a scalar loop; enabling the optional `matrixmultiply` feature
-dispatches it to a tuned pure-Rust GEMM (no system BLAS). On 50 000 × 200 this cuts PCA
-from **987 ms → 303 ms** (3.3× faster), and on 10 000 × 100 from **53 ms → 24 ms**. PCA
+dispatches the covariance **and** the transform/inverse matmuls to a tuned pure-Rust GEMM
+(no system BLAS), and a power-iteration + deflation path (`eigh_topk`) replaces the full
+Jacobi sweep when `n_components` is small. On 50 000 × 200 this cuts PCA from
+**838 ms → 104 ms** (8× faster), and on 10 000 × 100 from **45 ms → 9.3 ms** (4.8×). PCA
 remains slower than scikit-learn (which uses LAPACK's full SVD) — see "Where scikit-learn
-wins" below — but the gap narrows substantially.
+wins" below — but the gap narrowed from 85× to ~8×.
+
+**Randomized SVD (opt-in).** `PCA::solver(PCASolver::Randomized)` selects the
+Halko–Martinsson–Tropp randomized SVD, which is `O(n·p·(k+oversample))` instead of
+`O(p³·sweeps)` and is the fast path for tall-and-wide, low-rank data (this is what
+sklearn's `svd_solver='randomized'` does). It is currently opt-in while an oversampling
+edge case is being verified; `Auto` (the default) uses the exact eigensolver paths.
 
 ### Reading the results
 
@@ -824,28 +833,32 @@ wins" below — but the gap narrows substantially.
   faster than scikit-learn's on large inputs. This is the headline result and reflects
   the cost of sklearn's per-column Python dispatch, dtype coercion, and
   `ColumnTransformer`'s object-array marshalling on mixed-type inputs.
-- **String / categorical encoding.** `OneHotEncoder` is ~1.3–1.9× faster because
+- **String / categorical encoding.** `OneHotEncoder` is ~1.5–2.6× faster because
   datarust operates on a native `StrMatrix` directly — no Python object-array overhead,
   no GIL.
 - **Numeric scalers with `rayon`.** Once the data is large enough to amortise thread
-  spawn, `StandardScaler`/`RobustScaler`/`Pipeline` all beat sklearn by **4–13×** at
+  spawn, `StandardScaler`/`RobustScaler`/`Pipeline` all beat sklearn by **4.8–13.8×** at
   50 000 × 200. The single-pass Welford statistics and contiguous flat storage close
   the gap that numpy's vectorised kernels used to dominate.
 - **Small data and startup latency.** At 1 000 × 10, datarust is faster on every
-  workload, including the pipeline. There is no Python interpreter to spin up and no
-  joblib/numpy import cost — relevant for embedded, batch-on-many-small-files, or
-  request-scoped inference paths.
+  workload — up to **17.5×** on `StandardScaler` (the rayon path now falls back to the
+  scalar loop below 4 096 rows, avoiding thread-pool overhead on tiny inputs). There is
+  no Python interpreter to spin up and no joblib/numpy import cost — relevant for
+  embedded, batch-on-many-small-files, or request-scoped inference paths.
 
 **Where scikit-learn still wins:**
 
-- **PCA on tall-and-wide data.** sklearn's `PCA` is still faster by a wide margin
-  (0.01× even with the `matrixmultiply` feature). It calls into LAPACK's full SVD via a
-  shared-library BLAS; datarust implements the covariance eigendecomposition with a
-  from-scratch Jacobi sweep (`src/decomposition/jacobi.rs`). Jacobi is robust and
-  dependency-free but `O(n³ · sweeps)` and not vectorised. The covariance step is now
-  fast (thanks to `matrixmultiply`); the remaining cost is the eigensolver itself. If
-  PCA on large dense matrices is your hot path, sklearn remains the better tool today —
-  an optional LAPACK/`ndarray-linalg` backend is the natural future improvement.
+- **PCA on tall-and-wide data (without the `matrixmultiply` feature).** sklearn's `PCA`
+  is still faster when comparing default builds (0.01× at 50 000 × 200). It calls into
+  LAPACK's full SVD via a shared-library BLAS; datarust implements the covariance
+  eigendecomposition with a from-scratch Jacobi sweep. With the `matrixmultiply` feature
+  the gap narrows from 85× to ~8×, and `PCA::solver(PCASolver::Randomized)` (randomized
+  SVD, the same algorithm sklearn's `svd_solver='randomized'` uses) closes it further for
+  low-rank inputs. For PCA on large dense matrices as the hot path, sklearn remains the
+  fastest option today.
+- **MinMaxScaler at medium width.** At 10 000 × 100 the two are roughly tied (0.9×);
+  numpy's contiguous buffer and autovectorisation win narrowly on this particular shape.
+  At both smaller and larger sizes datarust leads.
 
 **The honest one-line summary:** for the workloads Rust ML pipelines typically care about
 — heterogeneous `ColumnTransformer` composition, categorical encoding, numeric scaling on
@@ -855,7 +868,7 @@ dedicated BLAS/LAPACK backend still wins.
 
 ### How the speedups were achieved (0.3.0)
 
-Three layered optimisations, each measurable:
+Layered optimisations, each measurable:
 
 1. **Single-pass fused statistics.** `StandardScaler`/`MinMaxScaler` previously made
    2–3 full passes over the data (mean, then variance which re-read for mean, then the
@@ -867,8 +880,20 @@ Three layered optimisations, each measurable:
    lines and auto-vectorisation across every numeric loop — the dominant win on large
    dense inputs.
 3. **Optional tuned GEMM.** The `matrixmultiply` feature (off by default, preserving the
-   zero-dependency build) routes `Matrix::matmul` and centered-covariance through a
-   micro-optimised pure-Rust kernel.
+   zero-dependency build) routes `Matrix::matmul`, centered-covariance, and PCA/SVD
+   transforms through a micro-optimised pure-Rust kernel.
+4. **Flat Jacobi eigensolver + power-iteration deflation.** The eigensolver behind PCA
+   and TruncatedSVD now operates on a single contiguous buffer (better cache locality)
+   and, when `n_components` is small, a power-iteration + deflation path computes only
+   the top-`k` eigenpairs in `O(k·p²·iters)` instead of the full `O(p³·sweeps)` sweep.
+5. **Adaptive parallelism threshold.** Scaler `transform` paths now use the scalar loop
+   below 4 096 rows and the `rayon` parallel path above it — fixing a regression where
+   `rayon`'s thread-pool overhead made small-data transforms slower than the default
+   build.
+6. **Randomized SVD (opt-in).** `PCA::solver(PCASolver::Randomized)` selects a
+   Halko–Martinsson–Tropp randomized SVD — the same family of algorithm sklearn uses for
+   its `svd_solver='randomized'`. It is `O(n·p·(k+oversample))` and is the fast path for
+   tall-and-wide, low-rank inputs.
 
 See the `[0.3.0]` entry in `CHANGELOG.md` for the per-workload before/after numbers.
 

@@ -577,6 +577,106 @@ pub(crate) fn covariance_centered(x_centered: &[Vec<f64>], ddof: usize) -> Vec<V
     cov
 }
 
+/// Flat-storage centered covariance: `C = (1/(n-ddof)) · Xcᵀ · Xc`.
+///
+/// `x_centered` is a flat row-major buffer of shape `n × p` (length `n*p`).
+/// Returns a flat row-major `p × p` covariance matrix. A non-positive
+/// denominator (`ddof >= n`) leaves the scale unchanged.
+#[allow(clippy::needless_range_loop)]
+pub(crate) fn covariance_centered_flat(
+    x_centered: &[f64],
+    n: usize,
+    p: usize,
+    ddof: usize,
+) -> Vec<Vec<f64>> {
+    if n == 0 || p == 0 {
+        return vec![];
+    }
+    #[cfg(feature = "matrixmultiply")]
+    {
+        covariance_centered_flat_gemm(x_centered, n, p, ddof)
+    }
+    #[cfg(not(feature = "matrixmultiply"))]
+    {
+        covariance_centered_flat_scalar(x_centered, n, p, ddof)
+    }
+}
+
+#[cfg(not(feature = "matrixmultiply"))]
+fn covariance_centered_flat_scalar(
+    x_centered: &[f64],
+    n: usize,
+    p: usize,
+    ddof: usize,
+) -> Vec<Vec<f64>> {
+    let mut cov = vec![vec![0.0; p]; p];
+    for i in 0..n {
+        let base = i * p;
+        for a in 0..p {
+            let xi = x_centered[base + a];
+            if xi == 0.0 {
+                continue;
+            }
+            for b in 0..p {
+                cov[a][b] += xi * x_centered[base + b];
+            }
+        }
+    }
+    let denom = (n - ddof) as f64;
+    if denom > 0.0 {
+        let inv = 1.0 / denom;
+        for row in cov.iter_mut() {
+            for v in row.iter_mut() {
+                *v *= inv;
+            }
+        }
+    }
+    cov
+}
+
+/// GEMM-backed flat centered covariance.
+#[cfg(feature = "matrixmultiply")]
+fn covariance_centered_flat_gemm(
+    x_centered: &[f64],
+    n: usize,
+    p: usize,
+    ddof: usize,
+) -> Vec<Vec<f64>> {
+    use matrixmultiply::dgemm;
+    let mut cov_flat = vec![0.0; p * p];
+    // C(p×p) = 1.0 * Xcᵀ(p×n) · Xc(n×p) + 0.0 * C (see covariance_centered_gemm
+    // for the stride rationale).
+    unsafe {
+        dgemm(
+            p,
+            n,
+            p,
+            1.0,
+            x_centered.as_ptr(),
+            1,
+            p as isize,
+            x_centered.as_ptr(),
+            p as isize,
+            1,
+            0.0,
+            cov_flat.as_mut_ptr(),
+            p as isize,
+            1,
+        );
+    }
+    let denom = (n - ddof) as f64;
+    let mut cov: Vec<Vec<f64>> = cov_flat.chunks_exact(p).map(|row| row.to_vec()).collect();
+    if denom > 0.0 {
+        let inv = 1.0 / denom;
+        for row in cov.iter_mut() {
+            for v in row.iter_mut() {
+                *v *= inv;
+            }
+        }
+    }
+    cov
+}
+
 /// `matrixmultiply`-backed centered covariance: `C = (1/(n-ddof)) · Xcᵀ · Xc`.
 ///
 /// `Xc` is row-major `n × p`. We compute `C = Xcᵀ · Xc` as a single `dgemm`.

@@ -127,10 +127,11 @@ impl Transformer for StandardScaler {
         let std = &self.std;
         let src = x.as_slice();
         let mut out = vec![0.0; nrows * ncols];
+        // Below the parallelism threshold the scalar loop is faster (avoids the
+        // rayon thread-pool overhead); above it, parallel row chunks win.
         #[cfg(feature = "rayon")]
-        {
+        if nrows >= 4096 {
             use rayon::prelude::*;
-            // Paralel chunks: disjoint mutable row slices, stride-1 reads/writes.
             out.par_chunks_mut(ncols)
                 .zip(src.par_chunks(ncols))
                 .for_each(|(out_row, in_row)| {
@@ -138,10 +139,7 @@ impl Transformer for StandardScaler {
                         out_row[j] = Self::scale(v, mean[j], std[j]);
                     }
                 });
-            // NaN check after transform: any NaN in input produces NaN in output
-            // (arithmetic propagates it), so a single par_any pass suffices.
             if out.par_iter().any(|v| v.is_nan()) {
-                // Locate the offending position for a helpful error message.
                 for i in 0..nrows {
                     for j in 0..ncols {
                         if src[i * ncols + j].is_nan() {
@@ -152,20 +150,18 @@ impl Transformer for StandardScaler {
                     }
                 }
             }
+            return Matrix::from_flat(nrows, ncols, out);
         }
-        #[cfg(not(feature = "rayon"))]
-        {
-            for i in 0..nrows {
-                let base = i * ncols;
-                for j in 0..ncols {
-                    let v = src[base + j];
-                    if v.is_nan() {
-                        return Err(DatarustError::InvalidInput(format!(
-                            "NaN value at position ({i}, {j})"
-                        )));
-                    }
-                    out[base + j] = Self::scale(v, mean[j], std[j]);
+        for i in 0..nrows {
+            let base = i * ncols;
+            for j in 0..ncols {
+                let v = src[base + j];
+                if v.is_nan() {
+                    return Err(DatarustError::InvalidInput(format!(
+                        "NaN value at position ({i}, {j})"
+                    )));
                 }
+                out[base + j] = Self::scale(v, mean[j], std[j]);
             }
         }
         Matrix::from_flat(nrows, ncols, out)

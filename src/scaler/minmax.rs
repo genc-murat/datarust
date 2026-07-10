@@ -106,7 +106,7 @@ impl Transformer for MinMaxScaler {
         let src = x.as_slice();
         let mut out = vec![0.0; nrows * ncols];
         #[cfg(feature = "rayon")]
-        {
+        if nrows >= 4096 {
             use rayon::prelude::*;
             out.par_chunks_mut(ncols)
                 .zip(src.par_chunks(ncols))
@@ -131,25 +131,23 @@ impl Transformer for MinMaxScaler {
                     }
                 }
             }
+            return Matrix::from_flat(nrows, ncols, out);
         }
-        #[cfg(not(feature = "rayon"))]
-        {
-            for i in 0..nrows {
-                let base = i * ncols;
-                for j in 0..ncols {
-                    let v = src[base + j];
-                    if v.is_nan() {
-                        return Err(DatarustError::InvalidInput(format!(
-                            "NaN value at position ({i}, {j})"
-                        )));
-                    }
-                    let dr = data_range[j];
-                    out[base + j] = if dr == 0.0 {
-                        lo
-                    } else {
-                        lo + (v - min[j]) * span / dr
-                    };
+        for i in 0..nrows {
+            let base = i * ncols;
+            for j in 0..ncols {
+                let v = src[base + j];
+                if v.is_nan() {
+                    return Err(DatarustError::InvalidInput(format!(
+                        "NaN value at position ({i}, {j})"
+                    )));
                 }
+                let dr = data_range[j];
+                out[base + j] = if dr == 0.0 {
+                    lo
+                } else {
+                    lo + (v - min[j]) * span / dr
+                };
             }
         }
         Matrix::from_flat(nrows, ncols, out)

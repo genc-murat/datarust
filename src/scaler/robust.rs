@@ -144,7 +144,7 @@ impl Transformer for RobustScaler {
         let src = x.as_slice();
         let mut out = vec![0.0; nrows * ncols];
         #[cfg(feature = "rayon")]
-        {
+        if nrows >= 4096 {
             use rayon::prelude::*;
             out.par_chunks_mut(ncols)
                 .zip(src.par_chunks(ncols))
@@ -169,25 +169,23 @@ impl Transformer for RobustScaler {
                     }
                 }
             }
+            return Matrix::from_flat(nrows, ncols, out);
         }
-        #[cfg(not(feature = "rayon"))]
-        {
-            for i in 0..nrows {
-                let base = i * ncols;
-                for j in 0..ncols {
-                    let v = src[base + j];
-                    if v.is_nan() {
-                        return Err(DatarustError::InvalidInput(format!(
-                            "NaN value at position ({i}, {j})"
-                        )));
-                    }
-                    let s = scale[j];
-                    out[base + j] = if s == 0.0 {
-                        (v - center[j]) * 0.0
-                    } else {
-                        (v - center[j]) / s
-                    };
+        for i in 0..nrows {
+            let base = i * ncols;
+            for j in 0..ncols {
+                let v = src[base + j];
+                if v.is_nan() {
+                    return Err(DatarustError::InvalidInput(format!(
+                        "NaN value at position ({i}, {j})"
+                    )));
                 }
+                let s = scale[j];
+                out[base + j] = if s == 0.0 {
+                    (v - center[j]) * 0.0
+                } else {
+                    (v - center[j]) / s
+                };
             }
         }
         Matrix::from_flat(nrows, ncols, out)
