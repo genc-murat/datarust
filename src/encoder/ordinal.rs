@@ -152,7 +152,7 @@ impl OrdinalEncoder {
                             OrdinalHandleUnknown::Error => {
                                 return Err(DatarustError::UnknownCategory(format!(
                                     "column {} value '{}'",
-                                    j, &x_data[i][j]
+                                    j, x_data[i][j]
                                 )))
                             }
                             OrdinalHandleUnknown::UseNegOne => -1.0,
