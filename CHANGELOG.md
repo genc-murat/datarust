@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-16
+
+The "ML toolkit" release. datarust grows from a preprocessing library into a full
+scikit-learn-style toolkit: four linear-model estimators (regression +
+classification), evaluation metrics, and model-selection infrastructure.
+
 ### Added
 - **`model_selection` module** — model-evaluation infrastructure mirroring `sklearn.model_selection`:
   - `train_test_split` — split `X`/`y` into train/test with configurable `test_size` (default 0.25), `shuffle`, and `random_state`. Builder via `TrainTestSplit`.
