@@ -6,6 +6,7 @@ rust-version = "1.70"
 description = "Scikit-Learn Preprocessing in Rust"
 license = "MIT"
 repository = "https://github.com/muratgenc/datarust"
+homepage = "https://genc-murat.github.io/datarust/"
 readme = "README.md"
 keywords = [
     "machine-learning",

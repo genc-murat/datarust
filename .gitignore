@@ -16,3 +16,6 @@ TEST*.xml
 tarpaulin-report.html
 cobertura.xml
 lcov.info
+
+# mdBook build output (generated locally, built in CI)
+/book/book/

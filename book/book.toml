@@ -1,0 +1,17 @@
+[book]
+title = "datarust — Scikit-Learn Preprocessing in Rust"
+authors = ["Murat Genç"]
+language = "en"
+src = "src"
+description = "A modular, dependency-free ML preprocessing & modeling library for Rust, inspired by scikit-learn."
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/genc-murat/datarust"
+edit-url-template = "https://github.com/genc-murat/datarust/edit/main/book/src/{path}"
+no-section-label = false
+
+[output.html.fold]
+enable = true
+level = 0

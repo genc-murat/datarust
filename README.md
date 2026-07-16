@@ -1,6 +1,14 @@
 # datarust
 
+[![crates.io](https://img.shields.io/crates/v/datarust.svg)](https://crates.io/crates/datarust)
+[![docs.rs](https://docs.rs/datarust/badge.svg)](https://docs.rs/datarust)
+[![Documentation](https://img.shields.io/badge/docs-book-blue.svg)](https://genc-murat.github.io/datarust/)
+[![CI](https://github.com/genc-murat/datarust/actions/workflows/ci.yml/badge.svg)](https://github.com/genc-murat/datarust/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Scikit-Learn Preprocessing in Rust** — a modular, dependency-free data preprocessing library built on a lightweight `Matrix` type.
+
+📖 **[Read the documentation book →](https://genc-murat.github.io/datarust/)**
 
 ```rust,ignore
 let mut scaler = StandardScaler::new();
