@@ -8,15 +8,7 @@ license = "MIT"
 repository = "https://github.com/muratgenc/datarust"
 homepage = "https://genc-murat.github.io/datarust/"
 readme = "README.md"
-keywords = [
-    "machine-learning",
-    "preprocessing",
-    "scikit-learn",
-    "data",
-    "ml",
-    "regression",
-    "linear-model",
-]
+keywords = ["machine-learning", "scikit-learn", "preprocessing", "regression", "linear-model"]
 categories = ["science", "mathematics", "algorithms"]
 exclude = ["/.github", "/benches"]
 
