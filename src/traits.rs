@@ -144,6 +144,56 @@ pub trait TargetTransformer {
     fn is_fitted(&self) -> bool;
 }
 
+/// Trait for regression estimators operating on `Matrix` features and
+/// `&[f64]` targets.
+///
+/// Regression models (e.g. [`LinearRegression`]) implement this trait.
+/// Call [`fit`](Regressor::fit) to learn coefficients from training data and
+/// targets, then [`predict`](Regressor::predict) to generate predictions for
+/// new data.
+///
+/// [`LinearRegression`]: crate::linear_model::LinearRegression
+///
+/// ```rust
+/// use datarust::linear_model::LinearRegression;
+/// use datarust::traits::Regressor;
+/// use datarust::Matrix;
+///
+/// let x = Matrix::new(vec![
+///     vec![1.0],
+///     vec![2.0],
+///     vec![3.0],
+///     vec![4.0],
+/// ])?;
+/// let y = vec![3.0, 5.0, 7.0, 9.0]; // y = 2x + 1
+///
+/// let mut model = LinearRegression::new();
+/// model.fit(&x, &y)?;
+/// let pred = model.predict(&x)?;
+/// assert!((pred[0] - 3.0).abs() < 1e-9);
+/// assert!((pred[3] - 9.0).abs() < 1e-9);
+/// # Ok::<_, Box<dyn std::error::Error>>(())
+/// ```
+pub trait Regressor {
+    /// Name of the estimator, used for diagnostics.
+    fn name(&self) -> &'static str;
+
+    /// Fit the estimator on training features and target values.
+    fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()>;
+
+    /// Predict target values for the given features.
+    fn predict(&self, x: &Matrix) -> Result<Vec<f64>>;
+
+    /// Convenience: fit then predict on the same data.
+    fn fit_predict(&mut self, x: &Matrix, y: &[f64]) -> Result<Vec<f64>> {
+        self.fit(x, y)?;
+        self.predict(x)
+    }
+
+    /// Whether the estimator has been fitted.
+    fn is_fitted(&self) -> bool;
+}
+
 /// Trait for 1-D label encoders that map `&[String]` to `Vec<usize>`.
 ///
 /// Used to encode target labels for supervised learning.

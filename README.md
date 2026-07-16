@@ -19,6 +19,10 @@ let normalized = scaler.fit_transform(&data)?;
 | **Polynomial** | PolynomialFeatures (degree, interaction_only, include_bias) |
 | **Selection** | VarianceThreshold, SelectKBest (ANOVA F / Chi2 / Mutual Information) |
 | **Decomposition** | PCA (with whiten, inverse_transform), TruncatedSVD (SVDComponents: Count/Variance/All) |
+| **Linear Models** | LinearRegression (Cholesky & SVD), Ridge (L2), Lasso (L1, coordinate descent, sparse) |
+| **Classification** | LogisticRegression (binary, IRLS solver, Cholesky & SVD) |
+| **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, precision, recall, F1, confusion_matrix, log_loss |
+| **Model Selection** | train_test_split, KFold, StratifiedKFold, cross_val_score |
 | **Pipeline** | Sequential Pipeline (serde-serializable), ColumnTransformer (numeric + categorical) |
 | **Feature Names** | `FeatureNames` trait on all transformers for output column names |
 | **Serialization** | JSON save/load via optional `serde` feature |
@@ -98,6 +102,20 @@ pub trait Transformer {
     fn fit(&mut self, x: &Matrix) -> Result<()>;
     fn transform(&self, x: &Matrix) -> Result<Matrix>;
     fn fit_transform(&mut self, x: &Matrix) -> Result<Matrix> { ... }
+    fn is_fitted(&self) -> bool;
+}
+```
+
+### Regressor Trait
+
+Regression estimators (currently [`LinearRegression`](#linearregression)) implement the [`Regressor`](https://docs.rs/datarust/latest/datarust/trait.Regressor.html) trait — the supervised counterpart of `Transformer`, with `predict` instead of `transform`:
+
+```rust
+pub trait Regressor {
+    fn name(&self) -> &'static str;
+    fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()>;
+    fn predict(&self, x: &Matrix) -> Result<Vec<f64>>;
+    fn fit_predict(&mut self, x: &Matrix, y: &[f64]) -> Result<Vec<f64>> { ... }
     fn is_fitted(&self) -> bool;
 }
 ```
@@ -489,6 +507,179 @@ let mut svd = TruncatedSVD::new(SVDComponents::All).unwrap();
 let out = svd.fit_transform(&x)?;
 ```
 
+### Linear Models
+
+#### LinearRegression
+
+Ordinary least-squares regression — the crate's first `predict`-capable estimator. Estimates `y ≈ Xβ + b` by minimising the residual sum of squares. Mirrors `sklearn.linear_model.LinearRegression`.
+
+Two solvers are available:
+- **Cholesky** (default) — solves `XᵀX β = Xᵀy` via a pure-Rust Cholesky decomposition. Fast and dependency-free; requires `X` to have full column rank.
+- **SVD** — eigen-decomposition-based pseudo-inverse. Numerically stable for rank-deficient / collinear inputs, at higher cost.
+
+```rust
+use datarust::linear_model::{LinearRegression, LinearSolver};
+use datarust::traits::Regressor;
+
+let mut model = LinearRegression::new()
+    .with_fit_intercept(true)           // default true
+    .with_solver(LinearSolver::Cholesky); // or LinearSolver::Svd
+
+model.fit(&x, &y)?;
+let pred = model.predict(&new_x)?;
+
+// Fitted parameters
+model.coef();          // &[f64] — coefficients β
+model.intercept();     // f64    — intercept b
+model.n_features_in(); // usize
+
+// R² of the prediction (mirrors estimator.score in sklearn)
+let r2 = model.score(&x, &y)?;
+```
+
+#### Ridge
+
+L2-regularized regression. Minimises `‖Xβ − y‖² + α‖β‖²`. Mirrors `sklearn.linear_model.Ridge`.
+
+The `α` penalty shrinks coefficients toward zero (reducing variance at the cost of bias) and guarantees the system matrix `XᵀX + αI` is positive-definite — so Ridge **succeeds on rank-deficient / collinear inputs** where `LinearRegression` would fail.
+
+```rust
+use datarust::linear_model::{Ridge, RidgeSolver};
+use datarust::traits::Regressor;
+
+let mut model = Ridge::new()
+    .with_alpha(1.0)                      // regularization strength
+    .with_solver(RidgeSolver::Cholesky);  // or RidgeSolver::Svd
+
+model.fit(&x, &y)?;
+let pred = model.predict(&new_x)?;
+```
+
+#### Lasso
+
+L1-regularized regression. Minimises `(1/(2n))‖Xβ − y‖² + α‖β‖₁`. Mirrors `sklearn.linear_model.Lasso`.
+
+The L1 penalty drives irrelevant coefficients to **exactly zero**, producing a sparse model that performs implicit feature selection — the key difference from Ridge. Solved by coordinate descent with soft-thresholding.
+
+```rust
+use datarust::linear_model::Lasso;
+use datarust::traits::Regressor;
+
+let mut model = Lasso::new()
+    .with_alpha(0.1)          // larger alpha → more sparsity
+    .with_max_iter(1000)      // default 1000
+    .with_tol(1e-4);          // convergence tolerance
+
+model.fit(&x, &y)?;
+let pred = model.predict(&new_x)?;
+
+model.coef();   // some entries may be exactly 0.0 (sparsity)
+model.n_iter(); // iterations actually run
+```
+
+#### LogisticRegression
+
+Binary classification via IRLS (Iteratively Reweighted Least Squares). Mirrors `sklearn.linear_model.LogisticRegression`.
+
+Estimates `P(y = 1 | x) = σ(x·β + b)` by maximising the log-likelihood via Newton-Raphson. Each iteration solves a weighted least-squares system using the shared Cholesky (default) or SVD solver. Targets must be `0.0` or `1.0`.
+
+```rust
+use datarust::linear_model::{LogisticRegression, LogisticSolver};
+use datarust::traits::Regressor;
+
+let mut model = LogisticRegression::new()
+    .with_solver(LogisticSolver::Cholesky) // or LogisticSolver::Svd
+    .with_max_iter(100)                    // default 100
+    .with_tol(1e-4);                       // convergence tolerance
+
+model.fit(&x, &y)?;          // y must be 0.0 / 1.0
+let probs = model.predict(&new_x)?;        // Vec<f64> of P(y=1|x) in [0,1]
+let classes = model.predict_class(&new_x)?; // Vec<f64> of 0.0 / 1.0 (threshold 0.5)
+let acc = model.score(&x, &y)?;            // mean accuracy (f64)
+```
+
+### Metrics
+
+Regression metrics mirroring `sklearn.metrics`. Each takes `y_true` and `y_pred` as `&[f64]`.
+
+```rust
+use datarust::metrics::regression::*;
+
+let mse  = mean_squared_error(&y_true, &y_pred, true)?;   // squared=true → MSE
+let rmse = mean_squared_error(&y_true, &y_pred, false)?;  // squared=false → RMSE
+let mae  = mean_absolute_error(&y_true, &y_pred)?;
+let r2   = r2_score(&y_true, &y_pred)?;
+let me   = max_error(&y_true, &y_pred)?;
+let ev   = explained_variance_score(&y_true, &y_pred)?;
+```
+
+Classification metrics for binary labels (`0.0` / `1.0`):
+
+```rust
+use datarust::metrics::classification::*;
+
+let acc  = accuracy_score(&y_true, &y_pred)?;
+let prec = precision_score(&y_true, &y_pred)?;
+let rec  = recall_score(&y_true, &y_pred)?;
+let f1   = f1_score(&y_true, &y_pred)?;
+let cm   = confusion_matrix(&y_true, &y_pred)?; // [[tn, fp], [fn, tp]]
+let ll   = log_loss(&y_true, &y_proba, 1e-15)?;  // cross-entropy
+```
+
+### Model Selection
+
+Train/test splitting and cross-validation, mirroring `sklearn.model_selection`.
+
+#### train_test_split
+
+```rust
+use datarust::model_selection::{train_test_split, TrainTestSplit};
+
+// Quick split with defaults (25% test, shuffled):
+let (x_tr, x_te, y_tr, y_te) = train_test_split(&x, &y)?;
+
+// Or configure via the builder:
+let (x_tr, x_te, y_tr, y_te) = TrainTestSplit::new()
+    .with_test_size(0.2)
+    .with_shuffle(true)
+    .with_random_state(42)
+    .split(&x, &y)?;
+```
+
+#### KFold and StratifiedKFold
+
+```rust
+use datarust::model_selection::{KFold, StratifiedKFold};
+
+// K-fold: each sample is in the test set exactly once.
+let cv = KFold::new().with_n_splits(5).with_shuffle(true).with_random_state(42);
+for (train_idx, test_idx) in cv.split(n_samples)? {
+    // ...
+}
+
+// Stratified: preserves class balance in each fold (pass y).
+let scv = StratifiedKFold::new().with_n_splits(5);
+for (train_idx, test_idx) in scv.split(&y)? {
+    // ...
+}
+```
+
+#### cross_val_score
+
+Evaluate any `Regressor + Clone` estimator with a user-supplied scorer:
+
+```rust
+use datarust::model_selection::{cross_val_score, KFold};
+use datarust::linear_model::LinearRegression;
+use datarust::metrics::regression::r2_score;
+
+let cv = KFold::new().with_n_splits(5);
+let scores = cross_val_score(&LinearRegression::new(), &x, &y, &cv, r2_score)?;
+// scores.len() == 5; one R² per fold.
+```
+
+For classification, pass `accuracy_score` from `metrics::classification` instead.
+
 ### Pipeline
 
 Chain multiple transformers sequentially. Fits and transforms each step on the output of the previous one. Serializable under the `serde` feature.
@@ -809,6 +1000,9 @@ benefits from the `matrixmultiply` feature, shown in the notes below the table.
 | ColumnTransformer (num + cat) | 1 000 × 5 | 0.026 | 0.026 | 4.6 | **179×** |
 | ColumnTransformer | 10 000 × 10 | 0.23 | 0.24 | 79.8 | **347×** |
 | ColumnTransformer | 50 000 × 20 | 1.31 | 1.32 | 812.8 | **620×** |
+| LinearRegression (fit+predict) | 1 000 × 10 | 0.16 | 0.16 | — | — |
+| LinearRegression | 10 000 × 100 | 14.4 | 14.4 | — | — |
+| LinearRegression | 50 000 × 200 | 258 | 258 | — | — |
 
 **PCA with the `matrixmultiply` feature.** The default and `rayon` builds compute the
 covariance `Xcᵀ Xc` with a scalar loop; enabling the optional `matrixmultiply` feature
@@ -824,6 +1018,15 @@ Halko–Martinsson–Tropp randomized SVD, which is `O(n·p·(k+oversample))` in
 `O(p³·sweeps)` and is the fast path for tall-and-wide, low-rank data (this is what
 sklearn's `svd_solver='randomized'` does). It is currently opt-in while an oversampling
 edge case is being verified; `Auto` (the default) uses the exact eigensolver paths.
+
+**LinearRegression with the `matrixmultiply` feature.** `fit` forms the normal-equation
+matrices `XᵀX` (p×p) and `Xᵀy` (p) via `Matrix::matmul`, then solves them with a pure-Rust
+Cholesky decomposition. Enabling `matrixmultiply` dispatches the matmul to a tuned GEMM,
+cutting `fit` from **258 ms → 84 ms** at 50 000 × 200 (3× faster) and **14.4 ms → 5.0 ms**
+at 10 000 × 100 (2.9× faster). sklearn timing is not shown here because the Python
+comparison harness requires numpy/scipy in the environment; the Rust harness
+(`cargo run --release --features matrixmultiply --example bench_compare_rust`) is
+reproducible on any machine.
 
 ### Reading the results
 

@@ -97,4 +97,49 @@ proptest! {
             }
         }
     }
+
+    #[test]
+    fn linear_regression_recovers_linear_signal(data in arb_matrix()) {
+        use datarust::linear_model::LinearRegression;
+        use datarust::traits::Regressor;
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        // Build a deterministic y from the first column so the signal is truly
+        // linear in at least one feature. We then fit and check that the
+        // in-sample fit is good (low MSE relative to the target scale).
+        let y: Vec<f64> = data.iter().map(|r| 3.0 * r[0] + 1.0).collect();
+        let mut model = LinearRegression::new();
+        // Some random inputs may be rank-deficient; skip those (SVD would
+        // handle them, but Cholesky may return Singular). We only assert the
+        // property when the fit succeeds.
+        if model.fit(&x, &y).is_ok() {
+            let pred = model.predict(&x).unwrap();
+            let mse: f64 = pred.iter().zip(y.iter())
+                .map(|(p, &t)| (p - t).powi(2))
+                .sum::<f64>() / y.len() as f64;
+            let y_scale: f64 = y.iter().map(|v| (v - y.iter().sum::<f64>() / y.len() as f64).powi(2)).sum::<f64>() / y.len() as f64;
+            // Relative error should be tiny for a noise-free linear signal.
+            if y_scale > 1e-12 {
+                prop_assert!(mse / y_scale < 1e-12, "mse={} y_scale={}", mse, y_scale);
+            }
+        }
+    }
+
+    #[test]
+    fn linear_regression_score_in_unit_interval_on_data_with_signal(data in arb_matrix()) {
+        use datarust::linear_model::LinearRegression;
+        use datarust::traits::Regressor;
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        let y: Vec<f64> = data
+            .iter()
+            .map(|r| 2.0 * r[0] - r.get(1).copied().unwrap_or(0.0))
+            .collect();
+        let mut model = LinearRegression::new();
+        if model.fit(&x, &y).is_ok() {
+            let r2 = model.score(&x, &y).unwrap();
+            // For a noise-free linear signal, R² should be ~1.0 (allow tiny slack).
+            prop_assert!(r2 > 1.0 - 1e-6, "r2 too low: {}", r2);
+        }
+    }
 }

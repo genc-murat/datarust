@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`model_selection` module** — model-evaluation infrastructure mirroring `sklearn.model_selection`:
+  - `train_test_split` — split `X`/`y` into train/test with configurable `test_size` (default 0.25), `shuffle`, and `random_state`. Builder via `TrainTestSplit`.
+  - `KFold` — K-fold cross-validation splitter producing `(train_indices, test_indices)` folds. Configurable `n_splits`, `shuffle`, `random_state`.
+  - `StratifiedKFold` — preserves class balance across folds for binary classification.
+  - `cross_val_score` — generic scorer that clones any `Regressor + Clone` estimator, fits each fold, and applies a user-supplied scorer (e.g. `r2_score` or `accuracy_score`). Works with all four shipped estimators.
+  - Shared deterministic xorshift64 PRNG (`model_selection::rng`) — now used by both `model_selection` and `decomposition::randomized_svd`, eliminating a code duplication.
+- **`linear_model::LogisticRegression`** — binary classification via IRLS (Iteratively Reweighted Least Squares / Newton-Raphson). Mirrors `sklearn.linear_model.LogisticRegression`. Each iteration solves a weighted least-squares system `(XᵀWX) β = XᵀWz` via the shared Cholesky (default) or SVD solver. `predict` returns `P(y=1|x)` in `[0,1]`; `predict_class` thresholds at 0.5. Tunable via `max_iter` (100), `tol` (1e-4); exposes `n_iter()`. The crate's first classifier — opens the classification use case.
+- **`metrics::classification`** module — `accuracy_score`, `precision_score`, `recall_score`, `f1_score`, `confusion_matrix` (2×2), `log_loss` (cross-entropy). Mirrors `sklearn.metrics` with hand-verified parity.
+- **`linear_model::Ridge`** — L2-regularized regression (`||Xβ − y||² + α‖β‖²`). Mirrors `sklearn.linear_model.Ridge` with `alpha`, `fit_intercept`, and two solvers:
+  - `RidgeSolver::Cholesky` (default) — solves `(XᵀX + αI) β = Xᵀy` via the shared Cholesky solver. Because `α > 0` guarantees the system matrix is positive-definite, Ridge succeeds on rank-deficient / collinear inputs where `LinearRegression` would fail.
+  - `RidgeSolver::Svd` — eigendecomposition pseudo-inverse path.
+- **`linear_model::Lasso`** — L1-regularized regression (`(1/(2n))||Xβ − y||² + α‖β‖₁`), solved by **coordinate descent** with soft-thresholding. Mirrors `sklearn.linear_model.Lasso`. The L1 penalty drives irrelevant coefficients to **exactly zero**, yielding sparse models that perform implicit feature selection — the key behavioural difference from Ridge. Tunable via `alpha`, `max_iter`, `tol`; exposes `n_iter()`.
+- **`linear_model::LinearRegression`** — ordinary least-squares regression, the crate's first `predict`-capable estimator. Mirrors `sklearn.linear_model.LinearRegression` with `fit_intercept` and two solvers:
+  - `LinearSolver::Cholesky` (default) — solves the normal equations `XᵀX β = Xᵀy` via a pure-Rust Cholesky decomposition. Fast, zero-dependency; requires full column rank.
+  - `LinearSolver::Svd` — eigen-decomposition-based pseudo-inverse, stable for rank-deficient / collinear inputs.
+  - Accessors: `coef()`, `intercept()`, `n_features_in()`, `score()` (R² of prediction).
+- **`Regressor` trait** (`src/traits.rs`) — the supervised counterpart of `Transformer`: `fit(&mut self, X, y)`, `predict(&self, X) -> Vec<f64>`, `fit_predict`, `is_fitted`. Foundation for Ridge / Lasso / LogisticRegression.
+- **`linalg::cholesky`** module — `cholesky_decompose` and `solve_spd` / `solve_spd_system` for symmetric positive-definite systems. Shared solver foundation for future linear models.
+- **`metrics::regression`** module — `mean_squared_error` (with `squared=false` → RMSE), `mean_absolute_error`, `r2_score`, `max_error`, `explained_variance_score`. Mirrors `sklearn.metrics` with verified parity on reference inputs.
 - `PCASolver` enum (`Auto` / `Full` / `Randomized`) on `PCA`, selectable via `PCA::solver(...)`. `Randomized` uses a Halko–Martinsson–Tropp randomized SVD (`src/decomposition/randomized_svd.rs`) — the fast path for tall-and-wide, low-rank inputs. `Auto` (default) keeps the exact eigensolver paths while the oversampling edge case is verified.
 - `jacobi::eigh_topk_flat` — power-iteration + deflation that computes only the top-`k` eigenpairs of a flat symmetric matrix in `O(k·n²·iters)` instead of `O(n³·sweeps)`. Used by `PCA` when `n_components` is small.
 - `pca::matmul_flat` — shared flat matmul helper (GEMM when `matrixmultiply` is enabled, scalar otherwise), now used by `PCA` and `TruncatedSVD` transforms.

@@ -7,7 +7,15 @@ description = "Scikit-Learn Preprocessing in Rust"
 license = "MIT"
 repository = "https://github.com/muratgenc/datarust"
 readme = "README.md"
-keywords = ["machine-learning", "preprocessing", "scikit-learn", "data", "ml"]
+keywords = [
+    "machine-learning",
+    "preprocessing",
+    "scikit-learn",
+    "data",
+    "ml",
+    "regression",
+    "linear-model",
+]
 categories = ["science", "mathematics", "algorithms"]
 exclude = ["/.github", "/benches"]
 

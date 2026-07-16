@@ -13,6 +13,7 @@ import time
 
 import numpy as np
 from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression as SkLinearRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import (
     MinMaxScaler,
@@ -100,6 +101,14 @@ def main():
         k = min(10, max(1, cols // 2))
         ms = measure(reps, lambda: PCA(n_components=k).fit_transform(x))
         print(f"pca,{rows},{cols},{ms:.4f}")
+
+        # LinearRegression — same deterministic y as the Rust runner.
+        y = x @ np.arange(1, cols + 1, dtype=np.float64)
+        ms = measure(
+            reps,
+            lambda: SkLinearRegression().fit(x, y).predict(x),
+        )
+        print(f"linear_regression,{rows},{cols},{ms:.4f}")
 
         ms = measure(
             reps,

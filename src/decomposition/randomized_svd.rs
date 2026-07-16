@@ -12,35 +12,7 @@
 
 use crate::decomposition::jacobi;
 use crate::decomposition::pca::matmul_flat;
-
-/// Deterministic seedable RNG (xorshift64) so results are reproducible across
-/// runs and feature flags.
-struct Rng {
-    state: u64,
-}
-
-impl Rng {
-    fn new(seed: u64) -> Self {
-        Self {
-            state: if seed == 0 { 0x9E3779B97F4A7C15 } else { seed },
-        }
-    }
-    /// Standard normal sample via the Box–Muller transform.
-    fn next_normal(&mut self) -> f64 {
-        // Two uniforms; reuse both halves.
-        let u1 = self.next_unit().max(1e-300);
-        let u2 = self.next_unit();
-        let r = (-2.0 * u1.ln()).sqrt();
-        let theta = 2.0 * std::f64::consts::PI * u2;
-        r * theta.cos()
-    }
-    fn next_unit(&mut self) -> f64 {
-        self.state ^= self.state << 13;
-        self.state ^= self.state >> 7;
-        self.state ^= self.state << 17;
-        (self.state >> 11) as f64 / (1u64 << 53) as f64
-    }
-}
+use crate::model_selection::rng::Rng;
 
 /// Build a flat row-major `cols × l` Gaussian random matrix.
 fn gaussian_matrix(rows: usize, cols: usize, seed: u64) -> Vec<f64> {

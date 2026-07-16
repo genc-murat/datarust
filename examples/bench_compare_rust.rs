@@ -12,9 +12,10 @@ use datarust::categorical_kind::CategoricalTransformerKind;
 use datarust::compose::{ColumnTransformer, Table};
 use datarust::decomposition::{PCAComponents, PCA};
 use datarust::encoder::OneHotEncoder;
+use datarust::linear_model::LinearRegression;
 use datarust::pipeline::Pipeline;
 use datarust::scaler::{MinMaxScaler, RobustScaler, StandardScaler};
-use datarust::traits::Transformer;
+use datarust::traits::{Regressor, Transformer};
 use datarust::transformer_kind::TransformerKind;
 use datarust::{Matrix, StrMatrix};
 
@@ -127,6 +128,25 @@ fn main() {
             let _ = p.fit_transform(&x);
         });
         println!("pca,{rows},{cols},{ms:.4}");
+
+        // LinearRegression — y is a linear combination of the features so the
+        // fit always succeeds and mirrors sklearn's LinearRegression on the
+        // same deterministic input.
+        let x_for_lr = make_matrix(rows, cols, 42);
+        let y: Vec<f64> = (0..rows)
+            .map(|i| {
+                let row_base = i * cols;
+                (0..cols)
+                    .map(|j| x_for_lr.as_slice()[row_base + j] * (j as f64 + 1.0))
+                    .sum::<f64>()
+            })
+            .collect();
+        let ms = measure(reps, || {
+            let mut m = LinearRegression::new();
+            let _ = m.fit(&x_for_lr, &y);
+            let _ = m.predict(&x_for_lr);
+        });
+        println!("linear_regression,{rows},{cols},{ms:.4}");
 
         // Pipeline: Standard -> MinMax -> Robust
         let build_pipe = || {

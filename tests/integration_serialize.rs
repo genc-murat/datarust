@@ -347,3 +347,165 @@ fn power_transformer_round_trip() {
         assert!(approx(out.get(i, 0), original.get(i, 0), 1e-9));
     }
 }
+
+#[test]
+fn linear_regression_round_trip() {
+    use datarust::linear_model::LinearRegression;
+    use datarust::traits::Regressor;
+
+    // Non-collinear features so the Cholesky path is exercised.
+    let rows: Vec<Vec<f64>> = (0..20)
+        .map(|i| {
+            let i = i as f64;
+            vec![i.sin(), (i + 7.0).ln(), (i * 0.3).exp()]
+        })
+        .collect();
+    let x = datarust::Matrix::new(rows).unwrap();
+    let y: Vec<f64> = (0..20).map(|i| i as f64).collect();
+
+    let mut model = LinearRegression::new();
+    model.fit(&x, &y).unwrap();
+    let original = model.predict(&x).unwrap();
+
+    let json = to_json(&model).unwrap();
+    let restored: LinearRegression = from_json(&json).unwrap();
+    let out = restored.predict(&x).unwrap();
+    for i in 0..y.len() {
+        assert!(approx(out[i], original[i], 1e-12));
+    }
+    // Compare coefficients with tolerance: the GEMM-backed matmul (when the
+    // `matrixmultiply` feature is on) may reorder floating-point additions,
+    // producing tiny ulp-level differences that are not semantically meaningful.
+    for (a, b) in restored.coef().iter().zip(model.coef().iter()) {
+        assert!(approx(*a, *b, 1e-12));
+    }
+    assert!(approx(restored.intercept(), model.intercept(), 1e-12));
+    assert_eq!(restored.n_features_in(), model.n_features_in());
+}
+
+#[test]
+fn linear_regression_svd_round_trip() {
+    use datarust::linear_model::{LinearRegression, LinearSolver};
+    use datarust::traits::Regressor;
+
+    let rows: Vec<Vec<f64>> = (0..20)
+        .map(|i| {
+            let i = i as f64;
+            vec![i.sin(), (i + 7.0).ln(), (i * 0.3).exp()]
+        })
+        .collect();
+    let x = datarust::Matrix::new(rows).unwrap();
+    let y: Vec<f64> = (0..20).map(|i| (i as f64) * 0.5).collect();
+
+    let mut model = LinearRegression::new().with_solver(LinearSolver::Svd);
+    model.fit(&x, &y).unwrap();
+    let original = model.predict(&x).unwrap();
+
+    let path = tmp_path("linreg_svd");
+    save_json(&model, &path).unwrap();
+    let restored: LinearRegression = load_json(&path).unwrap();
+    let out = restored.predict(&x).unwrap();
+    for i in 0..y.len() {
+        assert!(approx(out[i], original[i], 1e-12));
+    }
+}
+
+#[test]
+fn ridge_round_trip() {
+    use datarust::linear_model::{Ridge, RidgeSolver};
+    use datarust::traits::Regressor;
+
+    let rows: Vec<Vec<f64>> = (0..20)
+        .map(|i| {
+            let i = i as f64;
+            vec![i.sin(), (i + 7.0).ln(), (i * 0.3).exp()]
+        })
+        .collect();
+    let x = datarust::Matrix::new(rows).unwrap();
+    let y: Vec<f64> = (0..20).map(|i| i as f64).collect();
+
+    let mut model = Ridge::new().with_alpha(2.5).with_solver(RidgeSolver::Svd);
+    model.fit(&x, &y).unwrap();
+    let original = model.predict(&x).unwrap();
+
+    let json = to_json(&model).unwrap();
+    let restored: Ridge = from_json(&json).unwrap();
+    let out = restored.predict(&x).unwrap();
+    for (o, orig) in out.iter().zip(original.iter()) {
+        assert!(approx(*o, *orig, 1e-12));
+    }
+    for (a, b) in restored.coef().iter().zip(model.coef().iter()) {
+        assert!(approx(*a, *b, 1e-12));
+    }
+    assert!(approx(restored.intercept(), model.intercept(), 1e-12));
+    assert_eq!(restored.n_features_in(), model.n_features_in());
+}
+
+#[test]
+fn lasso_round_trip() {
+    use datarust::linear_model::Lasso;
+    use datarust::traits::Regressor;
+
+    let rows: Vec<Vec<f64>> = (0..20)
+        .map(|i| {
+            let i = i as f64;
+            vec![i.sin(), (i + 7.0).ln(), (i * 0.3).exp()]
+        })
+        .collect();
+    let x = datarust::Matrix::new(rows).unwrap();
+    let y: Vec<f64> = (0..20).map(|i| i as f64).collect();
+
+    let mut model = Lasso::new().with_alpha(0.5).with_max_iter(500);
+    model.fit(&x, &y).unwrap();
+    let original = model.predict(&x).unwrap();
+
+    let path = tmp_path("lasso");
+    save_json(&model, &path).unwrap();
+    let restored: Lasso = load_json(&path).unwrap();
+    let out = restored.predict(&x).unwrap();
+    for (o, orig) in out.iter().zip(original.iter()) {
+        assert!(approx(*o, *orig, 1e-12));
+    }
+    for (a, b) in restored.coef().iter().zip(model.coef().iter()) {
+        assert!(approx(*a, *b, 1e-12));
+    }
+    assert!(approx(restored.intercept(), model.intercept(), 1e-12));
+    assert_eq!(restored.n_iter(), model.n_iter());
+}
+
+#[test]
+fn logistic_regression_round_trip() {
+    use datarust::linear_model::LogisticRegression;
+    use datarust::traits::Regressor;
+
+    // Overlapping (non-separable) data so the MLE is finite.
+    let rows: Vec<Vec<f64>> = vec![
+        vec![-2.0, 0.5],
+        vec![-1.0, -0.2],
+        vec![-0.5, 0.1],
+        vec![0.5, -0.1],
+        vec![1.0, 0.2],
+        vec![-0.8, 0.6],
+        vec![0.8, -0.4],
+        vec![1.2, 0.5],
+    ];
+    let x = datarust::Matrix::new(rows).unwrap();
+    let y: Vec<f64> = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0];
+
+    let mut model = LogisticRegression::new().with_max_iter(100);
+    model.fit(&x, &y).unwrap();
+    let original = model.predict(&x).unwrap();
+
+    let json = to_json(&model).unwrap();
+    let restored: LogisticRegression = from_json(&json).unwrap();
+    let out = restored.predict(&x).unwrap();
+    for (o, orig) in out.iter().zip(original.iter()) {
+        assert!(approx(*o, *orig, 1e-12));
+    }
+    for (a, b) in restored.coef().iter().zip(model.coef().iter()) {
+        assert!(approx(*a, *b, 1e-12));
+    }
+    assert!(approx(restored.intercept(), model.intercept(), 1e-12));
+    assert_eq!(restored.n_iter(), model.n_iter());
+    assert_eq!(restored.n_features_in(), model.n_features_in());
+}

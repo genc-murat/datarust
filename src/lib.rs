@@ -13,6 +13,9 @@
 //! - [`polynomial`] — PolynomialFeatures
 //! - [`selection`] — VarianceThreshold, SelectKBest
 //! - [`decomposition`] — PCA, TruncatedSVD
+//! - [`linear_model`] — LinearRegression, Ridge, Lasso, LogisticRegression
+//! - [`metrics`] — regression metrics (MSE, MAE, R², ...) and classification metrics (accuracy, F1, ...)
+//! - [`model_selection`] — train_test_split, KFold, StratifiedKFold, cross_val_score
 //! - [`pipeline`] — sequential Transformer pipelines
 //! - [`compose`] — ColumnTransformer
 //! - [`function_transformer`] — wrap arbitrary functions as a Transformer
@@ -24,6 +27,8 @@
 //! - [`target_kind`] — type-erased `TargetTransformerKind` enum wrapper for supervised encoders
 //!
 //! All numeric transformers implement the [`Transformer`] trait.
+//! Regression estimators implement the [`Regressor`] trait
+//! (`fit` with features + target, then `predict`).
 //! Categorical encoders (OneHot, Ordinal, Frequency) implement the
 //! [`CategoricalTransformer`] trait.
 //! The [`TargetEncoder`] implements the [`TargetTransformer`] trait (requires
@@ -57,7 +62,15 @@ pub mod error;
 /// Wrap arbitrary functions as a [`Transformer`].
 pub mod function_transformer;
 pub mod imputer;
+/// Shared linear-algebra primitives (Cholesky solver, etc.).
+pub mod linalg;
+/// Regression & classification estimators: LinearRegression, Ridge, Lasso, LogisticRegression.
+pub mod linear_model;
 pub mod matrix;
+/// Model-evaluation metrics: regression (MSE, R², ...) and classification (accuracy, F1, ...).
+pub mod metrics;
+/// Model selection: train_test_split, KFold, cross_val_score.
+pub mod model_selection;
 /// Sequential transformer pipelines.
 pub mod pipeline;
 /// Generate polynomial feature combinations.
@@ -78,11 +91,17 @@ pub use encoder::{
     OrdinalEncoder, OrdinalHandleUnknown, TargetEncoder, UnknownFrequency, UnknownTarget,
 };
 pub use error::{DatarustError, Result};
+pub use linear_model::{
+    Lasso, LinearRegression, LinearSolver, LogisticRegression, LogisticSolver, Ridge, RidgeSolver,
+};
 pub use matrix::{Matrix, SparseMatrix, StrMatrix};
+pub use model_selection::{
+    cross_val_score, train_test_split, KFold, StratifiedKFold, TrainTestSplit,
+};
 pub use pipeline::Pipeline;
 pub use target_kind::TargetTransformerKind;
 pub use traits::{
-    default_input_names, CategoricalTransformer, FeatureNames, LabelTransformer, TargetTransformer,
-    Transformer,
+    default_input_names, CategoricalTransformer, FeatureNames, LabelTransformer, Regressor,
+    TargetTransformer, Transformer,
 };
 pub use transformer_kind::TransformerKind;

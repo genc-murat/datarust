@@ -225,6 +225,125 @@ fn bench_robust_scaler(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_linear_regression(c: &mut Criterion) {
+    use datarust::linear_model::LinearRegression;
+    use datarust::traits::Regressor;
+
+    let mut group = c.benchmark_group("linear_regression");
+    for (rows, cols) in [(1_000, 10), (10_000, 50), (100_000, 100)] {
+        let x = make_matrix(rows, cols);
+        // Deterministic target derived from the first column so the fit is
+        // well-conditioned and always succeeds.
+        let y: Vec<f64> = (0..rows)
+            .map(|i| ((i as f64) * cols as f64).sin() * 10.0 + (i as f64))
+            .collect();
+
+        group.bench_with_input(
+            criterion::BenchmarkId::new("fit", format!("{rows}x{cols}")),
+            &(&x, &y),
+            |bencher, (x, y)| {
+                bencher.iter_batched(
+                    LinearRegression::new,
+                    |mut m| m.fit(x, y),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        // Pre-fit model for the predict benchmark.
+        let mut model = LinearRegression::new();
+        model.fit(&x, &y).unwrap();
+        group.bench_with_input(
+            criterion::BenchmarkId::new("predict", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| bencher.iter(|| model.predict(x)),
+        );
+    }
+    group.finish();
+}
+
+fn bench_ridge_and_lasso(c: &mut Criterion) {
+    use datarust::linear_model::{Lasso, Ridge};
+    use datarust::traits::Regressor;
+
+    let mut group = c.benchmark_group("regularized");
+    for (rows, cols) in [(1_000, 10), (10_000, 50), (50_000, 100)] {
+        let x = make_matrix(rows, cols);
+        let y: Vec<f64> = (0..rows)
+            .map(|i| ((i as f64) * cols as f64).sin() * 10.0 + (i as f64))
+            .collect();
+
+        group.bench_with_input(
+            criterion::BenchmarkId::new("ridge_fit", format!("{rows}x{cols}")),
+            &(&x, &y),
+            |bencher, (x, y)| {
+                bencher.iter_batched(
+                    || Ridge::new().with_alpha(1.0),
+                    |mut m| m.fit(x, y),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        group.bench_with_input(
+            criterion::BenchmarkId::new("lasso_fit", format!("{rows}x{cols}")),
+            &(&x, &y),
+            |bencher, (x, y)| {
+                bencher.iter_batched(
+                    || Lasso::new().with_alpha(0.1).with_max_iter(200),
+                    |mut m| m.fit(x, y),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_logistic_regression(c: &mut Criterion) {
+    use datarust::linear_model::LogisticRegression;
+    use datarust::traits::Regressor;
+
+    let mut group = c.benchmark_group("logistic_regression");
+    for (rows, cols) in [(1_000, 10), (10_000, 50), (50_000, 100)] {
+        let x = make_matrix(rows, cols);
+        // Deterministic binary target: threshold a linear combination of features.
+        let y: Vec<f64> = (0..rows)
+            .map(|i| {
+                let s = x.as_slice();
+                let base = i * cols;
+                let dot: f64 = (0..cols).map(|j| s[base + j] * (j as f64 + 1.0)).sum();
+                if dot > 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+
+        group.bench_with_input(
+            criterion::BenchmarkId::new("fit", format!("{rows}x{cols}")),
+            &(&x, &y),
+            |bencher, (x, y)| {
+                bencher.iter_batched(
+                    || LogisticRegression::new().with_max_iter(50),
+                    |mut m| m.fit(x, y),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+
+        let mut model = LogisticRegression::new().with_max_iter(50);
+        model.fit(&x, &y).unwrap();
+        group.bench_with_input(
+            criterion::BenchmarkId::new("predict", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| bencher.iter(|| model.predict(x)),
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_matrix_matmul,
@@ -237,5 +356,8 @@ criterion_group!(
     bench_column_transformer,
     bench_pca,
     bench_pipeline,
+    bench_linear_regression,
+    bench_ridge_and_lasso,
+    bench_logistic_regression,
 );
 criterion_main!(benches);
