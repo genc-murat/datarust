@@ -260,3 +260,147 @@ fn sym_matvec(a: &[f64], n: usize, x: &[f64], y: &mut [f64]) {
         *out = s;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn approx(a: f64, b: f64, tol: f64) -> bool {
+        (a - b).abs() < tol
+    }
+
+    #[test]
+    fn eigh_diagonal_matrix_returns_diagonal() {
+        // diag(3, 1) -> eigenvalues {3, 1}.
+        let m = vec![vec![3.0, 0.0], vec![0.0, 1.0]];
+        let (vals, vecs) = eigh(&m).unwrap();
+        assert!(approx(vals[0], 3.0, 1e-9));
+        assert!(approx(vals[1], 1.0, 1e-9));
+        // First eigenvector points along axis 0, second along axis 1.
+        assert!(approx(vecs[0][0].abs(), 1.0, 1e-9));
+        assert!(approx(vecs[1][1].abs(), 1.0, 1e-9));
+    }
+
+    #[test]
+    fn eigh_known_2x2_matches_hand_calculation() {
+        // [[2,1],[1,2]] has eigenvalues {3, 1} with eigenvectors (1,1)/√2 and (1,-1)/√2.
+        let m = vec![vec![2.0, 1.0], vec![1.0, 2.0]];
+        let (vals, vecs) = eigh(&m).unwrap();
+        assert!(approx(vals[0], 3.0, 1e-9));
+        assert!(approx(vals[1], 1.0, 1e-9));
+        // Eigenvectors are unit norm.
+        for v in &vecs {
+            let nrm: f64 = v.iter().map(|x| x * x).sum::<f64>().sqrt();
+            assert!(approx(nrm, 1.0, 1e-9));
+        }
+    }
+
+    #[test]
+    fn eigh_identity_matrix_all_ones() {
+        let n = 4;
+        let m: Vec<Vec<f64>> = (0..n)
+            .map(|i| (0..n).map(|j| if i == j { 1.0 } else { 0.0 }).collect())
+            .collect();
+        let (vals, _vecs) = eigh(&m).unwrap();
+        assert_eq!(vals.len(), n);
+        for v in &vals {
+            assert!(approx(*v, 1.0, 1e-9));
+        }
+    }
+
+    #[test]
+    fn eigh_eigenvectors_orthonormal() {
+        // For a symmetric matrix, VᵀV should be the identity.
+        let m = vec![
+            vec![4.0, 1.0, 2.0],
+            vec![1.0, 3.0, 0.5],
+            vec![2.0, 0.5, 2.0],
+        ];
+        let (vals, vecs) = eigh(&m).unwrap();
+        let n = vals.len();
+        // VᵀV = I  ->  Σ_k vecs[k][i] * vecs[k][j] = δ_ij
+        for i in 0..n {
+            for j in 0..n {
+                let dot: f64 = (0..n).map(|k| vecs[k][i] * vecs[k][j]).sum();
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!(approx(dot, expected, 1e-9), "VᵀV[{}][{}]={}", i, j, dot);
+            }
+        }
+    }
+
+    #[test]
+    fn eigh_reconstructs_original_matrix() {
+        // A = V Λ Vᵀ should reconstruct the original symmetric matrix.
+        let m = vec![
+            vec![4.0, 1.0, 0.5],
+            vec![1.0, 3.0, 1.5],
+            vec![0.5, 1.5, 2.0],
+        ];
+        let (vals, vecs) = eigh(&m).unwrap();
+        let n = vals.len();
+        // A = Σ_k λ_k · v_k v_kᵀ  (v_k is the k-th row of `vecs`).
+        for i in 0..n {
+            for j in 0..n {
+                let a_ij: f64 = (0..n).map(|k| vals[k] * vecs[k][i] * vecs[k][j]).sum();
+                assert!(
+                    approx(a_ij, m[i][j], 1e-9),
+                    "A[{}][{}]={} want {}",
+                    i,
+                    j,
+                    a_ij,
+                    m[i][j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn eigh_descending_order() {
+        // Eigenvalues with distinct magnitudes should come back descending.
+        let m = vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 5.0, 0.0],
+            vec![0.0, 0.0, 2.0],
+        ];
+        let (vals, _) = eigh(&m).unwrap();
+        assert!(vals[0] >= vals[1]);
+        assert!(vals[1] >= vals[2]);
+        assert!(approx(vals[0], 5.0, 1e-9));
+        assert!(approx(vals[2], 1.0, 1e-9));
+    }
+
+    #[test]
+    fn eigh_empty_returns_none() {
+        let m: Vec<Vec<f64>> = vec![];
+        assert!(eigh(&m).is_none());
+    }
+
+    #[test]
+    fn eigh_nonsquare_returns_none() {
+        let m = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+        assert!(eigh(&m).is_none());
+    }
+
+    #[test]
+    fn eigh_flat_single_element() {
+        // 1×1 matrix: the single entry is its own eigenvalue, eigenvector is [1].
+        let mut a = vec![7.0];
+        let (vals, vecs) = eigh_flat(&mut a, 1).unwrap();
+        assert!(approx(vals[0], 7.0, 1e-12));
+        assert!(approx(vecs[0], 1.0, 1e-12));
+    }
+
+    #[test]
+    fn covariance_centered_matches_definition() {
+        // Covariance of already-centered data: (1/(n-ddof)) · XᵀX.
+        // Two samples, two features, centered (each column sums to 0).
+        let x = vec![vec![1.0, 2.0], vec![-1.0, -2.0]];
+        let cov = covariance(&x, 0);
+        // Column products: (1)(1)+(-1)(-1)=2, (2)(2)+(-2)(-2)=8, cross=4
+        // divide by n-ddof = 2.
+        assert!(approx(cov[0][0], 1.0, 1e-9));
+        assert!(approx(cov[1][1], 4.0, 1e-9));
+        assert!(approx(cov[0][1], 2.0, 1e-9));
+        assert!(approx(cov[1][0], 2.0, 1e-9));
+    }
+}

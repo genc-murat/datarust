@@ -77,3 +77,91 @@ impl FeatureNames for CategoricalTransformerKind {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_str() -> StrMatrix {
+        StrMatrix::from_column(["Red", "Blue", "Green", "Red"]).unwrap()
+    }
+
+    #[test]
+    fn name_delegates_to_inner() {
+        let kind = CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new());
+        assert_eq!(kind.name(), OneHotEncoder::new().name());
+    }
+
+    #[test]
+    fn fit_transform_dispatches_to_onehot() {
+        let s = sample_str();
+        let mut kind = CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new());
+        assert!(!kind.is_fitted());
+        let out = kind.fit_transform(&s).unwrap();
+        // 3 sorted categories: Blue, Green, Red -> 3 columns.
+        assert_eq!(out.ncols(), 3);
+        assert_eq!(out.nrows(), 4);
+        assert!(kind.is_fitted());
+        // Red -> [0,0,1]
+        assert_eq!(out.row(0), [0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn fit_transform_dispatches_to_ordinal() {
+        use crate::encoder::OrdinalCategories;
+        let s = sample_str();
+        let mut kind = CategoricalTransformerKind::OrdinalEncoder(OrdinalEncoder::new(
+            OrdinalCategories::Auto,
+        ));
+        let out = kind.fit_transform(&s).unwrap();
+        assert_eq!(out.nrows(), 4);
+        assert_eq!(out.ncols(), 1);
+        // Sorted cats: Blue=0, Green=1, Red=2
+        assert_eq!(out.row(0), [2.0]); // Red
+        assert_eq!(out.row(1), [0.0]); // Blue
+    }
+
+    #[test]
+    fn fit_transform_dispatches_to_frequency() {
+        let s = sample_str();
+        let mut kind = CategoricalTransformerKind::FrequencyEncoder(FrequencyEncoder::new(false));
+        let out = kind.fit_transform(&s).unwrap();
+        // Red appears twice -> count 2; Blue and Green once.
+        assert_eq!(out.row(0), [2.0]); // Red
+        assert_eq!(out.row(1), [1.0]); // Blue
+        assert_eq!(out.row(2), [1.0]); // Green
+    }
+
+    #[test]
+    fn transform_before_fit_errors() {
+        let s = sample_str();
+        let kind = CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new());
+        let err = kind.transform(&s).unwrap_err();
+        assert!(matches!(err, crate::error::DatarustError::NotFitted(_)));
+    }
+
+    #[test]
+    fn inverse_transform_round_trips_onehot() {
+        let s = sample_str();
+        let mut kind = CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new());
+        let encoded = kind.fit_transform(&s).unwrap();
+        let decoded = kind.inverse_transform(&encoded).unwrap();
+        // Each decoded row should reproduce the original category string.
+        for i in 0..s.nrows() {
+            assert_eq!(decoded.get(i, 0), s.get(i, 0));
+        }
+    }
+
+    #[test]
+    fn feature_names_delegates_to_inner() {
+        // The wrapper delegates to the inner encoder; feature names depend on
+        // the fitted state (category_lists is populated only after fit).
+        let s = sample_str();
+        let mut kind = CategoricalTransformerKind::OrdinalEncoder(OrdinalEncoder::new(
+            crate::encoder::OrdinalCategories::Auto,
+        ));
+        kind.fit(&s).unwrap();
+        let names = kind.feature_names_out(Some(&["color".into()]));
+        assert_eq!(names, vec!["color".to_string()]);
+    }
+}

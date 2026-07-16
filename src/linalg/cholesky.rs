@@ -251,4 +251,71 @@ mod tests {
         let err = cholesky_decompose(&[], 0).unwrap_err();
         assert!(matches!(err, DatarustError::EmptyInput(_)));
     }
+
+    #[test]
+    fn solve_spd_identity_returns_b() {
+        // A = I ⇒ x = b exactly.
+        let n = 3;
+        let a = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let b = vec![7.0, -2.0, 5.0];
+        let x = solve_spd_system(&a, n, &b).unwrap();
+        for i in 0..n {
+            assert!((x[i] - b[i]).abs() < 1e-12, "i={i}");
+        }
+    }
+
+    #[test]
+    fn solve_spd_3x3_diagonal_system() {
+        // Diagonally dominant SPD system with a known solution.
+        // A = [[9, 0, 0], [0, 4, 0], [0, 0, 1]], b = [18, -8, 3].
+        // Solution: x = [2, -2, 3].
+        let a = vec![9.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 1.0];
+        let b = vec![18.0, -8.0, 3.0];
+        let x = solve_spd_system(&a, 3, &b).unwrap();
+        assert!((x[0] - 2.0).abs() < 1e-9);
+        assert!((x[1] - (-2.0)).abs() < 1e-9);
+        assert!((x[2] - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn solve_spd_residue_is_zero() {
+        // For any SPD A and solution x of A x = b, the residual A x − b is ~0.
+        let a = vec![6.0, 2.0, 2.0, 6.0]; // [[6,2],[2,6]] SPD
+        let b = vec![10.0, 14.0];
+        let x = solve_spd_system(&a, 2, &b).unwrap();
+        let r0 = a[0] * x[0] + a[1] * x[1] - b[0];
+        let r1 = a[2] * x[0] + a[3] * x[1] - b[1];
+        assert!(r0.abs() < 1e-9, "residual row 0 = {r0}");
+        assert!(r1.abs() < 1e-9, "residual row 1 = {r1}");
+    }
+
+    #[test]
+    fn cholesky_well_conditioned_4x4() {
+        // A = I + small perturbation stays SPD; check L is lower-triangular
+        // with positive diagonal and reconstructs A.
+        let n = 4;
+        // Hilbert-like matrix scaled up to be well-conditioned and SPD.
+        let mut a = vec![0.0; n * n];
+        for i in 0..n {
+            for j in 0..n {
+                a[i * n + j] = 1.0 / ((i + j + 1) as f64);
+            }
+        }
+        let l = cholesky_decompose(&a, n).unwrap();
+        // Positive diagonal.
+        for i in 0..n {
+            assert!(l[i * n + i] > 0.0, "non-positive diagonal at {i}");
+        }
+        // Strict upper triangle is zero.
+        for i in 0..n {
+            for j in (i + 1)..n {
+                assert!(l[i * n + j].abs() < 1e-12);
+            }
+        }
+        // Reconstructs A.
+        let recon = reconstruct(&l, n);
+        for x in 0..n * n {
+            assert!((recon[x] - a[x]).abs() < 1e-9, "mismatch at {x}");
+        }
+    }
 }

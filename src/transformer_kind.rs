@@ -221,3 +221,100 @@ impl FeatureNames for TransformerKind {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scaler::{Binarizer, MinMaxScaler, StandardScaler};
+
+    fn sample_matrix() -> Matrix {
+        Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]).unwrap()
+    }
+
+    #[test]
+    fn tag_returns_expected_strings() {
+        assert_eq!(
+            TransformerKind::StandardScaler(StandardScaler::new()).tag(),
+            "StandardScaler"
+        );
+        assert_eq!(
+            TransformerKind::MinMaxScaler(MinMaxScaler::new()).tag(),
+            "MinMaxScaler"
+        );
+        assert_eq!(
+            TransformerKind::Binarizer(Binarizer::new()).tag(),
+            "Binarizer"
+        );
+    }
+
+    #[test]
+    fn name_delegates_to_inner() {
+        let kind = TransformerKind::StandardScaler(StandardScaler::new());
+        assert_eq!(kind.name(), StandardScaler::new().name());
+    }
+
+    #[test]
+    fn dispatches_fit_and_transform() {
+        let x = sample_matrix();
+        // StandardScaler via the wrapper.
+        let mut kind = TransformerKind::StandardScaler(StandardScaler::new());
+        assert!(!kind.is_fitted());
+        let out = kind.fit_transform(&x).unwrap();
+        // Column 0 mean = 3, std = sqrt(((−2)²+0²+2²)/3); (1−3)/std should be negative.
+        assert!(out.get(0, 0) < 0.0);
+        assert!(kind.is_fitted());
+
+        // Binarizer via the wrapper (threshold 0.0 default -> all positive values map to 1).
+        let mut bin = TransformerKind::Binarizer(Binarizer::new());
+        let bin_out = bin.fit_transform(&x).unwrap();
+        assert_eq!(bin_out.row(0), [1.0, 1.0]);
+        assert_eq!(bin_out.row(2), [1.0, 1.0]);
+    }
+
+    #[test]
+    fn select_k_best_fit_errors_without_labels() {
+        use crate::selection::{ScoreFunc, SelectKBest};
+        let x = sample_matrix();
+        let mut kind =
+            TransformerKind::SelectKBest(SelectKBest::new(ScoreFunc::FClassif, 1).unwrap());
+        let err = kind.fit(&x).unwrap_err();
+        assert!(matches!(err, DatarustError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn is_fitted_reflects_inner_state() {
+        let x = sample_matrix();
+        let mut kind = TransformerKind::MinMaxScaler(MinMaxScaler::new());
+        assert!(!kind.is_fitted());
+        kind.fit(&x).unwrap();
+        assert!(kind.is_fitted());
+    }
+
+    #[test]
+    fn transform_before_fit_errors() {
+        let x = sample_matrix();
+        let kind = TransformerKind::StandardScaler(StandardScaler::new());
+        let err = kind.transform(&x).unwrap_err();
+        assert!(matches!(err, DatarustError::NotFitted(_)));
+    }
+
+    #[test]
+    fn feature_names_delegates_to_inner() {
+        let kind = TransformerKind::StandardScaler(StandardScaler::new());
+        let names = kind.feature_names_out(Some(&["alpha".into(), "beta".into()]));
+        assert_eq!(names, vec!["alpha".to_string(), "beta".to_string()]);
+    }
+
+    #[test]
+    fn inverse_transform_round_trips_through_wrapper() {
+        let x = sample_matrix();
+        let mut kind = TransformerKind::MinMaxScaler(MinMaxScaler::new());
+        let t = kind.fit_transform(&x).unwrap();
+        let r = kind.inverse_transform(&t).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!((r.get(i, j) - x.get(i, j)).abs() < 1e-9, "i={i} j={j}");
+            }
+        }
+    }
+}
