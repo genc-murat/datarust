@@ -19,7 +19,7 @@
 //! - [`pipeline`] — sequential Transformer pipelines
 //! - [`compose`] — ColumnTransformer
 //! - [`function_transformer`] — wrap arbitrary functions as a Transformer
-//! - [`stats`] — column statistics, covariance and correlation matrices
+//! - [`stats`] — column and 1-D statistics, covariance and correlation matrices
 //! - [`matrix`] — `Matrix`, `StrMatrix` and `SparseMatrix` data containers
 //! - [`serialize`] — JSON save/load (requires the `serde` feature)
 //! - [`transformer_kind`] — type-erased `TransformerKind` enum wrapper

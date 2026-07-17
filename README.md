@@ -875,6 +875,26 @@ let rows = m.select_rows(&[1])?;  // only row 1
 assert_eq!(rows.nrows(), 1);
 ```
 
+### 1-D Statistics
+
+The [`stats`](https://docs.rs/datarust/latest/datarust/stats/index.html) module also has single-slice (1-D) counterparts of its column statistics, so a flat `&[f64]` doesn't need to be wrapped in a `Vec<Vec<f64>>` matrix:
+
+```rust
+use datarust::stats;
+
+let x = [1.0, 2.0, 3.0, 4.0];
+stats::mean(&x);              // 2.5
+stats::sum(&x);               // 10.0
+stats::min(&x);               // 1.0
+stats::max(&x);               // 4.0
+stats::variance(&x, 1);       // ~1.667 (sample, ddof=1)
+stats::std(&x, 0);            // ~1.118 (population)
+stats::median(&[3.0, 1.0, 2.0]);   // Some(2.0) — sorts a copy
+stats::mode(&[1.0, 2.0, 2.0, 3.0]); // Some(2.0) — ties → smallest
+```
+
+`mean`/`variance`/`std` return `NaN` on an empty slice or when `ddof >= n` (numpy parity); `median`/`mode` return `None` on empty input.
+
 ### Covariance & Correlation
 
 The [`stats`](https://docs.rs/datarust/latest/datarust/stats/index.html) module provides matrix-level statistical operations:
@@ -928,7 +948,7 @@ datarust = { version = "0.3", features = ["rayon"] }
 
 When enabled, the following use parallel iterators:
 
-- **Statistics:** `column_mean`, `column_variance`, `column_min`, `column_max`, `column_median`, `column_mode`, `column_quantile`
+- **Statistics:** `column_mean`, `column_variance`, `column_min`, `column_max`, `column_median`, `column_mode`, `column_quantile` (columnar) plus 1-D `mean`, `sum`, `min`, `max`, `variance`, `std`, `median`, `mode`
 - **Scalers:** StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler, Normalizer
 - **Encoders:** OneHotEncoder (dense + sparse transform, inverse_transform), OrdinalEncoder (transform), FrequencyEncoder (transform), TargetEncoder (transform)
 - **Imputation:** KNN Imputer distance computation

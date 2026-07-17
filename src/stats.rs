@@ -146,6 +146,71 @@ pub fn column_max(data: &[Vec<f64>]) -> Vec<f64> {
     }
 }
 
+/// Sum of the values in a slice.
+///
+/// The 1-D counterpart of [`column_sum`]. Returns `0.0` for an empty slice.
+pub fn sum(data: &[f64]) -> f64 {
+    data.iter().sum()
+}
+
+/// Arithmetic mean (average) of a slice.
+///
+/// The 1-D counterpart of [`column_mean`]. Returns [`f64::NAN`] for an empty
+/// slice, matching numpy.
+///
+/// ```rust
+/// use datarust::stats::mean;
+/// assert!((mean(&[1.0, 2.0, 3.0, 4.0]) - 2.5).abs() < 1e-12);
+/// ```
+pub fn mean(data: &[f64]) -> f64 {
+    if data.is_empty() {
+        return f64::NAN;
+    }
+    sum(data) / data.len() as f64
+}
+
+/// Minimum value of a slice.
+///
+/// The 1-D counterpart of [`column_min`]. Returns [`f64::INFINITY`] for an
+/// empty slice (the identity element of `min`), so reducing a non-empty slice
+/// folded over it never overflows.
+pub fn min(data: &[f64]) -> f64 {
+    data.iter().copied().fold(f64::INFINITY, f64::min)
+}
+
+/// Maximum value of a slice.
+///
+/// The 1-D counterpart of [`column_max`]. Returns [`f64::NEG_INFINITY`] for an
+/// empty slice (the identity element of `max`).
+pub fn max(data: &[f64]) -> f64 {
+    data.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+}
+
+/// Variance of a slice using the given delta degrees of freedom.
+///
+/// The 1-D counterpart of [`column_variance`]. `ddof = 0` yields the
+/// population variance, `ddof = 1` the sample variance (the numpy default).
+/// Returns [`f64::NAN`] for an empty slice or when `ddof >= n` (a
+/// non-positive denominator), mirroring [`column_variance`].
+pub fn variance(data: &[f64], ddof: usize) -> f64 {
+    let n = data.len();
+    if n == 0 || ddof >= n {
+        return f64::NAN;
+    }
+    let denom = (n - ddof) as f64;
+    let m = mean(data);
+    let s: f64 = data.iter().map(|&x| (x - m) * (x - m)).sum();
+    s / denom
+}
+
+/// Standard deviation of a slice using the given delta degrees of freedom.
+///
+/// The 1-D counterpart of [`column_std`]. Simply `variance(data, ddof).sqrt()`;
+/// see [`variance`] for the `ddof` and empty-slice semantics.
+pub fn std(data: &[f64], ddof: usize) -> f64 {
+    variance(data, ddof).sqrt()
+}
+
 /// Median of a slice that is assumed to be sorted in non-decreasing order.
 ///
 /// Returns `None` for an empty slice instead of panicking. Callers that can
@@ -181,6 +246,25 @@ pub fn quantile(sorted: &[f64], q: f64) -> Option<f64> {
     }
     let frac = pos - lo as f64;
     Some(sorted[lo] * (1.0 - frac) + sorted[hi] * frac)
+}
+
+/// Median (50th percentile) of a slice.
+///
+/// Unlike [`median_sorted`], this sorts a copy of the input internally, so the
+/// caller does not need to pre-sort. Returns `None` for an empty slice.
+///
+/// ```rust
+/// use datarust::stats::median;
+/// assert!((median(&[3.0, 1.0, 2.0]).unwrap() - 2.0).abs() < 1e-12);
+/// assert!((median(&[1.0, 2.0, 3.0, 4.0]).unwrap() - 2.5).abs() < 1e-12);
+/// ```
+pub fn median(data: &[f64]) -> Option<f64> {
+    if data.is_empty() {
+        return None;
+    }
+    let mut sorted = data.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    median_sorted(&sorted)
 }
 
 /// Returns the requested quantile of each column using linear interpolation.
@@ -309,6 +393,38 @@ pub fn mode_column(data: &[Vec<f64>]) -> Vec<f64> {
             })
             .collect()
     }
+}
+
+/// Most frequent value of a slice. Ties are broken by the smallest value
+/// (deterministic), matching [`mode_column`].
+///
+/// The 1-D counterpart of [`mode_column`]. Returns `None` for an empty slice.
+/// A slice where every value is distinct returns any single element (all are
+/// tied at count 1; the smallest wins).
+pub fn mode(data: &[f64]) -> Option<f64> {
+    if data.is_empty() {
+        return None;
+    }
+    let mut counts: HashMap<u64, (usize, f64)> = HashMap::new();
+    for &x in data {
+        let key = x.to_bits();
+        let entry = counts.entry(key).or_insert((0, x));
+        entry.0 += 1;
+        entry.1 = x;
+    }
+    let mut best: Option<(usize, f64)> = None;
+    for (_, (cnt, val)) in counts {
+        match best {
+            None => best = Some((cnt, val)),
+            Some((bc, bv)) => {
+                if cnt > bc || (cnt == bc && val < bv) {
+                    best = Some((cnt, val));
+                }
+            }
+        }
+    }
+    // data is non-empty (checked above), so `best` is always Some.
+    best.map(|(_, v)| v)
 }
 
 /// Sum of each column.
@@ -853,6 +969,103 @@ mod tests {
         assert!((mn[0] - 1.0).abs() < 1e-12);
         assert!((mx[0] - 5.0).abs() < 1e-12);
         assert!((mn[1] - -1.0).abs() < 1e-12);
+    }
+
+    // ---- 1-D (single-slice) statistics ----
+
+    #[test]
+    fn sum_basic() {
+        assert!((sum(&[1.0, 2.0, 3.0, 4.0]) - 10.0).abs() < 1e-12);
+        assert!((sum(&[-1.5, 0.5, 1.0]) - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn sum_empty_returns_zero() {
+        assert_eq!(sum(&[]), 0.0);
+    }
+
+    #[test]
+    fn mean_basic_1d() {
+        assert!((mean(&[1.0, 2.0, 3.0, 4.0]) - 2.5).abs() < 1e-12);
+        assert!((mean(&[5.0]) - 5.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn mean_empty_returns_nan() {
+        assert!(mean(&[]).is_nan());
+    }
+
+    #[test]
+    fn min_max_basic_1d() {
+        assert!((min(&[3.0, -1.0, 2.0]) - (-1.0)).abs() < 1e-12);
+        assert!((max(&[3.0, -1.0, 2.0]) - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn min_max_empty_returns_identity() {
+        assert!(min(&[]).is_infinite() && min(&[]).is_sign_positive());
+        assert!(max(&[]).is_infinite() && !max(&[]).is_sign_positive());
+    }
+
+    #[test]
+    fn variance_ddof_1d() {
+        let data = [1.0, 2.0, 3.0, 4.0];
+        // population variance = 1.25 ; sample = 5/3
+        assert!((variance(&data, 0) - 1.25).abs() < 1e-12);
+        assert!((variance(&data, 1) - (5.0 / 3.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn variance_empty_and_bad_ddof_returns_nan() {
+        assert!(variance(&[], 0).is_nan());
+        // ddof >= n -> non-positive denominator
+        assert!(variance(&[1.0, 2.0], 2).is_nan());
+        assert!(variance(&[1.0, 2.0], 5).is_nan());
+    }
+
+    #[test]
+    fn std_matches_variance_sqrt() {
+        let data = [1.0, 2.0, 3.0, 4.0];
+        assert!((std(&data, 1) - variance(&data, 1).sqrt()).abs() < 1e-12);
+        assert!((std(&data, 1) - (5.0_f64 / 3.0).sqrt()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn median_unsorted_input() {
+        // Unsorted input is sorted internally.
+        assert!((median(&[3.0, 1.0, 2.0]).unwrap() - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn median_even_odd_1d() {
+        assert!((median(&[1.0, 2.0, 3.0]).unwrap() - 2.0).abs() < 1e-12);
+        assert!((median(&[1.0, 2.0, 3.0, 4.0]).unwrap() - 2.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn median_empty_returns_none() {
+        assert!(median(&[]).is_none());
+    }
+
+    #[test]
+    fn mode_basic_1d() {
+        assert!((mode(&[1.0, 2.0, 2.0, 3.0]).unwrap() - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn mode_tie_smallest_1d() {
+        // tie between 1.0 and 2.0 -> smallest wins
+        assert!((mode(&[1.0, 2.0, 1.0, 2.0]).unwrap() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn mode_empty_returns_none() {
+        assert!(mode(&[]).is_none());
+    }
+
+    #[test]
+    fn mode_all_equal_returns_that_value() {
+        assert!((mode(&[7.0, 7.0, 7.0]).unwrap() - 7.0).abs() < 1e-12);
     }
 
     fn transpose(data: &[Vec<f64>]) -> Vec<Vec<f64>> {

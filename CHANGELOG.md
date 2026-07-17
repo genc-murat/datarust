@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-17
+
+A small additive release. The `stats` module now has single-slice (1-D)
+counterparts of its column statistics, so a flat `&[f64]` no longer needs to be
+wrapped as a `vec![vec![...]]` matrix to summarise it.
+
+### Added
+- **1-D statistics in `stats`** — plain-`&[f64]` counterparts of the existing `column_*` functions:
+  - `sum`, `mean`, `min`, `max` — scalar reductions. `mean` returns `NaN` on an empty slice (numpy parity); `sum` returns `0.0`; `min`/`max` return their identity element (`+∞` / `−∞`) on empty input.
+  - `variance(&[f64], ddof)`, `std(&[f64], ddof)` — with the same delta-degrees-of-freedom semantics as [`column_variance`]/[`column_std`] (`ddof = 0` population, `ddof = 1` sample); `NaN` when `ddof >= n`.
+  - `median(&[f64]) -> Option<f64>` — sorts a copy internally (unlike [`median_sorted`], which assumes pre-sorted input); `None` on empty input.
+  - `mode(&[f64]) -> Option<f64>` — most frequent value, ties broken by the smallest value (matching [`mode_column`]); `None` on empty input.
+
 ## [0.4.0] - 2026-07-16
 
 The "ML toolkit" release. datarust grows from a preprocessing library into a full
