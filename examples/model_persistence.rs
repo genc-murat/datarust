@@ -7,12 +7,12 @@
 //! Bu örnek `serde` feature'ı gerektirir:
 //!   `cargo run --example model_persistence --features serde`
 
-use datarust::decomposition::{PCA, PCAComponents};
+use datarust::decomposition::{PCAComponents, PCA};
 use datarust::linear_model::Ridge;
 use datarust::pipeline::Pipeline;
 use datarust::scaler::StandardScaler;
-use datarust::transformer_kind::TransformerKind;
 use datarust::traits::{Predictor, Regressor};
+use datarust::transformer_kind::TransformerKind;
 use datarust::Matrix;
 
 #[cfg(not(feature = "serde"))]
@@ -71,8 +71,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Bir önişleme zinciri (StandardScaler + PCA) ve son tahminci (Ridge).
     // with_estimator, önişleme Pipeline'ını SupervisedPipeline'a dönüştürür.
     let mut pipeline = Pipeline::new()
-        .push("scaler", TransformerKind::StandardScaler(StandardScaler::new()))
-        .push("pca", TransformerKind::PCA(PCA::new(PCAComponents::Count(4))))
+        .push(
+            "scaler",
+            TransformerKind::StandardScaler(StandardScaler::new()),
+        )
+        .push(
+            "pca",
+            TransformerKind::PCA(PCA::new(PCAComponents::Count(4))),
+        )
         .with_estimator(Ridge::new().with_alpha(1.0));
 
     pipeline.fit(&x, &y)?;
@@ -82,7 +88,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Eğitim R²: {r2:.4}");
     println!(
         "Pipeline fitted? {}",
-        if pipeline.is_fitted() { "evet" } else { "hayır" }
+        if pipeline.is_fitted() {
+            "evet"
+        } else {
+            "hayır"
+        }
     );
     println!();
 
@@ -94,10 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = std::fs::remove_file(&path);
     datarust::serialize::save_json(&pipeline, &path)?;
     let file_size = std::fs::metadata(&path)?.len();
-    println!(
-        "Model kaydedildi: {}",
-        path.display()
-    );
+    println!("Model kaydedildi: {}", path.display());
     println!("Dosya boyutu: {file_size} bayt\n");
 
     // JSON önizlemesi (ilk ~400 karakter) — fitted parametrelerin serileştiğini gör.
@@ -112,7 +119,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         datarust::serialize::load_json(&path)?;
     println!(
         "Yüklenen model fitted? {}",
-        if restored.is_fitted() { "evet" } else { "hayır" }
+        if restored.is_fitted() {
+            "evet"
+        } else {
+            "hayır"
+        }
     );
 
     // ── 5. Orijinal ve yüklenen modelin tahminlerini karşılaştır ───────
@@ -123,10 +134,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|(a, b)| (a - b).abs())
         .fold(0.0_f64, f64::max);
     println!("Orijinal vs yüklenen tahminler arası maks. fark: {max_diff:.2e}");
-    assert!(
-        max_diff < 1e-10,
-        "yüklenen model farklı tahmin üretiyor"
-    );
+    assert!(max_diff < 1e-10, "yüklenen model farklı tahmin üretiyor");
     println!("✓ Yüklenen model orijinal ile birebir aynı tahminleri üretiyor.");
 
     // ── 6. Temizlik ────────────────────────────────────────────────────

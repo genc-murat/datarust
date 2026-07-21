@@ -69,7 +69,11 @@ impl Inspect for Lasso {
     }
 }
 
-fn summarize(model: &dyn Inspect, x: &Matrix, y: &[f64]) -> Result<FitSummary, Box<dyn std::error::Error>> {
+fn summarize(
+    model: &dyn Inspect,
+    x: &Matrix,
+    y: &[f64],
+) -> Result<FitSummary, Box<dyn std::error::Error>> {
     let coefs = model.coef().to_vec();
     let nonzero = coefs.iter().filter(|c| c.abs() > 1e-10).count();
     Ok(FitSummary {
@@ -152,7 +156,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             s.nonzero
         );
     }
-    println!("→ Ridge tüm katsayıları küçültür ama gürültü özelliklerini (x4,x5,x7) sıfıra indirmez.\n");
+    println!(
+        "→ Ridge tüm katsayıları küçültür ama gürültü özelliklerini (x4,x5,x7) sıfıra indirmez.\n"
+    );
 
     // ── 3. Lasso ile alpha taraması ────────────────────────────────────
     // Lasso (L1) cezası ||β||₁'dir; soft-thresholding bazı katsayıları TAM
@@ -178,7 +184,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── 4. Özet yorum ──────────────────────────────────────────────────
     println!("=== Yorum ===");
-    println!("• Ridge:  hiçbir katsayı sıfırlanmaz, ama α büyüdükçe hepsi küçülür. Tahmin kararlıdır.");
+    println!(
+        "• Ridge:  hiçbir katsayı sıfırlanmaz, ama α büyüdükçe hepsi küçülür. Tahmin kararlıdır."
+    );
     println!("• Lasso:  gereksiz özellikler dışlanır (sparse model). Yorumlanabilirlik ve özellik seçimi için ideal.");
     println!("• Kolinearite (x6 ≈ x0+x1): LinearRegression burada singüler olurdu; hem Ridge hem Lasso sorunsuz çözer.");
 

@@ -76,16 +76,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Gerçek intercept:  {true_intercept}\n");
 
     // ── 2. Train/test split (deterministik seed ile) ───────────────────
-    let (x_tr, x_te, y_tr, y_te) =
-        datarust::model_selection::TrainTestSplit::new()
-            .with_test_size(0.25)
-            .with_random_state(7)
-            .split(&x, &y)?;
-    println!(
-        "Split: {} train / {} test\n",
-        x_tr.nrows(),
-        x_te.nrows()
-    );
+    let (x_tr, x_te, y_tr, y_te) = datarust::model_selection::TrainTestSplit::new()
+        .with_test_size(0.25)
+        .with_random_state(7)
+        .split(&x, &y)?;
+    println!("Split: {} train / {} test\n", x_tr.nrows(), x_te.nrows());
 
     // ── 3. Ölçekleme — fit SADECE train'de (veri sızıntısını önler) ────
     // StandardScaler'ı eğitim verisine fit et, sonra aynı parametrelerle
@@ -123,14 +118,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // verir. cross_val_score her fold'da modeli klonlayıp yeniden fit eder;
     // bu yüzden ölçeklenMEMİŞ ham X'i veriyoruz (her fold kendi içinde
     // StandardScaler'ı pipeline ile bekleyebilir, ama burada sade tutuyoruz).
-    let cv = KFold::new().with_n_splits(5).with_shuffle(true).with_random_state(1);
-    let scores = cross_val_score(
-        &Ridge::new().with_alpha(1.0),
-        &x,
-        &y,
-        &cv,
-        r2_score,
-    )?;
+    let cv = KFold::new()
+        .with_n_splits(5)
+        .with_shuffle(true)
+        .with_random_state(1);
+    let scores = cross_val_score(&Ridge::new().with_alpha(1.0), &x, &y, &cv, r2_score)?;
     let mean_r2 = scores.iter().sum::<f64>() / scores.len() as f64;
     println!("=== 5-Fold Çapraz Doğrulama ===");
     print!("Fold R²'leri: ");

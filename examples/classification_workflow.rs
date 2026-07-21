@@ -13,10 +13,10 @@ use datarust::linear_model::{LogisticRegression, LogisticSolver};
 use datarust::metrics::classification::{
     accuracy_score, confusion_matrix, f1_score, log_loss, precision_score, recall_score,
 };
-use datarust::model_selection::{StratifiedKFold};
+use datarust::model_selection::StratifiedKFold;
 use datarust::scaler::StandardScaler;
-use datarust::transformer_kind::TransformerKind;
 use datarust::traits::Predictor;
+use datarust::transformer_kind::TransformerKind;
 use datarust::CategoricalTransformerKind;
 use datarust::{Matrix, StrMatrix};
 
@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tenure = rng.next_f64() * 72.0; // 0–72 ay
         let monthly = 20.0 + rng.next_f64() * 100.0; // 20–120 $
         let age = 18.0 + rng.next_f64() * 60.0; // 18–78 yaş
-        // Sözleşme tipi rasgele; kısa sözleşme churn riskini artırır.
+                                                // Sözleşme tipi rasgele; kısa sözleşme churn riskini artırır.
         let ct_idx = (rng.next_f64() * 3.0) as usize;
         let ct = contract_types[ct_idx.min(2)];
         num_rows.push(vec![tenure, monthly, age]);
@@ -72,12 +72,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let pos = y.iter().filter(|&&v| v == 1.0).count();
     let numeric = Matrix::new(num_rows)?;
-    let categorical = StrMatrix::from_strings(
-        cat_rows.iter().map(|r| r.clone()).collect::<Vec<_>>(),
-    )?;
+    let categorical = StrMatrix::from_strings(cat_rows.to_vec())?;
     let table = Table::new(numeric, categorical)?;
     println!("=== Müşteri Churn Sınıflandırması ===");
-    println!("Veri: {n} örnek (%{:.0} pozitif)", 100.0 * pos as f64 / n as f64);
+    println!(
+        "Veri: {n} örnek (%{:.0} pozitif)",
+        100.0 * pos as f64 / n as f64
+    );
     println!();
 
     // ── 2. Ön işleme: sayısala StandardScaler, kategorik'e OneHot ──────
@@ -111,10 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     model.fit(&x, &y)?;
     let preds = model.predict(&x)?; // {0.0, 1.0} etiketleri
     let proba_pos = model.predict_positive_proba(&x)?; // P(y=1)
-    println!(
-        "Eğitim tamamlandı ({} IRLS iterasyonu).\n",
-        model.n_iter()
-    );
+    println!("Eğitim tamamlandı ({} IRLS iterasyonu).\n", model.n_iter());
 
     // ── 4. Sınıflandırma metrikleri ────────────────────────────────────
     let acc = accuracy_score(&y, &preds)?;
@@ -125,7 +123,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ll = log_loss(&y, &proba_pos, 1e-15)?;
     println!("=== Sınıflandırma Metrikleri (eğitim verisi) ===");
     println!("Doğruluk (accuracy) : {acc:.4}");
-    println!("Kesinlik (precision): {prec:.4}  — pozitif tahmin edilenlerin kaçı gerçekten pozitif");
+    println!(
+        "Kesinlik (precision): {prec:.4}  — pozitif tahmin edilenlerin kaçı gerçekten pozitif"
+    );
     println!("Duyarlılık (recall) : {rec:.4}  — gerçek pozitiflerin kaçı yakalandı");
     println!("F1 skoru            : {f1:.4}  — precision ile recall'un harmonik ortalaması");
     println!("Log loss            : {ll:.4}  — olasılık kalibrasyonu (daha düşük = daha iyi)");
@@ -139,9 +139,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Varsayılan threshold 0.5'tir. Churn gibi "kaçırma" maliyeti yüksek
     // problemlerde threshold'u düşürmek recall'ı artırır (ama precision düşer).
     println!("=== Threshold Karşılaştırması ===");
-    println!("{:<10} {:<10} {:<10} {:<10}", "Threshold", "Precision", "Recall", "F1");
+    println!(
+        "{:<10} {:<10} {:<10} {:<10}",
+        "Threshold", "Precision", "Recall", "F1"
+    );
     for &thr in &[0.3, 0.5, 0.7] {
-        let custom_pred: Vec<f64> = proba_pos.iter().map(|&p| if p >= thr { 1.0 } else { 0.0 }).collect();
+        let custom_pred: Vec<f64> = proba_pos
+            .iter()
+            .map(|&p| if p >= thr { 1.0 } else { 0.0 })
+            .collect();
         let p = precision_score(&y, &custom_pred)?;
         let r = recall_score(&y, &custom_pred)?;
         let f = f1_score(&y, &custom_pred)?;
@@ -153,7 +159,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // cross_val_score sadece KFold destekler; dengesiz sınıflarda StratifiedKFold
     // tercih edilir. Bu yüzden split döngüsünü elle yürütüp her fold'da modeli
     // yeniden fit ederiz — sınıf oranı her fold'da korunur.
-    let skf = StratifiedKFold::new().with_n_splits(5).with_shuffle(true).with_random_state(3);
+    let skf = StratifiedKFold::new()
+        .with_n_splits(5)
+        .with_shuffle(true)
+        .with_random_state(3);
     let mut fold_accs: Vec<f64> = Vec::new();
     for (train_idx, test_idx) in skf.split(&y)? {
         let x_tr = x.select_rows(&train_idx)?;
