@@ -1,18 +1,18 @@
-//! Ridge (L2) ile Lasso (L1) regularizasyon karşılaştırması.
+//! Ridge (L2) vs Lasso (L1) regularization comparison.
 //!
-//! Senaryo: 8 özellikli bir veri setinde sadece 3 özellik anlamlı, biri
-//! kolinear (LinearRegression'ı zorlayacak), diğerleri saf gürültü. Ridge ve
-//! Lasso'nun farklı alpha değerlerinde nasıl davrandığını karşılaştırır:
-//! Ridge tüm katsayıları küçültür (ama sıfırlamaz), Lasso gereksizleri tam
-//! sıfıra indirerek örtük özellik seçimi yapar.
+//! Scenario: in an 8-feature dataset, only 3 features carry signal, one is
+//! collinear (which would strain LinearRegression), and the rest are pure
+//! noise. Compares how Ridge and Lasso behave at different alpha values:
+//! Ridge shrinks all coefficients (but zeroes none), while Lasso drives the
+//! irrelevant ones to exactly zero, performing implicit feature selection.
 //!
-//! Çalıştırma: `cargo run --example regularization_comparison`
+//! Run: `cargo run --example regularization_comparison`
 
 use datarust::linear_model::{Lasso, Ridge};
 use datarust::traits::{Predictor, Regressor};
 use datarust::Matrix;
 
-/// Basit deterministik PRNG (xorshift64) — tekrarlanabilir veri için.
+/// Simple deterministic PRNG (xorshift64) for reproducible data.
 struct Rng {
     state: u64,
 }
@@ -36,15 +36,15 @@ impl Rng {
     }
 }
 
-/// Bir fitted modelin R²'sini ve sıfır olmayan katsayı sayısını hesapla.
+/// R² and nonzero-coefficient count for a fitted model.
 struct FitSummary {
     r2: f64,
     nonzero: usize,
     coefs: Vec<f64>,
 }
 
-/// Jenerik yardımcı: herhangi bir Regressor benzeri (coef/score) için
-/// özet üret. Lasso ve Ridge'in `score` ve `coef` metodları aynı imzaya sahip.
+/// Generic helper: produce a summary for any Regressor-like type (coef/score).
+/// Lasso and Ridge share the same `score` and `coef` signatures.
 trait Inspect {
     fn coef(&self) -> &[f64];
     fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64, datarust::error::DatarustError>;
@@ -64,7 +64,8 @@ impl Inspect for Lasso {
         self.coef()
     }
     fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64, datarust::error::DatarustError> {
-        // Lasso `score` inherent metodu — Regressor trait değil ama imza aynı.
+        // Lasso's inherent `score` method — not the Regressor trait, but the
+        // signature matches.
         Lasso::score(self, x, y)
     }
 }
@@ -98,13 +99,13 @@ fn print_coefs(coefs: &[f64]) -> String {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // ── 1. Sentetik veri üret ──────────────────────────────────────────
-    // 8 özellik:
-    //   x0, x1, x2 → anlamlı (gerçek katsayılar 2, 3, -1)
-    //   x3         → anlamlı (katsayı 1)
-    //   x4, x5     → saf gürültü (katsayı 0)
-    //   x6         → x0 + x1 + küçük gürültü (kolinear — X'X singülerleşir)
-    //   x7         → saf gürültü (katsayı 0)
+    // ── 1. Generate synthetic data ─────────────────────────────────────
+    // 8 features:
+    //   x0, x1, x2 → informative (true coefficients 2, 3, -1)
+    //   x3         → informative (coefficient 1)
+    //   x4, x5     → pure noise (coefficient 0)
+    //   x6         → x0 + x1 + small noise (collinear — makes X'X singular)
+    //   x7         → pure noise (coefficient 0)
     let true_coef = [2.0, 3.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0];
     let n = 150;
     let mut rng = Rng::new(99);
@@ -117,7 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let x3 = rng.normal(1.0);
         let x4 = rng.normal(1.0);
         let x5 = rng.normal(1.0);
-        let x6 = x0 + x1 + rng.normal(0.05); // kolinear
+        let x6 = x0 + x1 + rng.normal(0.05); // collinear
         let x7 = rng.normal(1.0);
         let row = vec![x0, x1, x2, x3, x4, x5, x6, x7];
         let target: f64 = row
@@ -130,19 +131,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         y.push(target);
     }
     let x = Matrix::new(rows)?;
-    println!("=== Ridge (L2) vs Lasso (L1) Karşılaştırması ===");
-    println!("Veri: {n} örnek, {} özellik", x.ncols());
-    println!("Gerçek katsayılar: {}", print_coefs(&true_coef));
-    println!("Not: x6 = x0 + x1 (kolinear) — x4, x5, x7 saf gürültü.\n");
+    println!("=== Ridge (L2) vs Lasso (L1) Comparison ===");
+    println!("Data: {n} samples, {} features", x.ncols());
+    println!("True coefficients: {}", print_coefs(&true_coef));
+    println!("Note: x6 = x0 + x1 (collinear); x4, x5, x7 are pure noise.\n");
 
-    // ── 2. Ridge ile alpha taraması ────────────────────────────────────
-    // Ridge (L2) cezası ||β||²'dir; büyük alpha tüm katsayıları serbestçe
-    // küçültür ama hiçbirini tam sıfıra indirmez. Kolinearite yüzünden
-    // LinearRegression burada singüler olur; Ridge her zaman çözülür.
-    println!("── Ridge (L2): α ||β||² cezası ──");
+    // ── 2. Ridge alpha sweep ────────────────────────────────────────────
+    // The Ridge (L2) penalty is ||β||²; a large alpha shrinks all coefficients
+    // freely but drives none exactly to zero. Because of the collinearity,
+    // LinearRegression would be singular here; Ridge always solves.
+    println!("── Ridge (L2): α‖β‖² penalty ──");
     println!(
         "{:<8} {:<8} {:<48} {:<10}",
-        "Alpha", "R²", "Katsayılar", "Nonzero"
+        "Alpha", "R²", "Coefficients", "Nonzero"
     );
     for &alpha in &[0.01, 1.0, 100.0] {
         let mut m = Ridge::new().with_alpha(alpha);
@@ -157,16 +158,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     println!(
-        "→ Ridge tüm katsayıları küçültür ama gürültü özelliklerini (x4,x5,x7) sıfıra indirmez.\n"
+        "→ Ridge shrinks all coefficients but does not zero out the noise features (x4, x5, x7).\n"
     );
 
-    // ── 3. Lasso ile alpha taraması ────────────────────────────────────
-    // Lasso (L1) cezası ||β||₁'dir; soft-thresholding bazı katsayıları TAM
-    // sıfıra iter — bu örtük özellik seçimi sağlar.
-    println!("── Lasso (L1): α ||β||₁ cezası ──");
+    // ── 3. Lasso alpha sweep ────────────────────────────────────────────
+    // The Lasso (L1) penalty is ||β||₁; soft-thresholding drives some
+    // coefficients EXACTLY to zero — this provides implicit feature selection.
+    println!("── Lasso (L1): α‖β‖₁ penalty ──");
     println!(
         "{:<8} {:<8} {:<48} {:<10}",
-        "Alpha", "R²", "Katsayılar", "Nonzero"
+        "Alpha", "R²", "Coefficients", "Nonzero"
     );
     for &alpha in &[0.01, 0.5, 5.0] {
         let mut m = Lasso::new().with_alpha(alpha).with_max_iter(2000);
@@ -180,15 +181,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             s.nonzero
         );
     }
-    println!("→ Lasso büyük alpha'da gürültü özelliklerini (x4,x5,x7) TAM sıfıra iter = otomatik özellik seçimi.\n");
+    println!("→ Lasso drives the noise features (x4, x5, x7) EXACTLY to zero at large alpha = automatic feature selection.\n");
 
-    // ── 4. Özet yorum ──────────────────────────────────────────────────
-    println!("=== Yorum ===");
+    // ── 4. Summary interpretation ───────────────────────────────────────
+    println!("=== Interpretation ===");
     println!(
-        "• Ridge:  hiçbir katsayı sıfırlanmaz, ama α büyüdükçe hepsi küçülür. Tahmin kararlıdır."
+        "• Ridge: no coefficient is zeroed, but all shrink as α grows. Predictions are stable."
     );
-    println!("• Lasso:  gereksiz özellikler dışlanır (sparse model). Yorumlanabilirlik ve özellik seçimi için ideal.");
-    println!("• Kolinearite (x6 ≈ x0+x1): LinearRegression burada singüler olurdu; hem Ridge hem Lasso sorunsuz çözer.");
+    println!("• Lasso: irrelevant features are excluded (sparse model). Ideal for interpretability and feature selection.");
+    println!("• Collinearity (x6 ≈ x0+x1): LinearRegression would be singular here; both Ridge and Lasso solve without issue.");
 
     Ok(())
 }

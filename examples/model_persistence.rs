@@ -1,10 +1,11 @@
-//! Model kalıcılığı (persistence): eğitilmiş bir SupervisedPipeline'ı JSON'a
-//! kaydet, sonra refit'siz yükle ve aynı tahminleri üret.
+//! Model persistence: save a trained SupervisedPipeline to JSON, then reload
+//! it without refitting and produce identical predictions.
 //!
-//! Senaryo: Üretim dağıtımı. Model bir makinede eğitilir, diske (JSON) yazılır,
-//! sonra servise yüklenir ve eğitim verisine tekrar erişmeden tahmin üretir.
+//! Scenario: production deployment. The model is trained on one machine,
+//! written to disk (JSON), then loaded into a service and serves predictions
+//! without needing access to the training data again.
 //!
-//! Bu örnek `serde` feature'ı gerektirir:
+//! This example requires the `serde` feature:
 //!   `cargo run --example model_persistence --features serde`
 
 use datarust::decomposition::{PCAComponents, PCA};
@@ -18,8 +19,8 @@ use datarust::Matrix;
 #[cfg(not(feature = "serde"))]
 fn main() {
     eprintln!(
-        "Bu örnek `serde` feature'ını gerektirir.\n\
-         Şu komutla çalıştırın:\n  \
+        "This example requires the `serde` feature.\n\
+         Run it with:\n  \
          cargo run --example model_persistence --features serde"
     );
 }
@@ -51,8 +52,9 @@ impl Rng {
 
 #[cfg(feature = "serde")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // ── 1. Sentetik regresyon verisi üret ──────────────────────────────
-    // 6 özellik; gerçek ilişki ilk 4'üne bağlı, son 2'si gürültü.
+    // ── 1. Generate synthetic regression data ──────────────────────────
+    // 6 features; the true relationship depends on the first 4, the last 2 are
+    // noise.
     let n = 100;
     let mut rng = Rng::new(7);
     let mut rows: Vec<Vec<f64>> = Vec::with_capacity(n);
@@ -64,12 +66,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         y.push(target);
     }
     let x = Matrix::new(rows)?;
-    println!("=== Model Kalıcılığı (Persistence) ===");
-    println!("Veri: {n} örnek, {} özellik\n", x.ncols());
+    println!("=== Model Persistence ===");
+    println!("Data: {n} samples, {} features\n", x.ncols());
 
-    // ── 2. SupervisedPipeline kur: scale → PCA → Ridge ─────────────────
-    // Bir önişleme zinciri (StandardScaler + PCA) ve son tahminci (Ridge).
-    // with_estimator, önişleme Pipeline'ını SupervisedPipeline'a dönüştürür.
+    // ── 2. Build a SupervisedPipeline: scale → PCA → Ridge ──────────────
+    // A preprocessing chain (StandardScaler + PCA) and a final estimator
+    // (Ridge). with_estimator turns the preprocessing Pipeline into a
+    // SupervisedPipeline.
     let mut pipeline = Pipeline::new()
         .push(
             "scaler",
@@ -84,62 +87,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     pipeline.fit(&x, &y)?;
     let preds_original = pipeline.predict(&x)?;
     let r2 = pipeline.score(&x, &y)?;
-    println!("Eğitim tamamlandı.");
-    println!("Eğitim R²: {r2:.4}");
+    println!("Training complete.");
+    println!("Training R²: {r2:.4}");
     println!(
         "Pipeline fitted? {}",
-        if pipeline.is_fitted() {
-            "evet"
-        } else {
-            "hayır"
-        }
+        if pipeline.is_fitted() { "yes" } else { "no" }
     );
     println!();
 
-    // ── 3. JSON olarak diske kaydet ────────────────────────────────────
-    // save_json, fitted durumu (scaler mean/std, PCA eigvektörleri, Ridge
-    // katsayıları) dahil tüm parametreleri pretty JSON'a yazar.
+    // ── 3. Save to disk as JSON ─────────────────────────────────────────
+    // save_json writes all parameters — including fitted state (scaler
+    // mean/std, PCA eigenvectors, Ridge coefficients) — to pretty-printed JSON.
     let path = std::env::temp_dir().join("datarust_model_persistence_demo.json");
-    // Önceki bir çalıştırmadan kalabilecek dosyayı temizle.
+    // Remove any leftover file from a previous run.
     let _ = std::fs::remove_file(&path);
     datarust::serialize::save_json(&pipeline, &path)?;
     let file_size = std::fs::metadata(&path)?.len();
-    println!("Model kaydedildi: {}", path.display());
-    println!("Dosya boyutu: {file_size} bayt\n");
+    println!("Model saved: {}", path.display());
+    println!("File size: {file_size} bytes\n");
 
-    // JSON önizlemesi (ilk ~400 karakter) — fitted parametrelerin serileştiğini gör.
+    // JSON preview (first ~400 chars) — shows the fitted parameters serialized.
     let json_str = std::fs::read_to_string(&path)?;
     let preview: String = json_str.chars().take(400).collect();
-    println!("=== JSON Önizleme ===\n{preview}...\n");
+    println!("=== JSON Preview ===\n{preview}...\n");
 
-    // ── 4. Modeli yükle ve refit'siz tahmin üret ───────────────────────
-    // load_json, orijinal tipi geri yükler. Önemli: yüklenen pipeline
-    // `is_fitted() == true` ile gelir — eğitim verisine gerek yok.
+    // ── 4. Load the model and predict without refitting ────────────────
+    // load_json restores the original type. Importantly, the restored pipeline
+    // arrives with `is_fitted() == true` — no training data is needed.
     let restored: datarust::pipeline::SupervisedPipeline<Ridge> =
         datarust::serialize::load_json(&path)?;
     println!(
-        "Yüklenen model fitted? {}",
-        if restored.is_fitted() {
-            "evet"
-        } else {
-            "hayır"
-        }
+        "Restored model fitted? {}",
+        if restored.is_fitted() { "yes" } else { "no" }
     );
 
-    // ── 5. Orijinal ve yüklenen modelin tahminlerini karşılaştır ───────
+    // ── 5. Compare predictions from the original and restored models ────
     let preds_restored = restored.predict(&x)?;
     let max_diff = preds_original
         .iter()
         .zip(preds_restored.iter())
         .map(|(a, b)| (a - b).abs())
         .fold(0.0_f64, f64::max);
-    println!("Orijinal vs yüklenen tahminler arası maks. fark: {max_diff:.2e}");
-    assert!(max_diff < 1e-10, "yüklenen model farklı tahmin üretiyor");
-    println!("✓ Yüklenen model orijinal ile birebir aynı tahminleri üretiyor.");
+    println!("Max difference between original and restored predictions: {max_diff:.2e}");
+    assert!(
+        max_diff < 1e-10,
+        "restored model produced different predictions"
+    );
+    println!("✓ The restored model produces identical predictions to the original.");
 
-    // ── 6. Temizlik ────────────────────────────────────────────────────
+    // ── 6. Cleanup ─────────────────────────────────────────────────────
     let _ = std::fs::remove_file(&path);
-    println!("\nGeçici dosya temizlendi.");
+    println!("\nTemporary file cleaned up.");
 
     Ok(())
 }

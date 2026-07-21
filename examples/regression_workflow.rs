@@ -1,10 +1,11 @@
-//! Uçtan uca regresyon iş akışı: veri üretimi → train/test split → ölçekleme
-//! (sadece train'de fit) → Ridge eğitimi → test R² → K-fold çapraz doğrulama.
+//! End-to-end regression workflow: data generation → train/test split → scaling
+//! (fit on train only) → Ridge training → test R² → K-fold cross-validation.
 //!
-//! Senaryo: Ev fiyatı tahmini. Alan (m²), oda sayısı ve bina yaşı gözlemlerinden
-//! fiyatı tahmin et. Gerçek ilişki `y = 3·alan + 2·oda − 1.5·yas + 50 + gürültü`.
+//! Scenario: house-price prediction. Estimate price from area (m²), number of
+//! rooms, and building age. The true relationship is
+//! `y = 3·area + 2·rooms − 1.5·age + 50 + noise`.
 //!
-//! Çalıştırma: `cargo run --example regression_workflow`
+//! Run: `cargo run --example regression_workflow`
 
 use datarust::linear_model::Ridge;
 use datarust::metrics::regression::r2_score;
@@ -13,8 +14,8 @@ use datarust::scaler::StandardScaler;
 use datarust::traits::{Predictor, Transformer};
 use datarust::Matrix;
 
-/// Basit deterministik PRNG (xorshift64) — sabit seed ile her çalıştırmada
-/// aynı gürültü dizisini üretir, böylece sonuçlar tekrarlanabilir olur.
+/// Simple deterministic PRNG (xorshift64) — a fixed seed yields the same noise
+/// sequence on every run, so results are reproducible.
 struct Rng {
     state: u64,
 }
@@ -23,18 +24,18 @@ impl Rng {
     fn new(seed: u64) -> Self {
         Self { state: seed }
     }
-    /// [0, 1) aralığında üniform rasgele sayı.
+    /// Uniform random number in [0, 1).
     fn next_f64(&mut self) -> f64 {
         let mut x = self.state;
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         self.state = x;
-        // Üst bitleri kullanarak [0,1) üret.
+        // Use the upper bits to produce a value in [0, 1).
         (x >> 11) as f64 / (1u64 << 53) as f64
     }
-    /// Ortalama 0, standart sapma `sigma` olan yaklaşık normal dağılım
-    /// (Box–Muller'in basitleştirilmiş hâli).
+    /// Approximately normal distribution with mean 0 and standard deviation
+    /// `sigma` (a simplified Box–Muller transform).
     fn normal(&mut self, sigma: f64) -> f64 {
         let u = self.next_f64();
         let v = self.next_f64();
@@ -43,25 +44,24 @@ impl Rng {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // ── 1. Sentetik veri üret ──────────────────────────────────────────
-    // Gerçek (bilinen) katsayılar — modelin bunları geri kazanıp kazanamadığına
-    // bakacağız.
+    // ── 1. Generate synthetic data ─────────────────────────────────────
+    // True (known) coefficients — we check whether the model can recover them.
     let true_coef = [3.0, 2.0, -1.5];
     let true_intercept = 50.0;
 
-    let n = 120; // örnek sayısı
+    let n = 120; // number of samples
     let mut rng = Rng::new(42);
     let mut rows: Vec<Vec<f64>> = Vec::with_capacity(n);
     let mut y: Vec<f64> = Vec::with_capacity(n);
     for _ in 0..n {
-        // Özellikler: alan 50–250 m², oda 1–6, yaş 0–50 yıl.
+        // Features: area 50–250 m², rooms 1–6, age 0–50 years.
         let area = 50.0 + rng.next_f64() * 200.0;
         let rooms = 1.0 + (rng.next_f64() * 5.0).round();
         let age = rng.next_f64() * 50.0;
         rows.push(vec![area, rooms, age]);
-        // Fiyat = gerçek ilişki + ölçülebilir ama sinyalden küçük gürültü.
-        // Sinyal aralığı ~600 birim; gürültü std ~80 → sinyal baskın, model
-        // yüksek R² alır ama mükemmel değildir (gerçekçi).
+        // Price = true relationship + small but measurable noise.
+        // Signal range ~600 units; noise std ~80 → the signal dominates, so the
+        // model achieves a high R², but not a perfect one (realistic).
         let price = true_intercept
             + true_coef[0] * area
             + true_coef[1] * rooms
@@ -70,67 +70,70 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         y.push(price);
     }
     let x = Matrix::new(rows)?;
-    println!("=== Ev Fiyatı Regresyonu ===");
-    println!("Veri: {n} örnek, {} özellik (alan, oda, yaş)", x.ncols());
-    println!("Gerçek katsayılar: {:?}", true_coef);
-    println!("Gerçek intercept:  {true_intercept}\n");
+    println!("=== House-Price Regression ===");
+    println!(
+        "Data: {n} samples, {} features (area, rooms, age)",
+        x.ncols()
+    );
+    println!("True coefficients: {:?}", true_coef);
+    println!("True intercept:    {true_intercept}\n");
 
-    // ── 2. Train/test split (deterministik seed ile) ───────────────────
+    // ── 2. Train/test split (deterministic seed) ───────────────────────
     let (x_tr, x_te, y_tr, y_te) = datarust::model_selection::TrainTestSplit::new()
         .with_test_size(0.25)
         .with_random_state(7)
         .split(&x, &y)?;
     println!("Split: {} train / {} test\n", x_tr.nrows(), x_te.nrows());
 
-    // ── 3. Ölçekleme — fit SADECE train'de (veri sızıntısını önler) ────
-    // StandardScaler'ı eğitim verisine fit et, sonra aynı parametrelerle
-    // hem train'i hem test'i dönüştür. Test istatistiklerini fit'e katmak
-    // modelin gerçek genelleme performansını abartır (data leakage).
+    // ── 3. Scaling — fit ONLY on train (prevents data leakage) ─────────
+    // Fit the StandardScaler on the training data, then transform both train
+    // and test with the same parameters. Including test statistics in the fit
+    // would inflate the model's apparent generalization performance.
     let mut scaler = StandardScaler::new();
     scaler.fit(&x_tr)?;
     let x_tr_s = scaler.transform(&x_tr)?;
     let x_te_s = scaler.transform(&x_te)?;
 
-    // ── 4. Ridge regresyonu eğit ───────────────────────────────────────
+    // ── 4. Train the Ridge regression ──────────────────────────────────
     let mut model = Ridge::new().with_alpha(1.0);
     model.fit(&x_tr_s, &y_tr)?;
 
-    println!("=== Eğitilmiş Ridge (alpha=1.0) ===");
-    println!("Öğrenilen katsayılar: {:?}", model.coef());
-    println!("Öğrenilen intercept:  {:.4}", model.intercept());
-    // Not: katsayılar ölçeklenmiş özellik uzayında olduğundan true_coef ile
-    // birebir aynı olmaz; işaret ve görece büyüklükler korunur.
+    println!("=== Trained Ridge (alpha=1.0) ===");
+    println!("Learned coefficients: {:?}", model.coef());
+    println!("Learned intercept:    {:.4}", model.intercept());
+    // Note: because coefficients live in the scaled feature space, they won't
+    // match true_coef exactly; only their signs and relative magnitudes align.
     println!();
 
-    // ── 5. Test performansı ────────────────────────────────────────────
+    // ── 5. Test performance ────────────────────────────────────────────
     let preds_te = model.predict(&x_te_s)?;
     let r2_te = r2_score(&y_te, &preds_te)?;
-    // Regressor::score da R² döner — tutarlılığı gösterelim.
+    // Regressor::score also returns R² — show consistency between the two.
     let r2_score_method = model.score(&x_te_s, &y_te)?;
-    println!("=== Test Performansı ===");
+    println!("=== Test Performance ===");
     println!("R² (r2_score fn) : {r2_te:.4}");
     println!("R² (model.score) : {r2_score_method:.4}");
-    println!("(R² 1.0'a ne kadar yakınsa o kadar iyi; 0 = ortalama tahmini kadar.)\n");
+    println!("(R² closer to 1.0 is better; 0 means no better than the mean.)\n");
 
-    // ── 6. K-fold çapraz doğrulama ─────────────────────────────────────
-    // Tek bir train/test spliti şansa bağlı olabilir. K-fold CV, veriyi K
-    // parçaya bölüp her parçayı sırayla test eder ve daha sağlam bir tahmin
-    // verir. cross_val_score her fold'da modeli klonlayıp yeniden fit eder;
-    // bu yüzden ölçeklenMEMİŞ ham X'i veriyoruz (her fold kendi içinde
-    // StandardScaler'ı pipeline ile bekleyebilir, ama burada sade tutuyoruz).
+    // ── 6. K-fold cross-validation ─────────────────────────────────────
+    // A single train/test split can be luck-dependent. K-fold CV partitions the
+    // data into K folds, tests each in turn, and yields a more robust estimate.
+    // cross_val_score clones and refits the model on every fold, so we pass the
+    // raw (unscaled) X — each fold could embed its own StandardScaler via a
+    // pipeline, but we keep it simple here.
     let cv = KFold::new()
         .with_n_splits(5)
         .with_shuffle(true)
         .with_random_state(1);
     let scores = cross_val_score(&Ridge::new().with_alpha(1.0), &x, &y, &cv, r2_score)?;
     let mean_r2 = scores.iter().sum::<f64>() / scores.len() as f64;
-    println!("=== 5-Fold Çapraz Doğrulama ===");
-    print!("Fold R²'leri: ");
+    println!("=== 5-Fold Cross-Validation ===");
+    print!("Fold R² scores: ");
     for s in &scores {
         print!("{s:.4}  ");
     }
     println!();
-    println!("Ortalama CV R²: {mean_r2:.4}");
+    println!("Mean CV R²: {mean_r2:.4}");
 
     Ok(())
 }
