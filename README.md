@@ -6,7 +6,7 @@
 [![CI](https://github.com/genc-murat/datarust/actions/workflows/ci.yml/badge.svg)](https://github.com/genc-murat/datarust/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Scikit-learn-style ML in Rust** — a modular, dependency-free preprocessing and classical ML library built on a lightweight `Matrix` type.
+**The missing scikit-learn experience for Rust.** — a modular, dependency-free preprocessing and classical ML library built on a lightweight `Matrix` type.
 
 📖 **[Read the documentation book →](https://genc-murat.github.io/datarust/)**
 
@@ -1010,6 +1010,97 @@ When enabled, the following use parallel iterators:
 | JSON Serialization | ✓ (serde feature) | — (joblib) |
 | Sparse Output | ✓ (CSR via SparseMatrix) | ✓ |
 | Parallelism | ✓ (rayon feature) | — (joblib) |
+
+## Comparison with the Rust ML ecosystem
+
+datarust is a **preprocessing-first** classical ML library. Its direct peers in
+the Rust ecosystem are **[smartcore]** (a single-crate algorithm library) and
+**[linfa]** (a modular framework of per-algorithm crates). Deep-learning stacks
+([candle], [burn], [tch-rs]) target a different problem and are out of scope here.
+
+The table below compares what is **verified present** as of the July 2026
+releases (smartcore 0.5.3, linfa 0.8.1). Legend: `✓` present, `✗` confirmed
+absent, `?` not clearly documented at the time of writing — please open an issue
+or PR if a cell is stale.
+
+[smartcore]: https://crates.io/crates/smartcore
+[linfa]: https://crates.io/crates/linfa
+[candle]: https://crates.io/crates/candle-core
+[burn]: https://crates.io/crates/burn
+[tch-rs]: https://crates.io/crates/tch
+
+### Preprocessing & Encoders
+
+| Component | datarust | smartcore | linfa |
+|---|---|---|---|
+| StandardScaler | ✓ | ✓ | ✓ |
+| MinMaxScaler | ✓ | ✗ | ✓ |
+| RobustScaler | ✓ | ✗ | ? |
+| MaxAbsScaler | ✓ | ✗ | ✓ |
+| Normalizer (L1/L2/Max) | ✓ | ✗ | ✓ |
+| KBinsDiscretizer | ✓ | ✗ | ? |
+| QuantileTransformer | ✓ | ✗ | ? |
+| PowerTransformer | ✓ | ✗ | ? |
+| OneHotEncoder | ✓ | ✓ | ? |
+| OrdinalEncoder | ✓ | ✗ | ? |
+| LabelEncoder | ✓ | ✗ | ? |
+| TargetEncoder | ✓ | ✗ | ✗ |
+| FrequencyEncoder | ✓ | ✗ | ✗ |
+| SimpleImputer | ✓ | ? | ? |
+| KNN Imputer | ✓ | ? | ? |
+| PolynomialFeatures | ✓ | ? | ? |
+| VarianceThreshold | ✓ | ? | ? |
+| SelectKBest | ✓ | ? | ? |
+| Text vectorizers (Count/TF-IDF) | ✗ | ✗ | ✓ |
+
+### Models & Decomposition
+
+| Component | datarust | smartcore | linfa |
+|---|---|---|---|
+| LinearRegression | ✓ | ✓ | ✓ |
+| Ridge (dedicated) | ✓ | ✗ | ✗ (via ElasticNet `l1_ratio=0`) |
+| Lasso (dedicated) | ✓ | ✗ | ✗ (via ElasticNet `l1_ratio=1`) |
+| LogisticRegression | ✓ | ✓ | ✓ |
+| PCA | ✓ | ✓ | ✓ |
+| TruncatedSVD | ✓ | ✗ | ✓ |
+| SVM | ✗ | ✓ | ✓ |
+| RandomForest / DecisionTree | ✗ | ✓ | ✓ |
+| KMeans / DBSCAN | ✗ | ✓ | ✓ |
+
+### Infrastructure
+
+| Feature | datarust | smartcore | linfa |
+|---|---|---|---|
+| Pipeline | ✓ | ? | ? |
+| ColumnTransformer | ✓ | ? | ✗ |
+| train_test_split | ✓ | ✓ | ? |
+| KFold / StratifiedKFold | ✓ | ✓ | ? |
+| cross_val_score | ✓ | ✓ | ? |
+| Regression + Classification metrics | ✓ | ✓ | ✓ |
+| JSON model serialization | ✓ (serde) | ? | ? |
+| Zero external deps by default | ✓ | ✗ (ndarray + BLAS) | ✗ (ndarray + BLAS) |
+| WASM-friendly (no native BLAS) | ✓ | ? | ? |
+| Distribution model | single crate | single crate | per-algorithm crates |
+
+### Where each library shines
+
+- **datarust** — the deepest sklearn-style **preprocessing** coverage in Rust
+  (18 transformers/encoders/imputers/selectors vs ≤5 elsewhere), a type-safe
+  `Pipeline` + `ColumnTransformer`, and a **zero-dependency default build** that
+  compiles to WASM/embedded with no BLAS or LAPACK. Trade-off: only four linear
+  models — no SVM, trees, or clustering yet.
+- **smartcore** — the broadest **single-crate algorithm zoo** (SVM, RandomForest,
+  DecisionTree, KMeans, DBSCAN, KNN, NaiveBayes…) with model selection and
+  metrics. Trade-off: thin preprocessing (StandardScaler + OneHotEncoder only)
+  and a mandatory `ndarray` + BLAS dependency.
+- **linfa** — a **modular** ecosystem of per-algorithm crates, strong on
+  algorithms and unique in offering **text vectorizers** (Count/TF-IDF).
+  Trade-off: categorical encoders, imputers, and feature selection are sparse or
+  undocumented; Ridge/Lasso only exist through ElasticNet.
+
+> **Complementary, not exclusive.** datarust's preprocessing pipeline can feed
+> features into a linfa or smartcore estimator, and vice-versa — pick the best
+> tool for each stage of your workflow.
 
 ## Performance: datarust vs scikit-learn
 

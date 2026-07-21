@@ -20,6 +20,30 @@ Build a 3-step pipeline (StandardScaler → MinMaxScaler → RobustScaler), fit 
 
 Use `TargetEncoder` with smoothed mean encoding on a high-cardinality categorical feature, including the `TargetTransformer` trait and `fit_with_target`.
 
+## Regression workflow
+
+`cargo run --example regression_workflow`
+
+End-to-end regression on synthetic house-price data: generate data, `train_test_split`, fit a `StandardScaler` **on train only** (data-leakage prevention), train a `Ridge`, score test R², then run 5-fold `cross_val_score`. Shows the full preprocess → train → evaluate → cross-validate loop on a single realistic dataset.
+
+## Classification workflow
+
+`cargo run --example classification_workflow`
+
+Customer-churn binary classification with mixed numeric + categorical features. A `ColumnTransformer` applies `StandardScaler` to numeric columns and `OneHotEncoder` to the categorical column, feeding a `LogisticRegression`. Reports the full metric suite (`accuracy`, `precision`, `recall`, `f1`, `confusion_matrix`, `log_loss`), compares decision thresholds (0.3 / 0.5 / 0.7) to show the precision–recall trade-off, and finishes with **stratified** 5-fold cross-validation driven manually (`StratifiedKFold::split`, since `cross_val_score` only accepts `KFold`).
+
+## Regularization comparison
+
+`cargo run --example regularization_comparison`
+
+Compares `Ridge` (L2) and `Lasso` (L1) across multiple `alpha` values on an 8-feature dataset where only 3 features carry signal, one feature is collinear, and the rest are pure noise. Ridge shrinks all coefficients but zeros none; Lasso's soft-thresholding drives the noise features to **exactly zero** (automatic feature selection). The collinear feature would make `LinearRegression` singular — both regularized solvers handle it.
+
+## Model persistence
+
+`cargo run --example model_persistence --features serde`
+
+Production-style model persistence. Trains a `SupervisedPipeline<Ridge>` (StandardScaler → PCA → Ridge), writes it to a JSON file with `save_json`, reloads it with `load_json`, and confirms the restored model is still `is_fitted()` and produces bit-identical predictions **without refitting**. Requires the `serde` feature.
+
 ## Benchmark comparison
 
 `cargo run --release --example bench_compare_rust`
@@ -29,43 +53,3 @@ The deterministic benchmark harness that produces the numbers on the [Performanc
 ```sh
 cargo run --release --features matrixmultiply --example bench_compare_rust 15
 ```
-
-## End-to-end: preprocess, train, evaluate
-
-A complete workflow tying together preprocessing, model fitting, and evaluation:
-
-```rust
-use datarust::prelude::*;
-use datarust::model_selection::{train_test_split, KFold, cross_val_score};
-use datarust::linear_model::Ridge;
-use datarust::metrics::regression::r2_score;
-
-// 1. Prepare data
-let x = /* your Matrix */;
-let y = /* your targets */;
-
-// 2. Split train/test
-let (x_tr, x_te, y_tr, y_te) = train_test_split(&x, &y)?;
-
-// 3. Preprocess: fit scaler on train only
-let mut scaler = StandardScaler::new();
-scaler.fit(&x_tr)?;
-let x_tr_s = scaler.transform(&x_tr)?;
-let x_te_s = scaler.transform(&x_te)?;
-
-// 4. Train a Ridge regression
-let mut model = Ridge::new().with_alpha(1.0);
-model.fit(&x_tr_s, &y_tr)?;
-
-// 5. Evaluate
-let r2 = model.score(&x_te_s, &y_te)?;
-println!("Test R² = {r2:.4}");
-
-// 6. Cross-validate for a robust estimate
-let cv = KFold::new().with_n_splits(5);
-let scores = cross_val_score(&Ridge::new().with_alpha(1.0), &x, &y, &cv, r2_score)?;
-let mean_r2 = scores.iter().sum::<f64>() / scores.len() as f64;
-println!("CV R² = {mean_r2:.4}");
-```
-
-> **Note:** the `prelude::*` import is illustrative — import the specific types you need (`use datarust::{Matrix, scaler::StandardScaler, ...};`).

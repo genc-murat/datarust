@@ -79,3 +79,120 @@ A side-by-side view of what's implemented. `✓` = supported, `—` = no equival
 - **Pipeline runtime editing** — `get_step`, `set_step`, `insert_step`, `remove_step` for live pipeline surgery.
 - **JSON serialization** — human-readable, language-agnostic fitted-model persistence (vs sklearn's binary joblib/pickle).
 - **Type-safe categorical/numeric separation** — the compiler prevents mixing `StrMatrix` and `Matrix`.
+
+---
+
+# Rust ecosystem comparison
+
+datarust is a **preprocessing-first** classical ML library. Within the Rust
+ecosystem its direct peers are **[smartcore]** and **[linfa]**. Deep-learning
+frameworks ([candle], [burn], [tch-rs]) solve a different problem and are out of
+scope here; [rusty-machine] has been archived and is omitted.
+
+[smartcore]: https://crates.io/crates/smartcore
+[linfa]: https://crates.io/crates/linfa
+[candle]: https://crates.io/crates/candle-core
+[burn]: https://crates.io/crates/burn
+[tch-rs]: https://crates.io/crates/tch
+[rusty-machine]: https://crates.io/crates/rusty-machine
+
+## Design philosophies
+
+The three libraries were built around different priorities, which shows up in
+every design decision:
+
+- **datarust** optimizes for **preprocessing depth and zero-dependency
+  deployability.** All linear algebra is pure Rust (Jacobi eigensolver,
+  Cholesky, coordinate descent), so the default build has *no* external C
+  libraries — it links cleanly into WASM, embedded targets, and CLI tools. The
+  trade-off is algorithm breadth: only the four linear models (Linear / Ridge /
+  Lasso / Logistic regression) are implemented so far.
+- **smartcore** optimizes for **single-crate algorithm breadth.** One dependency
+  gives you SVM, RandomForest, DecisionTree, KMeans, DBSCAN, KNN, NaiveBayes,
+  and more, plus model selection and metrics. The trade-off is preprocessing:
+  only `StandardScaler` and `OneHotEncoder` are provided, and the crate depends
+  on `ndarray` plus a BLAS backend.
+- **linfa** optimizes for **modularity.** Each algorithm family lives in its own
+  crate (`linfa-svm`, `linfa-trees`, `linfa-clustering`, `linfa-ensemble`, …)
+  behind a shared `linfa-core` trait surface, so you only compile what you use.
+  `linfa-preprocessing` additionally offers scalers and **text vectorizers**
+  (Count / TF-IDF). The trade-off: categorical encoders, imputers, and feature
+  selectors are sparse or undocumented, and Ridge/Lasso exist only through
+  `linfa-elasticnet`'s `l1_ratio` parameter.
+
+## Feature matrix
+
+Verified against the July 2026 releases: smartcore 0.5.3, linfa 0.8.1.
+Legend: `✓` present, `✗` confirmed absent, `?` not clearly documented at the
+time of writing — please open an issue or PR if a cell goes stale.
+
+### Preprocessing & Encoders
+
+| Component | datarust | smartcore | linfa |
+|---|---|---|---|
+| StandardScaler | ✓ | ✓ | ✓ |
+| MinMaxScaler | ✓ | ✗ | ✓ |
+| RobustScaler | ✓ | ✗ | ? |
+| MaxAbsScaler | ✓ | ✗ | ✓ |
+| Normalizer (L1/L2/Max) | ✓ | ✗ | ✓ |
+| KBinsDiscretizer | ✓ | ✗ | ? |
+| QuantileTransformer | ✓ | ✗ | ? |
+| PowerTransformer | ✓ | ✗ | ? |
+| OneHotEncoder | ✓ | ✓ | ? |
+| OrdinalEncoder | ✓ | ✗ | ? |
+| LabelEncoder | ✓ | ✗ | ? |
+| TargetEncoder | ✓ | ✗ | ✗ |
+| FrequencyEncoder | ✓ | ✗ | ✗ |
+| SimpleImputer | ✓ | ? | ? |
+| KNN Imputer | ✓ | ? | ? |
+| PolynomialFeatures | ✓ | ? | ? |
+| VarianceThreshold | ✓ | ? | ? |
+| SelectKBest | ✓ | ? | ? |
+| Text vectorizers (Count/TF-IDF) | ✗ | ✗ | ✓ |
+
+### Models & Decomposition
+
+| Component | datarust | smartcore | linfa |
+|---|---|---|---|
+| LinearRegression | ✓ | ✓ | ✓ |
+| Ridge (dedicated) | ✓ | ✗ | ✗ (via ElasticNet `l1_ratio=0`) |
+| Lasso (dedicated) | ✓ | ✗ | ✗ (via ElasticNet `l1_ratio=1`) |
+| LogisticRegression | ✓ | ✓ | ✓ |
+| PCA | ✓ | ✓ | ✓ |
+| TruncatedSVD | ✓ | ✗ | ✓ |
+| SVM | ✗ | ✓ | ✓ |
+| RandomForest / DecisionTree | ✗ | ✓ | ✓ |
+| KMeans / DBSCAN | ✗ | ✓ | ✓ |
+
+### Infrastructure
+
+| Feature | datarust | smartcore | linfa |
+|---|---|---|---|
+| Pipeline | ✓ | ? | ? |
+| ColumnTransformer | ✓ | ? | ✗ |
+| train_test_split | ✓ | ✓ | ? |
+| KFold / StratifiedKFold | ✓ | ✓ | ? |
+| cross_val_score | ✓ | ✓ | ? |
+| Regression + Classification metrics | ✓ | ✓ | ✓ |
+| JSON model serialization | ✓ (serde) | ? | ? |
+| Zero external deps by default | ✓ | ✗ (ndarray + BLAS) | ✗ (ndarray + BLAS) |
+| WASM-friendly (no native BLAS) | ✓ | ? | ? |
+| Distribution model | single crate | single crate | per-algorithm crates |
+
+## When to choose which
+
+| Your priority | Reach for |
+|---|---|
+| Rich preprocessing (scalers, encoders, imputers, selection) | **datarust** |
+| WASM / embedded / single-binary deployment, no BLAS | **datarust** |
+| SVM, trees, clustering, or the widest single-crate model zoo | **smartcore** |
+| Modular compile-what-you-use algorithms, or text vectorizers | **linfa** |
+| Deep learning (transformers, CNNs, autograd) | candle / burn / tch-rs |
+
+## Complementary use
+
+These libraries are **not mutually exclusive.** Because all three expose plain
+`Vec`/matrix in/out interfaces, you can mix them in a single pipeline: use
+datarust for preprocessing (where its coverage is unique), then hand the
+transformed features to a smartcore or linfa estimator for an algorithm datarust
+doesn't implement yet.
