@@ -54,6 +54,23 @@ path = "examples/pipeline_workflow.rs"
 name = "target_encoding"
 path = "examples/target_encoding.rs"
 
+[[example]]
+name = "regression_workflow"
+path = "examples/regression_workflow.rs"
+
+[[example]]
+name = "classification_workflow"
+path = "examples/classification_workflow.rs"
+
+[[example]]
+name = "regularization_comparison"
+path = "examples/regularization_comparison.rs"
+
+[[example]]
+name = "model_persistence"
+path = "examples/model_persistence.rs"
+required-features = ["serde"]
+
 [package.metadata.docs.rs]
 features = ["serde", "rayon", "matrixmultiply"]
 rustdoc-args = ["--cfg", "docsrs"]
