@@ -78,6 +78,26 @@ impl SelectKBest {
         Ok(())
     }
 
+    /// Fit from numeric class labels. This is the supervised-fit entry point
+    /// used by numeric pipelines and classifiers.
+    pub fn fit_with_numeric_labels(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        let labels: Result<Vec<String>> = y
+            .iter()
+            .enumerate()
+            .map(|(i, &value)| {
+                if !value.is_finite() {
+                    return Err(DatarustError::InvalidInput(format!(
+                        "numeric class label at index {i} must be finite, found {value}"
+                    )));
+                }
+                // Numeric equality treats -0.0 and 0.0 as the same class.
+                let canonical = if value == 0.0 { 0.0 } else { value };
+                Ok(canonical.to_string())
+            })
+            .collect();
+        self.fit_with_labels(x, &labels?)
+    }
+
     fn compute_support(&mut self, n_features: usize) -> Result<()> {
         if self.k > n_features {
             return Err(DatarustError::InvalidConfig(format!(
@@ -122,6 +142,10 @@ impl Transformer for SelectKBest {
         Err(DatarustError::InvalidInput(
             "SelectKBest requires labels; use fit_with_labels".into(),
         ))
+    }
+
+    fn fit_with_target(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        self.fit_with_numeric_labels(x, y)
     }
 
     fn transform(&self, x: &Matrix) -> Result<Matrix> {
@@ -507,6 +531,34 @@ mod tests {
         let y_short = vec!["a", "a"];
         let mut skb = SelectKBest::new(ScoreFunc::FClassif, 1).unwrap();
         assert!(skb.fit_with_labels(&x, &y_short).is_err());
+    }
+
+    #[test]
+    fn numeric_labels_canonicalize_negative_zero() {
+        let x = Matrix::new(vec![vec![0.0], vec![1.0], vec![2.0]]).unwrap();
+        let mut selector = SelectKBest::new(ScoreFunc::FClassif, 1).unwrap();
+
+        // If -0.0 is a distinct class, FClassif sees three classes and has
+        // zero within-class degrees of freedom for this three-row input.
+        selector
+            .fit_with_numeric_labels(&x, &[0.0, -0.0, 1.0])
+            .unwrap();
+        assert!(selector.is_fitted());
+    }
+
+    #[test]
+    fn numeric_labels_reject_non_finite_values() {
+        let x = Matrix::new(vec![vec![0.0], vec![1.0], vec![2.0]]).unwrap();
+        let mut selector = SelectKBest::new(ScoreFunc::FClassif, 1).unwrap();
+
+        assert!(matches!(
+            selector.fit_with_numeric_labels(&x, &[0.0, f64::NAN, 1.0]),
+            Err(DatarustError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            selector.fit_with_numeric_labels(&x, &[0.0, f64::INFINITY, 1.0]),
+            Err(DatarustError::InvalidInput(_))
+        ));
     }
 
     #[test]

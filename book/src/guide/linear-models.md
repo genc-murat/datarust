@@ -1,6 +1,6 @@
 # Linear Models
 
-Regression and classification estimators. Live in [`datarust::linear_model`](https://docs.rs/datarust/latest/datarust/linear_model/index.html). All implement [`Regressor`](https://docs.rs/datarust/latest/datarust/trait.Regressor.html).
+Regression and classification estimators. Live in [`datarust::linear_model`](https://docs.rs/datarust/latest/datarust/linear_model/index.html). All implement [`Predictor`](https://docs.rs/datarust/latest/datarust/trait.Predictor.html); regression models also implement `Regressor` and classifiers implement `Classifier`.
 
 ## LinearRegression
 
@@ -8,7 +8,7 @@ Ordinary least squares. Estimates `y ≈ Xβ + b` by minimising `‖Xβ − y‖
 
 ```rust
 use datarust::linear_model::{LinearRegression, LinearSolver};
-use datarust::traits::Regressor;
+use datarust::traits::Predictor;
 
 let mut model = LinearRegression::new()
     .with_fit_intercept(true)             // default
@@ -67,7 +67,7 @@ Binary classification via IRLS (Iteratively Reweighted Least Squares / Newton-Ra
 
 ```rust
 use datarust::linear_model::{LogisticRegression, LogisticSolver};
-use datarust::traits::Regressor;
+use datarust::traits::Predictor;
 
 let mut model = LogisticRegression::new()
     .with_solver(LogisticSolver::Cholesky) // or Svd
@@ -75,8 +75,8 @@ let mut model = LogisticRegression::new()
     .with_tol(1e-4);
 
 model.fit(&x, &y)?;             // y must be 0.0 / 1.0
-let probs = model.predict(&x)?; // P(y=1|x) in [0, 1]
-let classes = model.predict_class(&x)?; // 0.0 / 1.0
+let classes = model.predict(&x)?; // 0.0 / 1.0
+let probabilities = model.predict_proba(&x)?; // P(class=0), P(class=1)
 let acc = model.score(&x, &y)?; // mean accuracy
 ```
 

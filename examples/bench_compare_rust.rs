@@ -15,7 +15,7 @@ use datarust::encoder::OneHotEncoder;
 use datarust::linear_model::LinearRegression;
 use datarust::pipeline::Pipeline;
 use datarust::scaler::{MinMaxScaler, RobustScaler, StandardScaler};
-use datarust::traits::{Regressor, Transformer};
+use datarust::traits::{Predictor, Transformer};
 use datarust::transformer_kind::TransformerKind;
 use datarust::{Matrix, StrMatrix};
 

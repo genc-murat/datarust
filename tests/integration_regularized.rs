@@ -1,7 +1,7 @@
 //! Integration tests for `linear_model::Ridge` and `linear_model::Lasso`.
 
 use datarust::linear_model::{Lasso, LinearRegression, Ridge, RidgeSolver};
-use datarust::traits::Regressor;
+use datarust::traits::{Predictor, Regressor};
 use datarust::Matrix;
 
 fn approx(a: f64, b: f64, tol: f64) -> bool {
@@ -221,7 +221,10 @@ fn lasso_intercept_recovered() {
 fn ridge_and_lasso_implement_regressor_trait() {
     // Compile-time check that both can be used through the trait.
     fn predict_via_trait<R: Regressor>(m: &R, x: &Matrix) -> usize {
-        m.predict(x).map(|v| v.len()).unwrap_or(0)
+        Predictor::predict(m, x).map(|v| v.len()).unwrap_or(0)
+    }
+    fn name_via_trait<R: Regressor>(m: &R) -> &'static str {
+        m.name()
     }
     let (x, y) = sample_xy();
     let mut ridge = Ridge::new().with_alpha(0.1);
@@ -230,4 +233,6 @@ fn ridge_and_lasso_implement_regressor_trait() {
     lasso.fit(&x, &y).unwrap();
     assert_eq!(predict_via_trait(&ridge, &x), x.nrows());
     assert_eq!(predict_via_trait(&lasso, &x), x.nrows());
+    assert_eq!(name_via_trait(&ridge), "Ridge");
+    assert_eq!(name_via_trait(&lasso), "Lasso");
 }

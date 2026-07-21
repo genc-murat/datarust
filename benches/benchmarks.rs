@@ -227,7 +227,7 @@ fn bench_robust_scaler(c: &mut Criterion) {
 
 fn bench_linear_regression(c: &mut Criterion) {
     use datarust::linear_model::LinearRegression;
-    use datarust::traits::Regressor;
+    use datarust::traits::Predictor;
 
     let mut group = c.benchmark_group("linear_regression");
     for (rows, cols) in [(1_000, 10), (10_000, 50), (100_000, 100)] {
@@ -264,7 +264,7 @@ fn bench_linear_regression(c: &mut Criterion) {
 
 fn bench_ridge_and_lasso(c: &mut Criterion) {
     use datarust::linear_model::{Lasso, Ridge};
-    use datarust::traits::Regressor;
+    use datarust::traits::Predictor;
 
     let mut group = c.benchmark_group("regularized");
     for (rows, cols) in [(1_000, 10), (10_000, 50), (50_000, 100)] {
@@ -302,7 +302,7 @@ fn bench_ridge_and_lasso(c: &mut Criterion) {
 
 fn bench_logistic_regression(c: &mut Criterion) {
     use datarust::linear_model::LogisticRegression;
-    use datarust::traits::Regressor;
+    use datarust::traits::Predictor;
 
     let mut group = c.benchmark_group("logistic_regression");
     for (rows, cols) in [(1_000, 10), (10_000, 50), (50_000, 100)] {

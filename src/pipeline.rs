@@ -1,6 +1,6 @@
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
-use crate::traits::FeatureNames;
+use crate::traits::{Classifier, Estimator, FeatureNames, PredictProba, Predictor, Regressor};
 use crate::transformer_kind::TransformerKind;
 use crate::Transformer;
 
@@ -19,6 +19,7 @@ use crate::Transformer;
 ///     .push("minmax", TransformerKind::MinMaxScaler(MinMaxScaler::new()));
 /// let out = p.fit_transform(&x)?;
 /// ```
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Pipeline {
     steps: Vec<(String, TransformerKind)>,
@@ -180,6 +181,41 @@ impl Pipeline {
             .find(|(n, _)| n == name)
             .map(|(_, old)| std::mem::replace(old, t))
     }
+
+    /// Attach a final supervised estimator to this preprocessing pipeline.
+    ///
+    /// The returned [`SupervisedPipeline`] fits every transformer on the
+    /// training fold before fitting the final estimator, preventing feature
+    /// selection and scaling leakage during cross-validation.
+    pub fn with_estimator<E>(self, estimator: E) -> SupervisedPipeline<E> {
+        SupervisedPipeline::from_pipeline(self, estimator)
+    }
+
+    /// Fit all preprocessing steps with target values available to supervised
+    /// transformers such as [`SelectKBest`](crate::selection::SelectKBest).
+    pub fn fit_with_target(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        self.fit_transform_with_target(x, y).map(|_| ())
+    }
+
+    /// Fit all preprocessing steps with target values and return transformed
+    /// training features.
+    pub fn fit_transform_with_target(&mut self, x: &Matrix, y: &[f64]) -> Result<Matrix> {
+        if self.steps.is_empty() {
+            return Err(DatarustError::InvalidInput("empty pipeline".into()));
+        }
+        if y.len() != x.nrows() {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} targets", x.nrows()),
+                actual: format!("{} targets", y.len()),
+            });
+        }
+        let mut current = x.clone();
+        for (_name, step) in self.steps.iter_mut() {
+            step.fit_with_target(&current, y)?;
+            current = step.transform(&current)?;
+        }
+        Ok(current)
+    }
 }
 
 impl Default for Pipeline {
@@ -205,6 +241,10 @@ impl Transformer for Pipeline {
         Ok(())
     }
 
+    fn fit_with_target(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        Pipeline::fit_with_target(self, x, y)
+    }
+
     fn transform(&self, x: &Matrix) -> Result<Matrix> {
         if self.steps.is_empty() {
             return Err(DatarustError::InvalidInput("empty pipeline".into()));
@@ -228,7 +268,7 @@ impl Transformer for Pipeline {
     }
 
     fn is_fitted(&self) -> bool {
-        self.steps.iter().all(|(_, t)| t.is_fitted())
+        self.steps.iter().all(|(_, t)| Transformer::is_fitted(t))
     }
 }
 
@@ -243,10 +283,138 @@ impl FeatureNames for Pipeline {
     }
 }
 
+/// A sklearn-style supervised pipeline: zero or more preprocessing steps plus
+/// a final estimator.
+///
+/// Unlike [`Pipeline`], this type accepts target values during `fit` and
+/// exposes the final estimator's `predict`, `score`, and (when supported)
+/// `predict_proba` operations. It is generic over the estimator, retaining
+/// static dispatch and type safety while remaining serde-serializable when the
+/// selected estimator is serializable.
+#[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SupervisedPipeline<E> {
+    transformers: Pipeline,
+    estimator: E,
+    fitted: bool,
+}
+
+impl<E> SupervisedPipeline<E> {
+    /// Create a supervised pipeline containing only a final estimator.
+    pub fn new(estimator: E) -> Self {
+        Self {
+            transformers: Pipeline::new(),
+            estimator,
+            fitted: false,
+        }
+    }
+
+    /// Create a supervised pipeline from an existing preprocessing pipeline.
+    pub fn from_pipeline(transformers: Pipeline, estimator: E) -> Self {
+        Self {
+            transformers,
+            estimator,
+            fitted: false,
+        }
+    }
+
+    /// Add a preprocessing step before the final estimator.
+    pub fn push<S: Into<String>>(mut self, name: S, transformer: TransformerKind) -> Self {
+        self.transformers = self.transformers.push(name, transformer);
+        self.fitted = false;
+        self
+    }
+
+    /// Return the fitted preprocessing pipeline.
+    pub fn transformers(&self) -> &Pipeline {
+        &self.transformers
+    }
+
+    /// Return the final estimator.
+    pub fn estimator(&self) -> &E {
+        &self.estimator
+    }
+
+    /// Return mutable access to the final estimator configuration.
+    ///
+    /// Mutable access may change learned model state, so the pipeline must be
+    /// fitted again before prediction.
+    pub fn estimator_mut(&mut self) -> &mut E {
+        self.fitted = false;
+        &mut self.estimator
+    }
+
+    /// Transform features through the fitted preprocessing steps. An
+    /// estimator-only pipeline returns a clone of its input.
+    pub fn transform(&self, x: &Matrix) -> Result<Matrix> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("SupervisedPipeline".into()));
+        }
+        if self.transformers.is_empty() {
+            Ok(x.clone())
+        } else {
+            self.transformers.transform(x)
+        }
+    }
+
+    fn fit_transform_features(&mut self, x: &Matrix, y: &[f64]) -> Result<Matrix> {
+        if self.transformers.is_empty() {
+            if y.len() != x.nrows() {
+                return Err(DatarustError::ShapeMismatch {
+                    expected: format!("{} targets", x.nrows()),
+                    actual: format!("{} targets", y.len()),
+                });
+            }
+            Ok(x.clone())
+        } else {
+            self.transformers.fit_transform_with_target(x, y)
+        }
+    }
+}
+
+impl<E> Estimator for SupervisedPipeline<E> {}
+
+impl<E: Predictor> Predictor for SupervisedPipeline<E> {
+    fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        self.fitted = false;
+        let transformed = self.fit_transform_features(x, y)?;
+        self.estimator.fit(&transformed, y)?;
+        self.fitted = true;
+        Ok(())
+    }
+
+    fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
+        let transformed = self.transform(x)?;
+        self.estimator.predict(&transformed)
+    }
+
+    fn is_fitted(&self) -> bool {
+        self.fitted
+    }
+}
+
+impl<E: Regressor> Regressor for SupervisedPipeline<E> {
+    fn name(&self) -> &'static str {
+        "SupervisedPipeline"
+    }
+}
+
+impl<E: Classifier> Classifier for SupervisedPipeline<E> {}
+
+impl<E: PredictProba> PredictProba for SupervisedPipeline<E> {
+    fn predict_proba(&self, x: &Matrix) -> Result<Matrix> {
+        let transformed = self.transform(x)?;
+        self.estimator.predict_proba(&transformed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::linear_model::LinearRegression;
     use crate::scaler::{MinMaxScaler, StandardScaler};
+    use crate::selection::{ScoreFunc, SelectKBest};
+    use crate::traits::{Predictor, Transformer};
     use crate::transformer_kind::TransformerKind;
 
     fn m1() -> Matrix {
@@ -327,6 +495,57 @@ mod tests {
         p.fit(&m1()).unwrap();
         let bad = Matrix::new(vec![vec![1.0, 2.0, 3.0]]).unwrap();
         assert!(p.transform(&bad).is_err());
+    }
+
+    #[test]
+    fn target_fit_dispatches_through_transformer_trait() {
+        let x = Matrix::new(vec![
+            vec![-2.0, 0.2],
+            vec![-1.0, 0.8],
+            vec![1.0, -0.4],
+            vec![2.0, 0.1],
+        ])
+        .unwrap();
+        let y = vec![0.0, 0.0, 1.0, 1.0];
+        let selector = SelectKBest::new(ScoreFunc::FClassif, 1).unwrap();
+        let mut pipeline = Pipeline::new().push("select", TransformerKind::SelectKBest(selector));
+
+        let transformer: &mut dyn Transformer = &mut pipeline;
+        transformer.fit_with_target(&x, &y).unwrap();
+
+        assert!(pipeline.is_fitted());
+        assert_eq!(pipeline.transform(&x).unwrap().ncols(), 1);
+    }
+
+    #[test]
+    fn supervised_pipeline_invalidates_fitted_state_after_mutation_or_failed_fit() {
+        let x = Matrix::new(vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0]]).unwrap();
+        let y = vec![3.0, 5.0, 7.0, 9.0];
+        let mut pipeline = SupervisedPipeline::new(LinearRegression::new());
+        pipeline.fit(&x, &y).unwrap();
+        assert!(pipeline.is_fitted());
+
+        assert!(pipeline.fit(&x, &[3.0, 5.0]).is_err());
+        assert!(!pipeline.is_fitted());
+        assert!(matches!(
+            pipeline.predict(&x),
+            Err(DatarustError::NotFitted(_))
+        ));
+
+        pipeline.fit(&x, &y).unwrap();
+        let _ = pipeline.estimator_mut();
+        assert!(!pipeline.is_fitted());
+
+        pipeline.fit(&x, &y).unwrap();
+        pipeline = pipeline.push(
+            "scale",
+            TransformerKind::StandardScaler(StandardScaler::new()),
+        );
+        assert!(!pipeline.is_fitted());
+        assert!(matches!(
+            pipeline.predict(&x),
+            Err(DatarustError::NotFitted(_))
+        ));
     }
 
     #[test]

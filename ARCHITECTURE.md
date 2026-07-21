@@ -8,11 +8,11 @@
 src/
 ├── lib.rs                  # Crate root: re-exports, module declarations
 ├── error.rs                # DatarustError enum + Result alias
-├── traits.rs               # Transformer, FeatureNames, CategoricalTransformer,
-│                           #   TargetTransformer, LabelTransformer
+├── traits.rs               # Estimator, Predictor, Regressor, Classifier,
+│                           #   Transformer, FeatureNames, categorical traits
 ├── matrix.rs               # Matrix (f64), StrMatrix (String), SparseMatrix (CSR)
 ├── stats.rs                # Column-wise statistics (mean, var, quantile, covariance…)
-├── pipeline.rs             # Sequential Pipeline (TransformerKind vec)
+├── pipeline.rs             # Sequential and supervised pipelines
 ├── transformer_kind.rs     # Type-erased enum over all Transformer impls
 ├── categorical_kind.rs     # Type-erased enum over CategoricalTransformer impls
 ├── target_kind.rs          # Type-erased enum over TargetTransformer impls
@@ -64,7 +64,21 @@ src/
 
 ## Core Traits
 
-The library defines four transformer traits in `traits.rs`, each targeting a different data modality:
+The library defines transformer and supervised-estimator traits in `traits.rs`,
+each targeting a different data modality:
+
+### `Predictor`, `Regressor`, `Classifier` (supervised)
+```
+fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()>
+fn predict(&self, x: &Matrix) -> Result<Vec<f64>>
+fn is_fitted(&self) -> bool
+```
+
+Every supervised model implements `Predictor`. Regression models additionally
+implement `Regressor`; classifiers implement `Classifier` and may implement
+`PredictProba` for `(n_samples, n_classes)` probability matrices. A
+`SupervisedPipeline<E>` fits transformer steps and a final `E: Predictor`
+together, passing targets to supervised selectors before fitting the estimator.
 
 ### `Transformer` (numeric → numeric)
 ```
@@ -75,7 +89,7 @@ fn inverse_transform(&self, x: &Matrix) -> Result<Matrix>  // default: Err
 fn is_fitted(&self) -> bool
 ```
 
-Implemented by: all scalers, PCA, TruncatedSVD, PolynomialFeatures, VarianceThreshold, SelectKBest, SimpleImputer, KnnImputer, FunctionTransformer, Binarizer, Pipeline, ColumnTransformer.
+Implemented by: all scalers, PCA, TruncatedSVD, PolynomialFeatures, VarianceThreshold, SelectKBest, SimpleImputer, KnnImputer, FunctionTransformer, Binarizer, and Pipeline.
 
 ### `CategoricalTransformer` (categorical → numeric)
 ```

@@ -13,7 +13,7 @@ use crate::error::{DatarustError, Result};
 use crate::linalg::cholesky;
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::Regressor;
+use crate::traits::{Estimator, Predictor, Regressor};
 
 /// Solver strategy for [`Ridge`].
 ///
@@ -34,7 +34,7 @@ pub enum RidgeSolver {
 ///
 /// ```rust
 /// use datarust::linear_model::Ridge;
-/// use datarust::traits::Regressor;
+/// use datarust::traits::Predictor;
 /// use datarust::Matrix;
 ///
 /// let x = Matrix::new(vec![
@@ -121,16 +121,14 @@ impl Ridge {
 
     /// R² of the prediction against `y`, mirroring `estimator.score` in sklearn.
     pub fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
-        let pred = self.predict(x)?;
+        let pred = Predictor::predict(self, x)?;
         crate::metrics::regression::r2_score(y, &pred)
     }
 }
 
-impl Regressor for Ridge {
-    fn name(&self) -> &'static str {
-        "Ridge"
-    }
+impl Estimator for Ridge {}
 
+impl Predictor for Ridge {
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         let n = x.nrows();
         let p = x.ncols();
@@ -240,6 +238,12 @@ impl Regressor for Ridge {
 
     fn is_fitted(&self) -> bool {
         self.fitted
+    }
+}
+
+impl Regressor for Ridge {
+    fn name(&self) -> &'static str {
+        "Ridge"
     }
 }
 

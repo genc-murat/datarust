@@ -15,7 +15,7 @@ use crate::error::{DatarustError, Result};
 use crate::linalg::cholesky;
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::Regressor;
+use crate::traits::{Classifier, Estimator, PredictProba, Predictor};
 
 /// Solver strategy for [`LogisticRegression`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -31,12 +31,13 @@ pub enum LogisticSolver {
 
 /// Binary logistic regression solved by IRLS.
 ///
-/// `predict` returns `P(y = 1 | x)` as a `Vec<f64>` (in `[0, 1]`); use
-/// [`predict_class`](Self::predict_class) for hard 0/1 labels.
+/// `predict` returns hard `{0.0, 1.0}` labels, while
+/// [`predict_proba`](Self::predict_proba) returns an `(n_samples, 2)` matrix
+/// with columns `P(class=0)` and `P(class=1)`.
 ///
 /// ```rust
 /// use datarust::linear_model::LogisticRegression;
-/// use datarust::traits::Regressor;
+/// use datarust::traits::{Classifier, Predictor};
 /// use datarust::Matrix;
 ///
 /// // Linearly separable: y = 1 when x0 > 0.
@@ -149,18 +150,24 @@ impl LogisticRegression {
         self.n_iter_
     }
 
-    /// Predicted class probabilities `P(y = 1 | x)`. Alias for `predict`.
-    pub fn predict_proba(&self, x: &Matrix) -> Result<Vec<f64>> {
-        self.predict(x)
+    /// Per-class probability estimates in sklearn-compatible column order:
+    /// `P(class=0)`, then `P(class=1)`.
+    pub fn predict_proba(&self, x: &Matrix) -> Result<Matrix> {
+        <Self as PredictProba>::predict_proba(self, x)
     }
 
-    /// Predict hard class labels `{0.0, 1.0}` using a 0.5 threshold.
+    /// Positive-class probability `P(y = 1 | x)` for each row.
+    ///
+    /// This is a convenience for binary workflows. Use
+    /// [`predict_proba`](Self::predict_proba) when sklearn-compatible
+    /// two-column probability output is needed.
+    pub fn predict_positive_proba(&self, x: &Matrix) -> Result<Vec<f64>> {
+        self.positive_probabilities(x)
+    }
+
+    /// Backward-compatible alias for [`predict`](Predictor::predict).
     pub fn predict_class(&self, x: &Matrix) -> Result<Vec<f64>> {
-        let probs = self.predict(x)?;
-        Ok(probs
-            .into_iter()
-            .map(|p| if p >= 0.5 { 1.0 } else { 0.0 })
-            .collect())
+        <Self as Predictor>::predict(self, x)
     }
 
     /// Mean accuracy of the prediction, mirroring `estimator.score` in sklearn.
@@ -168,13 +175,38 @@ impl LogisticRegression {
         let pred = self.predict_class(x)?;
         crate::metrics::classification::accuracy_score(y, &pred)
     }
+
+    fn positive_probabilities(&self, x: &Matrix) -> Result<Vec<f64>> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("LogisticRegression".into()));
+        }
+        if x.ncols() != self.n_features_in_ {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} features", self.n_features_in_),
+                actual: format!("{} features", x.ncols()),
+            });
+        }
+        let p = self.n_features_in_;
+        let beta = &self.coef_;
+        let intercept = self.intercept_;
+        let src = x.as_slice();
+        let n = x.nrows();
+        let mut out = vec![0.0; n];
+        for i in 0..n {
+            let row = &src[i * p..(i + 1) * p];
+            let mut eta = intercept;
+            for j in 0..p {
+                eta += beta[j] * row[j];
+            }
+            out[i] = sigmoid(eta);
+        }
+        Ok(out)
+    }
 }
 
-impl Regressor for LogisticRegression {
-    fn name(&self) -> &'static str {
-        "LogisticRegression"
-    }
+impl Estimator for LogisticRegression {}
 
+impl Predictor for LogisticRegression {
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         let n = x.nrows();
         let p = x.ncols();
@@ -293,34 +325,29 @@ impl Regressor for LogisticRegression {
     }
 
     fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
-        if !self.fitted {
-            return Err(DatarustError::NotFitted("LogisticRegression".into()));
-        }
-        if x.ncols() != self.n_features_in_ {
-            return Err(DatarustError::ShapeMismatch {
-                expected: format!("{} features", self.n_features_in_),
-                actual: format!("{} features", x.ncols()),
-            });
-        }
-        let p = self.n_features_in_;
-        let beta = &self.coef_;
-        let intercept = self.intercept_;
-        let src = x.as_slice();
-        let n = x.nrows();
-        let mut out = vec![0.0; n];
-        for i in 0..n {
-            let row = &src[i * p..(i + 1) * p];
-            let mut eta = intercept;
-            for j in 0..p {
-                eta += beta[j] * row[j];
-            }
-            out[i] = sigmoid(eta);
-        }
-        Ok(out)
+        Ok(self
+            .positive_probabilities(x)?
+            .into_iter()
+            .map(|p| if p >= 0.5 { 1.0 } else { 0.0 })
+            .collect())
     }
 
     fn is_fitted(&self) -> bool {
         self.fitted
+    }
+}
+
+impl Classifier for LogisticRegression {}
+
+impl PredictProba for LogisticRegression {
+    fn predict_proba(&self, x: &Matrix) -> Result<Matrix> {
+        let positive = self.positive_probabilities(x)?;
+        let mut probabilities = Vec::with_capacity(positive.len() * 2);
+        for p in positive {
+            probabilities.push(1.0 - p);
+            probabilities.push(p);
+        }
+        Matrix::from_flat(x.nrows(), 2, probabilities)
     }
 }
 
@@ -356,25 +383,25 @@ mod tests {
     }
 
     #[test]
-    fn predict_returns_probabilities_in_unit_interval() {
+    fn predict_returns_hard_labels() {
         let (x, y) = separable();
         let mut model = LogisticRegression::new();
         model.fit(&x, &y).unwrap();
-        let probs = model.predict(&x).unwrap();
-        for &p in &probs {
-            assert!((0.0..=1.0).contains(&p), "probability out of range: {p}");
-        }
+        assert_eq!(model.predict(&x).unwrap(), y);
     }
 
     #[test]
-    fn predict_proba_equals_predict() {
+    fn predict_proba_has_two_normalized_columns() {
         let (x, y) = separable();
         let mut model = LogisticRegression::new();
         model.fit(&x, &y).unwrap();
-        let a = model.predict(&x).unwrap();
-        let b = model.predict_proba(&x).unwrap();
-        for (ai, bi) in a.iter().zip(b.iter()) {
-            assert!(approx(*ai, *bi, 1e-12));
+        let probabilities = model.predict_proba(&x).unwrap();
+        assert_eq!(probabilities.ncols(), 2);
+        for (i, &label) in y.iter().enumerate() {
+            let p0 = probabilities.get(i, 0);
+            let p1 = probabilities.get(i, 1);
+            assert!(approx(p0 + p1, 1.0, 1e-12));
+            assert_eq!(if p1 >= 0.5 { 1.0 } else { 0.0 }, label);
         }
     }
 
@@ -422,8 +449,8 @@ mod tests {
             );
         }
         // Predictions should agree closely.
-        let pc = chol.predict(&x).unwrap();
-        let ps = svd.predict(&x).unwrap();
+        let pc = chol.predict_positive_proba(&x).unwrap();
+        let ps = svd.predict_positive_proba(&x).unwrap();
         for (a, b) in pc.iter().zip(ps.iter()) {
             assert!((a - b).abs() < 0.05, "disagreement: {a} vs {b}");
         }

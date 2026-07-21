@@ -131,6 +131,13 @@ impl Transformer for TransformerKind {
         }
     }
 
+    fn fit_with_target(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        match self {
+            Self::SelectKBest(t) => t.fit_with_numeric_labels(x, y),
+            _ => self.fit(x),
+        }
+    }
+
     fn transform(&self, x: &Matrix) -> Result<Matrix> {
         match self {
             Self::StandardScaler(t) => t.transform(x),

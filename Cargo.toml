@@ -1,9 +1,9 @@
 [package]
 name = "datarust"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.70"
-description = "Scikit-Learn Preprocessing in Rust"
+description = "Scikit-learn-style preprocessing and classical ML in Rust"
 license = "MIT"
 repository = "https://github.com/genc-murat/datarust"
 homepage = "https://genc-murat.github.io/datarust/"

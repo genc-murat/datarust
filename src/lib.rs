@@ -26,9 +26,10 @@
 //! - [`categorical_kind`] — type-erased `CategoricalTransformerKind` enum wrapper for encoders
 //! - [`target_kind`] — type-erased `TargetTransformerKind` enum wrapper for supervised encoders
 //!
-//! All numeric transformers implement the [`Transformer`] trait.
-//! Regression estimators implement the [`Regressor`] trait
-//! (`fit` with features + target, then `predict`).
+//! All numeric transformers implement the [`Transformer`] trait. Supervised
+//! estimators implement [`Predictor`] (`fit` with features + target, then
+//! `predict`); regressors additionally implement [`Regressor`] and classifiers
+//! implement [`Classifier`] / [`PredictProba`] where appropriate.
 //! Categorical encoders (OneHot, Ordinal, Frequency) implement the
 //! [`CategoricalTransformer`] trait.
 //! The [`TargetEncoder`] implements the [`TargetTransformer`] trait (requires
@@ -98,10 +99,10 @@ pub use matrix::{Matrix, SparseMatrix, StrMatrix};
 pub use model_selection::{
     cross_val_score, train_test_split, KFold, StratifiedKFold, TrainTestSplit,
 };
-pub use pipeline::Pipeline;
+pub use pipeline::{Pipeline, SupervisedPipeline};
 pub use target_kind::TargetTransformerKind;
 pub use traits::{
-    default_input_names, CategoricalTransformer, FeatureNames, LabelTransformer, Regressor,
-    TargetTransformer, Transformer,
+    default_input_names, CategoricalTransformer, Classifier, Estimator, FeatureNames,
+    LabelTransformer, PredictProba, Predictor, Regressor, TargetTransformer, Transformer,
 };
 pub use transformer_kind::TransformerKind;

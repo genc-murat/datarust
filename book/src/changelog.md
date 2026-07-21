@@ -6,6 +6,25 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
 
 ## Unreleased
 
+## 0.5.0
+
+- **Estimator hierarchy** — `Estimator`, `Predictor`, `Classifier`, and
+  `PredictProba` now define common supervised flows. `Regressor` is reserved
+  for regression semantics.
+- **SupervisedPipeline** — `Pipeline::with_estimator` combines preprocessing,
+  target-aware feature selection, and a final predictor in a cloneable,
+  serde-serializable pipeline.
+- **BREAKING: LogisticRegression classification semantics** — `predict`
+  returns hard labels; `predict_proba` returns a two-column probability matrix;
+  `predict_positive_proba` exposes the positive-class vector.
+- **BREAKING: Predictor imports** — import `Predictor` to call shared
+  `fit`/`predict` methods on supervised models.
+- **BREAKING: Custom trait implementors** — custom transformers and encoders
+  must implement `Estimator`; custom regressors must implement `Estimator` and
+  `Predictor` before `Regressor`.
+
+## 0.4.0
+
 ### Added
 - **`model_selection` module** — `train_test_split`, `KFold`, `StratifiedKFold`, `cross_val_score`. Shared deterministic xorshift64 PRNG, now used by both `model_selection` and `decomposition::randomized_svd`.
 - **`LogisticRegression`** — binary classification via IRLS (Cholesky/SVD). The crate's first classifier.

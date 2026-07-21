@@ -18,10 +18,10 @@ How datarust is organized and the design decisions behind it.
 src/
 ├── lib.rs                 # Crate root: re-exports + module declarations
 ├── error.rs               # DatarustError enum + Result alias
-├── traits.rs              # Transformer, Regressor, CategoricalTransformer, TargetTransformer, LabelTransformer, FeatureNames
+├── traits.rs              # Estimator, Predictor, Regressor, Classifier, transformers, FeatureNames
 ├── matrix.rs              # Matrix (f64 flat), StrMatrix, SparseMatrix (CSR)
 ├── stats.rs               # Column statistics, covariance/correlation
-├── pipeline.rs            # Sequential Pipeline
+├── pipeline.rs            # Sequential and supervised Pipeline
 ├── transformer_kind.rs    # TransformerKind enum (type erasure)
 ├── categorical_kind.rs    # CategoricalTransformerKind enum
 ├── target_kind.rs         # TargetTransformerKind enum
@@ -54,7 +54,9 @@ src/
 | Trait | Data flow | Implementors |
 |---|---|---|
 | `Transformer` | `Matrix → Matrix` | all scalers, PCA, TruncatedSVD, PolynomialFeatures, VarianceThreshold, SelectKBest, imputers, FunctionTransformer |
-| `Regressor` | `fit(X, y)` + `predict(X) → Vec<f64>` | LinearRegression, Ridge, Lasso, LogisticRegression |
+| `Predictor` | `fit(X, y)` + `predict(X) → Vec<f64>` | all linear models and supervised pipelines |
+| `Regressor` | continuous-prediction semantics | LinearRegression, Ridge, Lasso |
+| `Classifier` | class-label prediction semantics | LogisticRegression |
 | `CategoricalTransformer` | `StrMatrix → Matrix` | OneHotEncoder, OrdinalEncoder, FrequencyEncoder |
 | `TargetTransformer` | `fit(StrMatrix, y)` | TargetEncoder |
 | `LabelTransformer` | `&[String] ↔ Vec<usize>` | LabelEncoder |

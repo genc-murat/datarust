@@ -351,7 +351,7 @@ fn power_transformer_round_trip() {
 #[test]
 fn linear_regression_round_trip() {
     use datarust::linear_model::LinearRegression;
-    use datarust::traits::Regressor;
+    use datarust::traits::Predictor;
 
     // Non-collinear features so the Cholesky path is exercised.
     let rows: Vec<Vec<f64>> = (0..20)
@@ -386,7 +386,7 @@ fn linear_regression_round_trip() {
 #[test]
 fn linear_regression_svd_round_trip() {
     use datarust::linear_model::{LinearRegression, LinearSolver};
-    use datarust::traits::Regressor;
+    use datarust::traits::Predictor;
 
     let rows: Vec<Vec<f64>> = (0..20)
         .map(|i| {
@@ -413,7 +413,7 @@ fn linear_regression_svd_round_trip() {
 #[test]
 fn ridge_round_trip() {
     use datarust::linear_model::{Ridge, RidgeSolver};
-    use datarust::traits::Regressor;
+    use datarust::traits::Predictor;
 
     let rows: Vec<Vec<f64>> = (0..20)
         .map(|i| {
@@ -444,7 +444,7 @@ fn ridge_round_trip() {
 #[test]
 fn lasso_round_trip() {
     use datarust::linear_model::Lasso;
-    use datarust::traits::Regressor;
+    use datarust::traits::Predictor;
 
     let rows: Vec<Vec<f64>> = (0..20)
         .map(|i| {
@@ -476,7 +476,7 @@ fn lasso_round_trip() {
 #[test]
 fn logistic_regression_round_trip() {
     use datarust::linear_model::LogisticRegression;
-    use datarust::traits::Regressor;
+    use datarust::traits::Predictor;
 
     // Overlapping (non-separable) data so the MLE is finite.
     let rows: Vec<Vec<f64>> = vec![
@@ -508,4 +508,36 @@ fn logistic_regression_round_trip() {
     assert!(approx(restored.intercept(), model.intercept(), 1e-12));
     assert_eq!(restored.n_iter(), model.n_iter());
     assert_eq!(restored.n_features_in(), model.n_features_in());
+}
+
+#[test]
+fn supervised_pipeline_round_trip() {
+    use datarust::linear_model::{LogisticRegression, LogisticSolver};
+    use datarust::pipeline::{Pipeline, SupervisedPipeline};
+    use datarust::selection::{ScoreFunc, SelectKBest};
+    use datarust::transformer_kind::TransformerKind;
+    use datarust::Predictor;
+
+    let x = datarust::Matrix::new(vec![
+        vec![-3.0, 0.2],
+        vec![-2.0, -0.3],
+        vec![-1.0, 0.5],
+        vec![1.0, -0.4],
+        vec![2.0, 0.1],
+        vec![3.0, 0.6],
+    ])
+    .unwrap();
+    let y = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+
+    let selector = SelectKBest::new(ScoreFunc::FClassif, 1).unwrap();
+    let mut model = Pipeline::new()
+        .push("select", TransformerKind::SelectKBest(selector))
+        .with_estimator(LogisticRegression::new().with_solver(LogisticSolver::Svd));
+    model.fit(&x, &y).unwrap();
+    let original = model.predict(&x).unwrap();
+
+    let json = to_json(&model).unwrap();
+    let restored: SupervisedPipeline<LogisticRegression> = from_json(&json).unwrap();
+    assert!(restored.is_fitted());
+    assert_eq!(restored.predict(&x).unwrap(), original);
 }

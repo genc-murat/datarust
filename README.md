@@ -6,7 +6,7 @@
 [![CI](https://github.com/genc-murat/datarust/actions/workflows/ci.yml/badge.svg)](https://github.com/genc-murat/datarust/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Scikit-Learn Preprocessing in Rust** — a modular, dependency-free data preprocessing library built on a lightweight `Matrix` type.
+**Scikit-learn-style ML in Rust** — a modular, dependency-free preprocessing and classical ML library built on a lightweight `Matrix` type.
 
 📖 **[Read the documentation book →](https://genc-murat.github.io/datarust/)**
 
@@ -31,7 +31,7 @@ let normalized = scaler.fit_transform(&data)?;
 | **Classification** | LogisticRegression (binary, IRLS solver, Cholesky & SVD) |
 | **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, precision, recall, F1, confusion_matrix, log_loss |
 | **Model Selection** | train_test_split, KFold, StratifiedKFold, cross_val_score |
-| **Pipeline** | Sequential Pipeline (serde-serializable), ColumnTransformer (numeric + categorical) |
+| **Pipeline** | Sequential + supervised Pipeline (serde-serializable), ColumnTransformer (numeric + categorical) |
 | **Feature Names** | `FeatureNames` trait on all transformers for output column names |
 | **Serialization** | JSON save/load via optional `serde` feature |
 | **Parallelism** | Rayon-backed column operations via optional `rayon` feature |
@@ -68,14 +68,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-datarust = "0.3"
+datarust = "0.5"
 ```
 
 ### Optional features
 
 ```toml
 [dependencies]
-datarust = { version = "0.3", features = ["serde", "rayon"] }
+datarust = { version = "0.5", features = ["serde", "rayon"] }
 ```
 
 - **`serde`** — enables JSON serialization/deserialization of fitted transformers via `datarust::serialize::{save_json, load_json, to_json, from_json}`.
@@ -114,19 +114,26 @@ pub trait Transformer {
 }
 ```
 
-### Regressor Trait
+### Supervised Estimator Traits
 
-Regression estimators (currently [`LinearRegression`](#linearregression)) implement the [`Regressor`](https://docs.rs/datarust/latest/datarust/trait.Regressor.html) trait — the supervised counterpart of `Transformer`, with `predict` instead of `transform`:
+All supervised estimators implement the [`Predictor`](https://docs.rs/datarust/latest/datarust/trait.Predictor.html) contract. Regressors also implement [`Regressor`](https://docs.rs/datarust/latest/datarust/trait.Regressor.html); classifiers implement [`Classifier`](https://docs.rs/datarust/latest/datarust/trait.Classifier.html), and probabilistic classifiers implement [`PredictProba`](https://docs.rs/datarust/latest/datarust/trait.PredictProba.html):
 
 ```rust
-pub trait Regressor {
-    fn name(&self) -> &'static str;
+pub trait Predictor: Estimator {
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()>;
     fn predict(&self, x: &Matrix) -> Result<Vec<f64>>;
     fn fit_predict(&mut self, x: &Matrix, y: &[f64]) -> Result<Vec<f64>> { ... }
     fn is_fitted(&self) -> bool;
 }
+
+pub trait PredictProba: Classifier {
+    fn predict_proba(&self, x: &Matrix) -> Result<Matrix>;
+}
 ```
+
+If you implement datarust traits for your own type, first add the marker
+`impl Estimator for MyType {}`. Custom supervised models then implement
+`Predictor` before their `Regressor` or `Classifier` semantic trait.
 
 ### CategoricalTransformer Trait
 
@@ -190,7 +197,7 @@ Key architectural highlights:
 | Layer | Description |
 |---|---|
 | **Matrix types** | `Matrix` (f64), `StrMatrix` (String), `SparseMatrix` (CSR) — all with validation |
-| **Core traits** | `Transformer`, `CategoricalTransformer`, `TargetTransformer`, `LabelTransformer`, `FeatureNames` |
+| **Core traits** | `Estimator`, `Transformer`, `Predictor`, `Regressor`, `Classifier`, `PredictProba`, categorical traits |
 | **Type erasure** | `TransformerKind`, `CategoricalTransformerKind`, `TargetTransformerKind` — enable heterogeneous `Pipeline` and `ColumnTransformer` |
 | **Features** | `serde` (JSON save/load), `rayon` (parallel iterators) — both optional, zero deps by default |
 
@@ -527,7 +534,7 @@ Two solvers are available:
 
 ```rust
 use datarust::linear_model::{LinearRegression, LinearSolver};
-use datarust::traits::Regressor;
+use datarust::traits::Predictor;
 
 let mut model = LinearRegression::new()
     .with_fit_intercept(true)           // default true
@@ -553,7 +560,7 @@ The `α` penalty shrinks coefficients toward zero (reducing variance at the cost
 
 ```rust
 use datarust::linear_model::{Ridge, RidgeSolver};
-use datarust::traits::Regressor;
+use datarust::traits::Predictor;
 
 let mut model = Ridge::new()
     .with_alpha(1.0)                      // regularization strength
@@ -571,7 +578,7 @@ The L1 penalty drives irrelevant coefficients to **exactly zero**, producing a s
 
 ```rust
 use datarust::linear_model::Lasso;
-use datarust::traits::Regressor;
+use datarust::traits::Predictor;
 
 let mut model = Lasso::new()
     .with_alpha(0.1)          // larger alpha → more sparsity
@@ -593,7 +600,7 @@ Estimates `P(y = 1 | x) = σ(x·β + b)` by maximising the log-likelihood via Ne
 
 ```rust
 use datarust::linear_model::{LogisticRegression, LogisticSolver};
-use datarust::traits::Regressor;
+use datarust::traits::Predictor;
 
 let mut model = LogisticRegression::new()
     .with_solver(LogisticSolver::Cholesky) // or LogisticSolver::Svd
@@ -601,8 +608,8 @@ let mut model = LogisticRegression::new()
     .with_tol(1e-4);                       // convergence tolerance
 
 model.fit(&x, &y)?;          // y must be 0.0 / 1.0
-let probs = model.predict(&new_x)?;        // Vec<f64> of P(y=1|x) in [0,1]
-let classes = model.predict_class(&new_x)?; // Vec<f64> of 0.0 / 1.0 (threshold 0.5)
+let classes = model.predict(&new_x)?;       // Vec<f64> of 0.0 / 1.0
+let probabilities = model.predict_proba(&new_x)?; // Matrix: P(class=0), P(class=1)
 let acc = model.score(&x, &y)?;            // mean accuracy (f64)
 ```
 
@@ -674,7 +681,7 @@ for (train_idx, test_idx) in scv.split(&y)? {
 
 #### cross_val_score
 
-Evaluate any `Regressor + Clone` estimator with a user-supplied scorer:
+Evaluate any `Predictor + Clone` estimator with a user-supplied scorer:
 
 ```rust
 use datarust::model_selection::{cross_val_score, KFold};
@@ -706,7 +713,21 @@ let out = pipe.fit_transform(&x)?;
 assert_eq!(pipe.names(), vec!["scale", "pca", "clip"]);
 ```
 
-All 17 transformer types are available as `TransformerKind` variants, enabling type-safe heterogeneous pipelines.
+All 17 transformer types are available as `TransformerKind` variants, enabling type-safe heterogeneous pipelines. For model training, attach a final estimator with `with_estimator`; supervised feature selectors receive `y` only from the training data:
+
+```rust
+use datarust::linear_model::LogisticRegression;
+use datarust::pipeline::Pipeline;
+use datarust::selection::{ScoreFunc, SelectKBest};
+use datarust::traits::Predictor;
+use datarust::transformer_kind::TransformerKind;
+
+let mut model = Pipeline::new()
+    .push("select", TransformerKind::SelectKBest(SelectKBest::new(ScoreFunc::FClassif, 5)?))
+    .with_estimator(LogisticRegression::new());
+model.fit(&x, &y)?;
+let classes = model.predict(&x)?;
+```
 
 ### ColumnTransformer
 
@@ -918,7 +939,7 @@ PCA also exposes [`noise_variance()`](https://docs.rs/datarust/latest/datarust/d
 Enable the `serde` feature for JSON save/load of fitted transformers.
 
 ```toml
-datarust = { version = "0.3", features = ["serde"] }
+datarust = { version = "0.5", features = ["serde"] }
 ```
 
 ```rust
@@ -943,7 +964,7 @@ All leaf transformers, `Pipeline` (via `TransformerKind`), and `ColumnTransforme
 Enable the `rayon` feature for parallel column operations on large datasets.
 
 ```toml
-datarust = { version = "0.3", features = ["rayon"] }
+datarust = { version = "0.5", features = ["rayon"] }
 ```
 
 When enabled, the following use parallel iterators:

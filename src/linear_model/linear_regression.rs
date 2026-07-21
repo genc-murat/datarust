@@ -16,7 +16,7 @@ use crate::error::{DatarustError, Result};
 use crate::linalg::cholesky;
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::Regressor;
+use crate::traits::{Estimator, Predictor, Regressor};
 
 /// Solver strategy for [`LinearRegression`].
 ///
@@ -40,7 +40,7 @@ pub enum LinearSolver {
 ///
 /// ```rust
 /// use datarust::linear_model::LinearRegression;
-/// use datarust::traits::Regressor;
+/// use datarust::traits::Predictor;
 /// use datarust::Matrix;
 ///
 /// let x = Matrix::new(vec![
@@ -122,7 +122,7 @@ impl LinearRegression {
     /// Returns the [`r2_score`](crate::metrics::regression::r2_score) of `self.predict(X)`
     /// against `y`.
     pub fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
-        let pred = self.predict(x)?;
+        let pred = Predictor::predict(self, x)?;
         crate::metrics::regression::r2_score(y, &pred)
     }
 
@@ -174,11 +174,9 @@ pub(crate) fn solve_via_eig_pinv(a: &[f64], b: &[f64], p: usize) -> Result<Vec<f
     Ok(x)
 }
 
-impl Regressor for LinearRegression {
-    fn name(&self) -> &'static str {
-        "LinearRegression"
-    }
+impl Estimator for LinearRegression {}
 
+impl Predictor for LinearRegression {
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         let n = x.nrows();
         let p = x.ncols();
@@ -276,6 +274,12 @@ impl Regressor for LinearRegression {
 
     fn is_fitted(&self) -> bool {
         self.fitted
+    }
+}
+
+impl Regressor for LinearRegression {
+    fn name(&self) -> &'static str {
+        "LinearRegression"
     }
 }
 

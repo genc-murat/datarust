@@ -21,6 +21,26 @@ let out = pipe.fit_transform(&x)?;
 
 Pipelines are **serializable** under the `serde` feature — fit, save to JSON, load and `transform` in a different process.
 
+## Supervised pipeline
+
+Attach a final estimator with `with_estimator` to fit preprocessing and a model
+together. During `fit(X, y)`, supervised selectors such as `SelectKBest` receive
+the training targets before the final estimator is fitted.
+
+```rust
+use datarust::linear_model::LogisticRegression;
+use datarust::pipeline::Pipeline;
+use datarust::selection::{ScoreFunc, SelectKBest};
+use datarust::traits::Predictor;
+use datarust::transformer_kind::TransformerKind;
+
+let mut model = Pipeline::new()
+    .push("select", TransformerKind::SelectKBest(SelectKBest::new(ScoreFunc::FClassif, 5)?))
+    .with_estimator(LogisticRegression::new());
+model.fit(&x, &y)?;
+let labels = model.predict(&x)?;
+```
+
 ### Runtime step inspection
 
 ```rust
@@ -74,6 +94,7 @@ ct.fit_transform_with_target(&table, &y)?;
 | Need | Use |
 |---|---|
 | Sequential transforms on one matrix | `Pipeline` |
+| Preprocessing + final supervised estimator | `Pipeline::with_estimator` / `SupervisedPipeline` |
 | Different columns → different transformers | `ColumnTransformer` |
 | Mixed numeric + categorical in one call | `ColumnTransformer` + `Table` |
 | Serializable fitted pipeline | `Pipeline` or `ColumnTransformer` + `serde` |

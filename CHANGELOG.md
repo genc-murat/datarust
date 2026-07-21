@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-21
+
+The estimator-contract release. This version makes the first supervised model
+and pipeline APIs behave like their scikit-learn counterparts rather than
+treating a classifier as a regressor.
+
+### Added
+- **`Estimator`, `Predictor`, `Classifier`, and `PredictProba` traits** —
+  `Predictor` unifies supervised `fit(X, y)` / `predict(X)` flows;
+  `Classifier` represents hard-label predictors; `PredictProba` returns an
+  `(n_samples, n_classes)` probability matrix. `Regressor` remains the
+  regression semantic marker and default-R² scorer.
+- **`SupervisedPipeline<E>`** — a generic, serde-serializable pipeline with
+  zero or more `TransformerKind` preprocessing steps and a final
+  `E: Predictor` estimator. Construct it with `Pipeline::with_estimator` or
+  `SupervisedPipeline::new`.
+- **Target-aware transformer fitting** — `Transformer::fit_with_target` has a
+  safe unsupervised default. `SelectKBest` now consumes numeric labels through
+  this path, so it can run within supervised pipelines without leaking fitted
+  preprocessing across a caller-managed training split.
+
+### Changed
+- **BREAKING: `LogisticRegression` is a `Classifier`, not a `Regressor`.**
+  `predict` now returns hard `0.0` / `1.0` labels. `predict_proba` now returns
+  a two-column `Matrix` in `[P(class=0), P(class=1)]` order;
+  `predict_positive_proba` provides the former one-vector positive-class view.
+  `predict_class` remains as a compatibility alias.
+- **BREAKING: import `Predictor` for `fit`, `predict`, `fit_predict`, and
+  `is_fitted`.** `Regressor` and `Classifier` express model semantics and
+  scoring; `Predictor` owns the shared fitting API.
+- **BREAKING: custom trait implementors need the base contract.** Types that
+  implement `Transformer`, `CategoricalTransformer`, `TargetTransformer`, or
+  `LabelTransformer` must also implement `Estimator`. Custom regressors must
+  implement `Estimator` and `Predictor` before implementing `Regressor`.
+- `cross_val_score` now accepts any `Predictor + Clone`, so classifiers are
+  evaluated with class predictions rather than probability values.
+
 ## [0.4.1] - 2026-07-17
 
 A small additive release. The `stats` module now has single-slice (1-D)

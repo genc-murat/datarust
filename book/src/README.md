@@ -63,7 +63,8 @@ let standardized = scaler.fit_transform(&x)?;
 sklearn's single duck-typed `fit`/`transform` API becomes **four separate traits** enforced by the type system:
 
 - [`Transformer`](https://docs.rs/datarust/latest/datarust/trait.Transformer.html) — numeric `Matrix → Matrix`
-- [`Regressor`](https://docs.rs/datarust/latest/datarust/trait.Regressor.html) — supervised `fit(X, y)` + `predict(X)`
+- [`Predictor`](https://docs.rs/datarust/latest/datarust/trait.Predictor.html) — supervised `fit(X, y)` + `predict(X)`
+- [`Regressor`](https://docs.rs/datarust/latest/datarust/trait.Regressor.html) / [`Classifier`](https://docs.rs/datarust/latest/datarust/trait.Classifier.html) — regression or classification semantics
 - [`CategoricalTransformer`](https://docs.rs/datarust/latest/datarust/trait.CategoricalTransformer.html) — `StrMatrix → Matrix`
 - [`LabelTransformer`](https://docs.rs/datarust/latest/datarust/trait.LabelTransformer.html) — 1-D `&[String] ↔ Vec<usize>`
 

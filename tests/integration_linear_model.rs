@@ -4,7 +4,7 @@ use datarust::linear_model::{LinearRegression, LinearSolver};
 use datarust::metrics::regression::{
     explained_variance_score, max_error, mean_absolute_error, mean_squared_error, r2_score,
 };
-use datarust::traits::Regressor;
+use datarust::traits::Predictor;
 use datarust::Matrix;
 
 fn approx(a: f64, b: f64, tol: f64) -> bool {

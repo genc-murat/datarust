@@ -33,6 +33,9 @@ docs.rs builds the rustdoc documentation with **all features enabled** (`serde`,
 |---|---|
 | `Transformer` | [datarust::Transformer](https://docs.rs/datarust/latest/datarust/trait.Transformer.html) |
 | `Regressor` | [datarust::Regressor](https://docs.rs/datarust/latest/datarust/trait.Regressor.html) |
+| `Predictor` | [datarust::Predictor](https://docs.rs/datarust/latest/datarust/trait.Predictor.html) |
+| `Classifier` | [datarust::Classifier](https://docs.rs/datarust/latest/datarust/trait.Classifier.html) |
+| `PredictProba` | [datarust::PredictProba](https://docs.rs/datarust/latest/datarust/trait.PredictProba.html) |
 | `CategoricalTransformer` | [datarust::CategoricalTransformer](https://docs.rs/datarust/latest/datarust/trait.CategoricalTransformer.html) |
 | `FeatureNames` | [datarust::FeatureNames](https://docs.rs/datarust/latest/datarust/trait.FeatureNames.html) |
 

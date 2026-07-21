@@ -55,7 +55,7 @@ for (train_idx, test_idx) in cv.split(&y)? {  // note: takes y, not n_samples
 
 ## cross_val_score
 
-Evaluate any `Regressor + Clone` estimator by K-fold cross-validation with a user-supplied scorer.
+Evaluate any `Predictor + Clone` estimator by K-fold cross-validation with a user-supplied scorer.
 
 ```rust
 use datarust::model_selection::{cross_val_score, KFold};

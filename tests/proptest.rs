@@ -101,7 +101,7 @@ proptest! {
     #[test]
     fn linear_regression_recovers_linear_signal(data in arb_matrix()) {
         use datarust::linear_model::LinearRegression;
-        use datarust::traits::Regressor;
+        use datarust::traits::Predictor;
         use datarust::Matrix;
         let x = Matrix::new(data.clone()).unwrap();
         // Build a deterministic y from the first column so the signal is truly
@@ -128,7 +128,7 @@ proptest! {
     #[test]
     fn linear_regression_score_in_unit_interval_on_data_with_signal(data in arb_matrix()) {
         use datarust::linear_model::LinearRegression;
-        use datarust::traits::Regressor;
+        use datarust::traits::Predictor;
         use datarust::Matrix;
         let x = Matrix::new(data.clone()).unwrap();
         let y: Vec<f64> = data
@@ -182,7 +182,7 @@ proptest! {
     #[test]
     fn ridge_recovers_linear_signal(data in arb_matrix()) {
         use datarust::linear_model::Ridge;
-        use datarust::traits::Regressor;
+        use datarust::traits::Predictor;
         use datarust::Matrix;
         let x = Matrix::new(data.clone()).unwrap();
         let y: Vec<f64> = data.iter().map(|r| 4.0 * r[0] - 2.0).collect();
@@ -201,7 +201,7 @@ proptest! {
     #[test]
     fn ridge_alpha_zero_matches_linear_regression(data in arb_matrix()) {
         use datarust::linear_model::{LinearRegression, Ridge};
-        use datarust::traits::Regressor;
+        use datarust::traits::Predictor;
         use datarust::Matrix;
         let x = Matrix::new(data.clone()).unwrap();
         let y: Vec<f64> = data.iter().map(|r| 3.0 * r[0] + 1.0).collect();
@@ -219,7 +219,7 @@ proptest! {
     #[test]
     fn lasso_zero_alpha_recovers_signal(data in arb_matrix()) {
         use datarust::linear_model::Lasso;
-        use datarust::traits::Regressor;
+        use datarust::traits::Predictor;
         use datarust::Matrix;
         let x = Matrix::new(data.clone()).unwrap();
         let y: Vec<f64> = data.iter().map(|r| 2.5 * r[0] + 0.5).collect();
@@ -238,7 +238,7 @@ proptest! {
     #[test]
     fn logistic_predict_proba_in_unit_interval(data in arb_matrix()) {
         use datarust::linear_model::LogisticRegression;
-        use datarust::traits::Regressor;
+        use datarust::traits::Predictor;
         use datarust::Matrix;
         let x = Matrix::new(data.clone()).unwrap();
         // Binary labels derived from the sign of the first feature.
@@ -246,7 +246,7 @@ proptest! {
         let mut model = LogisticRegression::new();
         if model.fit(&x, &y).is_ok() {
             let proba = model.predict_proba(&x).unwrap();
-            for &p in &proba {
+            for &p in proba.as_slice() {
                 prop_assert!((0.0..=1.0).contains(&p), "proba out of range: {}", p);
             }
         }

@@ -2,8 +2,9 @@
 //!
 //! Each function takes ground-truth `y_true` and predictions `y_pred` as flat
 //! `&[f64]` slices. Classification labels are represented as `0.0` / `1.0`
-//! floats, consistent with the [`Regressor`](crate::traits::Regressor) trait's
-//! `Vec<f64>` output from [`LogisticRegression`](crate::linear_model::LogisticRegression).
+//! floats, consistent with the [`Predictor`](crate::traits::Predictor) trait's
+//! hard-label `Vec<f64>` output from
+//! [`LogisticRegression`](crate::linear_model::LogisticRegression).
 
 use crate::error::{DatarustError, Result};
 

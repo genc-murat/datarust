@@ -3,7 +3,7 @@
 use crate::error::Result;
 use crate::matrix::Matrix;
 use crate::model_selection::kfold::KFold;
-use crate::traits::Regressor;
+use crate::traits::Predictor;
 
 /// Evaluate an estimator by K-fold cross-validation.
 ///
@@ -14,7 +14,7 @@ use crate::traits::Regressor;
 /// `scorer` is any closure `Fn(&[f64], &[f64]) -> Result<f64>` — typically
 /// [`r2_score`](crate::metrics::regression::r2_score) for regression or
 /// [`accuracy_score`](crate::metrics::classification::accuracy_score) for
-/// classification. The estimator must implement [`Regressor`] and [`Clone`].
+/// classification. The estimator must implement [`Predictor`] and [`Clone`].
 ///
 /// ```rust
 /// use datarust::linear_model::LinearRegression;
@@ -40,7 +40,7 @@ pub fn cross_val_score<T, F>(
     scorer: F,
 ) -> Result<Vec<f64>>
 where
-    T: Regressor + Clone,
+    T: Predictor + Clone,
     F: Fn(&[f64], &[f64]) -> Result<f64>,
 {
     let n = x.nrows();

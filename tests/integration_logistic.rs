@@ -5,7 +5,7 @@ use datarust::linear_model::LogisticRegression;
 use datarust::metrics::classification::{
     accuracy_score, confusion_matrix, f1_score, log_loss, precision_score, recall_score,
 };
-use datarust::traits::Regressor;
+use datarust::traits::{Classifier, Predictor};
 use datarust::Matrix;
 
 fn approx(a: f64, b: f64, tol: f64) -> bool {
@@ -45,11 +45,19 @@ fn score_is_one_on_separable_data() {
 }
 
 #[test]
-fn predict_returns_probabilities() {
+fn predict_returns_hard_labels() {
     let (x, y) = separable();
     let mut model = LogisticRegression::new();
     model.fit(&x, &y).unwrap();
-    let probs = model.predict(&x).unwrap();
+    assert_eq!(model.predict(&x).unwrap(), y);
+}
+
+#[test]
+fn predict_positive_proba_returns_probabilities() {
+    let (x, y) = separable();
+    let mut model = LogisticRegression::new();
+    model.fit(&x, &y).unwrap();
+    let probs = model.predict_positive_proba(&x).unwrap();
     for &p in &probs {
         assert!((0.0..=1.0).contains(&p));
     }
@@ -68,7 +76,7 @@ fn predict_class_thresholds_at_half() {
     let (x, y) = separable();
     let mut model = LogisticRegression::new();
     model.fit(&x, &y).unwrap();
-    let probs = model.predict(&x).unwrap();
+    let probs = model.predict_positive_proba(&x).unwrap();
     let classes = model.predict_class(&x).unwrap();
     for (&p, &c) in probs.iter().zip(classes.iter()) {
         let expected = if p >= 0.5 { 1.0 } else { 0.0 };
@@ -182,9 +190,9 @@ fn metrics_empty_errors() {
 }
 
 #[test]
-fn logistic_implements_regressor_trait() {
-    fn predict_via_trait<R: Regressor>(m: &R, x: &Matrix) -> usize {
-        m.predict(x).map(|v| v.len()).unwrap_or(0)
+fn logistic_implements_classifier_trait() {
+    fn predict_via_trait<C: Classifier>(m: &C, x: &Matrix) -> usize {
+        Predictor::predict(m, x).map(|v| v.len()).unwrap_or(0)
     }
     let (x, y) = separable();
     let mut model = LogisticRegression::new();

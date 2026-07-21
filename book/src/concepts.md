@@ -42,13 +42,12 @@ pub trait Transformer {
 - `fit_transform` is a convenience that calls both.
 - `inverse_transform` reverses the transformation where supported.
 
-## 3. The `Regressor` trait
+## 3. Supervised estimator traits
 
-Regression and classification estimators implement [`Regressor`](https://docs.rs/datarust/latest/datarust/trait.Regressor.html):
+Regression and classification estimators implement [`Predictor`](https://docs.rs/datarust/latest/datarust/trait.Predictor.html):
 
 ```rust
-pub trait Regressor {
-    fn name(&self) -> &'static str;
+pub trait Predictor: Estimator {
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()>;
     fn predict(&self, x: &Matrix) -> Result<Vec<f64>>;
     fn fit_predict(&mut self, x: &Matrix, y: &[f64]) -> Result<Vec<f64>>; // default
@@ -57,7 +56,8 @@ pub trait Regressor {
 ```
 
 - `LinearRegression`, `Ridge`, `Lasso` — `predict` returns continuous predictions.
-- `LogisticRegression` — `predict` returns `P(y=1|x)` probabilities; use `predict_class` for hard 0/1 labels.
+- `LogisticRegression` — implements `Classifier`; `predict` returns hard 0/1 labels.
+  Its `predict_proba` method returns two columns: `P(class=0)` and `P(class=1)`.
 
 ## 4. The categorical traits
 

@@ -4,7 +4,7 @@
 
 ```toml
 [dependencies]
-datarust = "0.3"
+datarust = "0.5"
 ```
 
 The default build has **zero external dependencies** — `cargo add datarust` pulls in nothing but the standard library.
@@ -15,7 +15,7 @@ All features are opt-in and independent. Enable the ones you need:
 
 ```toml
 [dependencies]
-datarust = { version = "0.3", features = ["serde", "rayon", "matrixmultiply"] }
+datarust = { version = "0.5", features = ["serde", "rayon", "matrixmultiply"] }
 ```
 
 ### `serde`

@@ -6,14 +6,14 @@ Get from `cargo add` to a fitted, transformed pipeline in five minutes.
 
 ```toml
 [dependencies]
-datarust = "0.3"
+datarust = "0.5"
 ```
 
 Or with the most useful feature flags:
 
 ```toml
 [dependencies]
-datarust = { version = "0.3", features = ["serde", "rayon"] }
+datarust = { version = "0.5", features = ["serde", "rayon"] }
 ```
 
 See [Installation](./installation.md) for what each feature does.
@@ -49,11 +49,11 @@ let standardized = scaler.fit_transform(&x)?;  // fit + transform in one call
 
 ## 4. Train a model
 
-Regression and classification models implement [`Regressor`](https://docs.rs/datarust/latest/datarust/trait.Regressor.html): call `fit(X, y)` then `predict(X)`.
+Regression and classification models implement [`Predictor`](https://docs.rs/datarust/latest/datarust/trait.Predictor.html): call `fit(X, y)` then `predict(X)`.
 
 ```rust
 use datarust::linear_model::LinearRegression;
-use datarust::traits::Regressor;
+use datarust::traits::Predictor;
 
 let y = vec![3.0, 5.0, 7.0, 9.0]; // y = 2x + 1 (for feature 0)
 let features = x.select_columns(&[0])?; // pick one feature

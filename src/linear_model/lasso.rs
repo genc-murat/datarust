@@ -15,13 +15,13 @@
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::Regressor;
+use crate::traits::{Estimator, Predictor, Regressor};
 
 /// Lasso regression with L1 regularization, solved via coordinate descent.
 ///
 /// ```rust
 /// use datarust::linear_model::Lasso;
-/// use datarust::traits::Regressor;
+/// use datarust::traits::Predictor;
 /// use datarust::Matrix;
 ///
 /// let x = Matrix::new(vec![
@@ -124,7 +124,7 @@ impl Lasso {
 
     /// R² of the prediction against `y`.
     pub fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
-        let pred = self.predict(x)?;
+        let pred = Predictor::predict(self, x)?;
         crate::metrics::regression::r2_score(y, &pred)
     }
 }
@@ -144,11 +144,9 @@ fn soft_threshold(x: f64, alpha: f64) -> f64 {
     }
 }
 
-impl Regressor for Lasso {
-    fn name(&self) -> &'static str {
-        "Lasso"
-    }
+impl Estimator for Lasso {}
 
+impl Predictor for Lasso {
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         let n = x.nrows();
         let p = x.ncols();
@@ -283,6 +281,12 @@ impl Regressor for Lasso {
 
     fn is_fitted(&self) -> bool {
         self.fitted
+    }
+}
+
+impl Regressor for Lasso {
+    fn name(&self) -> &'static str {
+        "Lasso"
     }
 }
 

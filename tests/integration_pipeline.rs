@@ -5,8 +5,8 @@ use datarust::imputer::{ImputeStrategy, SimpleImputer};
 use datarust::pipeline::Pipeline;
 use datarust::scaler::{MinMaxScaler, Norm, Normalizer, RobustScaler, StandardScaler};
 use datarust::transformer_kind::TransformerKind;
-use datarust::CategoricalTransformerKind;
 use datarust::Transformer;
+use datarust::{CategoricalTransformerKind, PredictProba, Predictor};
 
 fn approx(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() < tol
@@ -144,4 +144,61 @@ fn onehot_then_scaler_via_column_transformer() {
     let out = ct.fit_transform(&table).unwrap();
     assert_eq!(out.ncols(), 4);
     assert_eq!(out.nrows(), 3);
+}
+
+#[test]
+fn supervised_pipeline_fits_selector_and_final_classifier() {
+    use datarust::linear_model::{LogisticRegression, LogisticSolver};
+    use datarust::selection::{ScoreFunc, SelectKBest};
+
+    // The first feature alone separates the classes. The selector must see y
+    // while the final estimator must only see the selected feature.
+    let x = datarust::Matrix::new(vec![
+        vec![-4.0, 0.1],
+        vec![-3.0, 0.7],
+        vec![-2.0, -0.2],
+        vec![-1.0, 0.4],
+        vec![1.0, -0.5],
+        vec![2.0, 0.3],
+        vec![3.0, -0.1],
+        vec![4.0, 0.6],
+    ])
+    .unwrap();
+    let y = vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+
+    let selector = SelectKBest::new(ScoreFunc::FClassif, 1).unwrap();
+    let mut pipe = Pipeline::new()
+        .push("select", TransformerKind::SelectKBest(selector))
+        .with_estimator(LogisticRegression::new().with_solver(LogisticSolver::Svd));
+
+    assert!(!pipe.is_fitted());
+    pipe.fit(&x, &y).unwrap();
+    assert!(pipe.is_fitted());
+    assert_eq!(pipe.predict(&x).unwrap(), y);
+
+    let probabilities = pipe.predict_proba(&x).unwrap();
+    assert_eq!(
+        (probabilities.nrows(), probabilities.ncols()),
+        (x.nrows(), 2)
+    );
+    for i in 0..x.nrows() {
+        assert!(approx(
+            probabilities.get(i, 0) + probabilities.get(i, 1),
+            1.0,
+            1e-12
+        ));
+    }
+}
+
+#[test]
+fn target_aware_pipeline_rejects_mismatched_targets() {
+    use datarust::selection::{ScoreFunc, SelectKBest};
+
+    let x = datarust::Matrix::new(vec![vec![0.0], vec![1.0]]).unwrap();
+    let selector = SelectKBest::new(ScoreFunc::FClassif, 1).unwrap();
+    let mut pipe = Pipeline::new().push("select", TransformerKind::SelectKBest(selector));
+    assert!(matches!(
+        pipe.fit_transform_with_target(&x, &[0.0]),
+        Err(datarust::DatarustError::ShapeMismatch { .. })
+    ));
 }

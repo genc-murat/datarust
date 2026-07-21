@@ -3,8 +3,10 @@
 //! Provides ordinary least squares ([`LinearRegression`]), L2-regularized
 //! ([`Ridge`]), L1-regularized ([`Lasso`]) linear models, and binary
 //! [`LogisticRegression`] for classification. All share the
-//! [`Regressor`](crate::traits::Regressor) trait and the [`crate::linalg`]
-//! solver foundation.
+//! [`Predictor`](crate::traits::Predictor) trait and the [`crate::linalg`]
+//! solver foundation; regression models additionally implement
+//! [`Regressor`](crate::traits::Regressor), while logistic regression implements
+//! [`Classifier`](crate::traits::Classifier).
 
 /// L1-regularized regression (coordinate descent).
 pub mod lasso;
