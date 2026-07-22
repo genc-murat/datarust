@@ -27,5 +27,6 @@
 - [Feature Comparison](./comparison.md)
 - [Examples](./examples.md)
 - [Architecture](./architecture.md)
+- [Roadmap](./roadmap.md)
 - [Changelog](./changelog.md)
 - [API Docs (docs.rs)](./api.md)

@@ -1088,7 +1088,7 @@ or PR if a cell is stale.
   (18 transformers/encoders/imputers/selectors vs ≤5 elsewhere), a type-safe
   `Pipeline` + `ColumnTransformer`, and a **zero-dependency default build** that
   compiles to WASM/embedded with no BLAS or LAPACK. Trade-off: only four linear
-  models — no SVM, trees, or clustering yet.
+  models — no SVM, trees, or clustering yet (see the [Roadmap](#roadmap)).
 - **smartcore** — the broadest **single-crate algorithm zoo** (SVM, RandomForest,
   DecisionTree, KMeans, DBSCAN, KNN, NaiveBayes…) with model selection and
   metrics. Trade-off: thin preprocessing (StandardScaler + OneHotEncoder only)
@@ -1585,3 +1585,39 @@ let names = pipe.feature_names_out(Some(input_names));
 // e.g. ["pca0", "pca1", "pca2"] — depends on variance threshold + PCA
 println!("output columns: {:?}", names);
 ```
+
+## Roadmap
+
+datarust is working toward a complete scikit-learn-style ML toolkit for Rust,
+with every algorithm implemented in pure Rust and zero external dependencies
+by default. The path from the current **preprocessing-first** v0.5.0 to a
+**v1.0 stability** release is tracked in [`ROADMAP.md`](ROADMAP.md) and the
+[book's roadmap page](https://genc-murat.github.io/datarust/roadmap.html).
+
+**Guiding principles** (non-negotiable):
+
+- Zero dependencies by default — every algorithm is pure Rust, no BLAS/LAPACK.
+- CPU-first — GPU and deep learning are served by [candle](https://crates.io/crates/candle-core)
+  and [burn](https://crates.io/crates/burn); datarust owns classical ML on CPU.
+- scikit-learn API parity (`fit` / `transform` / `predict`) with type-safe
+  Rust improvements where they help.
+- No panics — public APIs return `Result`; `missing_docs` is enforced in CI.
+
+**Release track** (summary — see [`ROADMAP.md`](ROADMAP.md) for full detail
+and checkboxes):
+
+| Version | Theme | Headline deliverables |
+|---|---|---|
+| **v0.6** | Core ML foundations | `Clusterer` trait, multiclass `LogisticRegression`, ROC-AUC / PR-AUC, `KMeans`, multiclass metrics |
+| **v0.7** | Tree-based learning | `DecisionTree`, `RandomForest`, `ExtraTrees`, `Bagging`, feature importances |
+| **v0.8** | Model selection & text | `GridSearchCV`, `CountVectorizer` / `TfidfVectorizer`, sparse-matrix arithmetic, `KNeighbors`, Naive Bayes |
+| **v0.9** | Depth & breadth | `GradientBoosting` / `AdaBoost`, `SVC` (SMO), `DBSCAN`, `ElasticNet`, `NMF`, embedded `datasets`, CSV reader |
+| **v1.0** | Stability | API freeze, legacy-API cleanup, `ARCHITECTURE.md` refresh, full public-API audit, SemVer commitment |
+
+**Explicitly out of scope:** GPU compute, distributed training, deep learning
+(CNN/RNN/Transformer), pickle/joblib compatibility, SHAP/LIME. See
+[`ROADMAP.md`](ROADMAP.md#explicitly-out-of-scope) for the rationale.
+
+**Under consideration** (post-1.0): `f32` generics, `TSNE`/manifold learning,
+`HistGradientBoosting`, ONNX export/import, NumPy `.npy` interop, and a
+minimal `MLPClassifier`.
