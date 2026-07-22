@@ -46,6 +46,10 @@ Enables parallel column/row operations for large datasets. Speeds up scaler tran
 
 Enables a tuned pure-Rust GEMM (via the `matrixmultiply` crate, **no system BLAS**) for `Matrix::matmul` and centered-covariance computation. Significantly speeds up PCA, TruncatedSVD, and the linear models on large dense inputs. The default build remains zero-external-dependency; opt in with this feature.
 
+### `datasets`
+
+Embeds four classic toy datasets (Iris, Breast Cancer, Wine, Diabetes) as `const` arrays for examples, tests, and onboarding. No file I/O, no network access — the data is compiled into the binary. See the [Datasets guide](./guide/datasets.md).
+
 ## Rust version
 
 datarust targets **Rust 1.70+** (the `rust-version` field in `Cargo.toml`). It is tested against stable, beta, and the MSRV in CI.

@@ -6,7 +6,7 @@ The complete API reference for datarust is hosted on **[docs.rs](https://docs.rs
 
 ## What's there
 
-docs.rs builds the rustdoc documentation with **all features enabled** (`serde`, `rayon`, `matrixmultiply`), so you see the complete API surface including:
+docs.rs builds the rustdoc documentation with **all features enabled** (`serde`, `rayon`, `matrixmultiply`, `datasets`), so you see the complete API surface including:
 
 - Every `pub struct`, `pub enum`, `pub trait`, and `pub fn` with doc comments.
 - Type signatures, trait implementations, and method docs.
@@ -25,6 +25,8 @@ docs.rs builds the rustdoc documentation with **all features enabled** (`serde`,
 | `metrics` | [datarust::metrics](https://docs.rs/datarust/latest/datarust/metrics/index.html) |
 | `model_selection` | [datarust::model_selection](https://docs.rs/datarust/latest/datarust/model_selection/index.html) |
 | `compose` | [datarust::compose](https://docs.rs/datarust/latest/datarust/compose/index.html) |
+| `cluster` | [datarust::cluster](https://docs.rs/datarust/latest/datarust/cluster/index.html) |
+| `datasets` | [datarust::datasets](https://docs.rs/datarust/latest/datarust/datasets/index.html) |
 | `traits` | [datarust::traits](https://docs.rs/datarust/latest/datarust/traits/index.html) |
 
 ## Direct links to key traits
@@ -36,6 +38,8 @@ docs.rs builds the rustdoc documentation with **all features enabled** (`serde`,
 | `Predictor` | [datarust::Predictor](https://docs.rs/datarust/latest/datarust/trait.Predictor.html) |
 | `Classifier` | [datarust::Classifier](https://docs.rs/datarust/latest/datarust/trait.Classifier.html) |
 | `PredictProba` | [datarust::PredictProba](https://docs.rs/datarust/latest/datarust/trait.PredictProba.html) |
+| `Clusterer` | [datarust::Clusterer](https://docs.rs/datarust/latest/datarust/trait.Clusterer.html) |
+| `Params` | [datarust::Params](https://docs.rs/datarust/latest/datarust/trait.Params.html) |
 | `CategoricalTransformer` | [datarust::CategoricalTransformer](https://docs.rs/datarust/latest/datarust/trait.CategoricalTransformer.html) |
 | `FeatureNames` | [datarust::FeatureNames](https://docs.rs/datarust/latest/datarust/trait.FeatureNames.html) |
 

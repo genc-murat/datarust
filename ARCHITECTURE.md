@@ -20,6 +20,12 @@ src/
 ├── function_transformer.rs # Closure-based Transformer wrapper
 ├── polynomial.rs           # PolynomialFeatures
 ├── serialize.rs            # JSON save/load (serde feature gate)
+├── datasets/               # Embedded toy datasets (datasets feature gate)
+│   ├── mod.rs              #   Dataset struct + loaders
+│   ├── iris.rs             #   Iris (150×4, 3 classes)
+│   ├── breast_cancer.rs    #   Breast Cancer (569×30, binary)
+│   ├── wine.rs             #   Wine (178×13, 3 classes)
+│   └── diabetes.rs         #   Diabetes (442×10, regression)
 │
 ├── scaler/                 # Numeric scalers (Standard, MinMax, Robust, …)
 │   ├── mod.rs

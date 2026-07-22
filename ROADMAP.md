@@ -129,9 +129,9 @@ the data-loading ergonomics that make the library pleasant to adopt.
 - [ ] More linear models: `ElasticNet`, `SGDClassifier`/`Regressor`,
       `RidgeClassifier`.
 - [ ] More decomposition: `NMF`, `FactorAnalysis`.
-- [ ] `src/datasets/` module — small embedded datasets (Iris, Digits, a
-      regression toy) for examples, tests, and onboarding, in the spirit of
-      `sklearn.datasets`.
+- [x] `src/datasets/` module — Iris, Breast Cancer, Wine, Diabetes datasets
+      delivered early (behind the `datasets` feature flag). Loaded from `const`
+      arrays with no I/O.
 - [ ] CSV reader behind an optional `csv` feature flag (pure-Rust parser, or
       a thin wrapper over the `csv` crate gated behind the feature).
 

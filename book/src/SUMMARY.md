@@ -21,6 +21,7 @@
 - [Metrics](./guide/metrics.md)
 - [Model Selection](./guide/model-selection.md)
 - [Compose: Pipeline & ColumnTransformer](./guide/compose.md)
+- [Datasets](./guide/datasets.md)
 
 # Reference
 

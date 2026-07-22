@@ -28,6 +28,7 @@ src/
 ├── function_transformer.rs
 ├── polynomial.rs          # PolynomialFeatures
 ├── serialize.rs           # JSON save/load (serde feature)
+├── datasets/              # Iris, Breast Cancer, Wine, Diabetes (datasets feature)
 ├── linalg/
 │   └── cholesky.rs        # Cholesky decomposition + SPD solver
 ├── scaler/                # 9 transformers (standard, minmax, robust, ...)

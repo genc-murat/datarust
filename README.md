@@ -37,6 +37,7 @@ let normalized = scaler.fit_transform(&data)?;
 | **Serialization** | JSON save/load via optional `serde` feature |
 | **Parallelism** | Rayon-backed column operations via optional `rayon` feature |
 | **Sparse** | CSR `SparseMatrix` type for memory-efficient one-hot output |
+| **Datasets** | Iris, Breast Cancer, Wine, Diabetes (embedded `const` arrays, `datasets` feature) |
 
 **Default build has zero external dependencies.** All linear algebra (eigenvalue decomposition, covariance) is implemented in pure Rust using the Jacobi algorithm.
 
@@ -82,6 +83,7 @@ datarust = { version = "0.5", features = ["serde", "rayon"] }
 - **`serde`** — enables JSON serialization/deserialization of fitted transformers via `datarust::serialize::{save_json, load_json, to_json, from_json}`.
 - **`rayon`** — enables parallel column statistics and transforms for large datasets.
 - **`matrixmultiply`** — enables a tuned pure-Rust GEMM (no system BLAS) for matrix products and covariance computation, speeding up PCA and TruncatedSVD on large dense inputs. The default build remains zero-external-dependency.
+- **`datasets`** — embeds classic toy datasets (Iris, Breast Cancer, Wine, Diabetes) as `const` arrays for examples, tests, and onboarding. No file I/O or network access.
 
 ## Core Concepts
 
@@ -797,6 +799,31 @@ let scores = cross_val_score(&LinearRegression::new(), &x, &y, &cv, r2_score)?;
 
 For classification, pass `accuracy_score` from `metrics::classification` instead.
 
+### Datasets
+
+Classic toy datasets compiled as `const` arrays — no file I/O, no network. Enable with the `datasets` feature.
+
+```rust
+use datarust::datasets;
+
+// Iris: 150 samples, 4 features, 3 classes
+let iris = datasets::iris::load();
+let x = iris.features();           // Matrix 150×4
+let y = iris.targets();            // &[f64], values {0, 1, 2}
+let names = iris.feature_names();  // &["sepal_length", ...]
+
+// Breast Cancer: 569 samples, 30 features, binary
+let cancer = datasets::breast_cancer::load();
+
+// Wine: 178 samples, 13 features, 3 classes
+let wine = datasets::wine::load();
+
+// Diabetes: 442 samples, 10 features, regression target
+let diabetes = datasets::diabetes::load();
+```
+
+Each loader returns a `Dataset` struct with `features()` → `Matrix`, `targets()` → `&[f64]`, `feature_names()` → `&[&str]`, `target_names()` → `&[&str]`.
+
 ### Pipeline
 
 Chain multiple transformers sequentially. Fits and transforms each step on the output of the previous one. Serializable under the `serde` feature.
@@ -1115,6 +1142,7 @@ When enabled, the following use parallel iterators:
 | Multiclass Confusion Matrix | ✓ (n×n Vec, macro-averaged P/R/F1) | ✓ |
 | Silhouette Score | ✓ (cluster::metrics) | ✓ |
 | Params Trait (hyperparameter introspection) | ✓ (get_params / set_params) | — |
+| Embedded Toy Datasets | ✓ (Iris, Cancer, Wine, Diabetes) | ✓ |
 | JSON Serialization | ✓ (serde feature) | — (joblib) |
 | Sparse Output | ✓ (CSR via SparseMatrix) | ✓ |
 | Parallelism | ✓ (rayon feature) | — (joblib) |

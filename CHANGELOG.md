@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`datasets` module** (`src/datasets/`, gated on the `datasets` feature):
+  four classic sklearn datasets compiled as `const` arrays — Iris (150×4, 3
+  classes), Breast Cancer (569×30, 2 classes), Wine (178×13, 3 classes), and
+  Diabetes (442×10, regression). No file I/O, no network access — the data is
+  embedded in the binary. Each loader returns a `Dataset` struct with
+  `features()`, `targets()`, `feature_names()`, and `target_names()`.
+
 ## [0.6.0] - 2026-07-22
 
 The "Core ML foundations" release. This version closes the most painful gaps

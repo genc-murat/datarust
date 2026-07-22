@@ -59,3 +59,23 @@ The deterministic benchmark harness that produces the numbers on the [Performanc
 ```sh
 cargo run --release --features matrixmultiply --example bench_compare_rust 15
 ```
+
+## Using embedded datasets
+
+The `datasets` feature provides classic toy datasets (Iris, Breast Cancer,
+Wine, Diabetes) as `const` arrays — no file I/O needed. See the
+[Datasets guide](./guide/datasets.md) for the full API.
+
+```rust
+use datarust::datasets::iris;
+use datarust::linear_model::LogisticRegression;
+use datarust::traits::Predictor;
+
+let data = iris::load();
+let x = data.features();
+let y = data.targets().to_vec();
+
+let mut model = LogisticRegression::new().with_max_iter(200);
+model.fit(&x, &y)?;
+println!("Iris accuracy: {:.1}%", model.score(&x, &y)? * 100.0);
+```
