@@ -55,7 +55,9 @@ A side-by-side view of what's implemented. `✓` = supported, `—` = no equival
 | KFold / StratifiedKFold | ✓ | ✓ |
 | cross_val_score | ✓ | ✓ |
 | Regression metrics (MSE, R², ...) | ✓ (5 metrics) | ✓ |
-| Classification metrics (accuracy, F1, ...) | ✓ (6 metrics) | ✓ |
+| Classification metrics (accuracy, F1, ROC-AUC, ...) | ✓ (10 metrics) | ✓ |
+| Clustering metrics (silhouette) | ✓ | ✓ |
+| Hyperparameter introspection (Params trait) | ✓ | — |
 
 ## Composition & Infrastructure
 
@@ -106,7 +108,7 @@ every design decision:
   Cholesky, coordinate descent), so the default build has *no* external C
   libraries — it links cleanly into WASM, embedded targets, and CLI tools. The
   trade-off is algorithm breadth: only the four linear models (Linear / Ridge /
-  Lasso / Logistic regression) are implemented so far.
+  Lasso / Logistic regression) and `KMeans` clustering are implemented so far.
 - **smartcore** optimizes for **single-crate algorithm breadth.** One dependency
   gives you SVM, RandomForest, DecisionTree, KMeans, DBSCAN, KNN, NaiveBayes,
   and more, plus model selection and metrics. The trade-off is preprocessing:
@@ -162,7 +164,8 @@ time of writing — please open an issue or PR if a cell goes stale.
 | TruncatedSVD | ✓ | ✗ | ✓ |
 | SVM | ✗ | ✓ | ✓ |
 | RandomForest / DecisionTree | ✗ | ✓ | ✓ |
-| KMeans / DBSCAN | ✗ | ✓ | ✓ |
+| KMeans | ✓ (k-means++ init) | ✓ | ✓ |
+| DBSCAN | ✗ | ✓ | ✓ |
 
 ### Infrastructure
 
@@ -173,7 +176,7 @@ time of writing — please open an issue or PR if a cell goes stale.
 | train_test_split | ✓ | ✓ | ? |
 | KFold / StratifiedKFold | ✓ | ✓ | ? |
 | cross_val_score | ✓ | ✓ | ? |
-| Regression + Classification metrics | ✓ | ✓ | ✓ |
+| Regression + Classification metrics | ✓ (15 metrics + silhouette) | ✓ | ✓ |
 | JSON model serialization | ✓ (serde) | ? | ? |
 | Zero external deps by default | ✓ | ✗ (ndarray + BLAS) | ✗ (ndarray + BLAS) |
 | WASM-friendly (no native BLAS) | ✓ | ? | ? |
@@ -185,7 +188,7 @@ time of writing — please open an issue or PR if a cell goes stale.
 |---|---|
 | Rich preprocessing (scalers, encoders, imputers, selection) | **datarust** |
 | WASM / embedded / single-binary deployment, no BLAS | **datarust** |
-| SVM, trees, clustering, or the widest single-crate model zoo | **smartcore** |
+| SVM, trees, DBSCAN, or the widest single-crate model zoo | **smartcore** |
 | Modular compile-what-you-use algorithms, or text vectorizers | **linfa** |
 | Deep learning (transformers, CNNs, autograd) | candle / burn / tch-rs |
 

@@ -1,6 +1,6 @@
 # Core Concepts
 
-Understanding five concepts unlocks the entire crate.
+Understanding seven concepts unlocks the entire crate.
 
 ## 1. `Matrix` — the data container
 
@@ -59,7 +59,43 @@ pub trait Predictor: Estimator {
 - `LogisticRegression` — implements `Classifier`; `predict` returns hard 0/1 labels.
   Its `predict_proba` method returns two columns: `P(class=0)` and `P(class=1)`.
 
-## 4. The categorical traits
+## 4. The `Clusterer` trait (unsupervised)
+
+Clustering estimators implement [`Clusterer`](https://docs.rs/datarust/latest/datarust/trait.Clusterer.html) — the unsupervised counterpart to `Predictor`. `fit` takes only `X` (no target `y`), and `predict` returns cluster indices as `Vec<usize>` rather than regression targets or class labels:
+
+```rust
+pub trait Clusterer: Estimator {
+    fn fit(&mut self, x: &Matrix) -> Result<()>;
+    fn predict(&self, x: &Matrix) -> Result<Vec<usize>>;
+    fn fit_predict(&mut self, x: &Matrix) -> Result<Vec<usize>>; // default
+    fn fit_transform(&mut self, x: &Matrix) -> Result<Matrix>;   // default: one-hot labels
+    fn n_clusters(&self) -> usize;
+    fn is_fitted(&self) -> bool;
+}
+```
+
+- `KMeans` — `fit_predict` returns one cluster index per row; `cluster_centers()`
+  exposes the learned centroids and `inertia()` the minimized within-cluster
+  sum of squares.
+
+## 5. The `Params` trait (hyperparameter introspection)
+
+Estimators whose hyperparameters should be searchable implement the opt-in
+[`Params`](https://docs.rs/datarust/latest/datarust/trait.Params.html) trait:
+
+```rust
+pub trait Params {
+    fn get_params(&self) -> Vec<(&'static str, ParamValue)>;
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()>;
+}
+```
+
+`KMeans` (`n_clusters`, `max_iter`, `tol`, `n_init`) and `LogisticRegression`
+(`max_iter`, `tol`, `fit_intercept`) implement it. Not every estimator needs
+`Params` — only those whose hyperparameters should be tuned by an automated
+search (the foundation for future `GridSearchCV`).
+
+## 6. The categorical traits
 
 Categorical data is kept separate at the type level:
 
@@ -69,7 +105,7 @@ Categorical data is kept separate at the type level:
 
 This separation means the **compiler** prevents you from accidentally passing strings to a numeric scaler.
 
-## 5. Error handling
+## 7. Error handling
 
 Every fallible public method returns `Result<T, DatarustError>`. No hidden panics on bad input. The error variants are ML-domain-specific:
 

@@ -9,7 +9,8 @@ src/
 ├── lib.rs                  # Crate root: re-exports, module declarations
 ├── error.rs                # DatarustError enum + Result alias
 ├── traits.rs               # Estimator, Predictor, Regressor, Classifier,
-│                           #   Transformer, FeatureNames, categorical traits
+│                           #   Clusterer, Transformer, FeatureNames,
+│                           #   categorical traits
 ├── matrix.rs               # Matrix (f64), StrMatrix (String), SparseMatrix (CSR)
 ├── stats.rs                # Column-wise statistics (mean, var, quantile, covariance…)
 ├── pipeline.rs             # Sequential and supervised pipelines
@@ -56,6 +57,11 @@ src/
 │   ├── truncated_svd.rs
 │   └── jacobi.rs           # Jacobi eigenvalue decomposition (internal)
 │
+├── cluster/                # Clustering estimators + metrics
+│   ├── mod.rs
+│   ├── kmeans.rs           # KMeans (Lloyd's algorithm, k-means++)
+│   └── metrics.rs          # silhouette_score
+│
 └── compose/                # Composition utilities
     ├── mod.rs
     ├── column_transformer.rs  # ColumnTransformer + Table
@@ -79,6 +85,22 @@ implement `Regressor`; classifiers implement `Classifier` and may implement
 `PredictProba` for `(n_samples, n_classes)` probability matrices. A
 `SupervisedPipeline<E>` fits transformer steps and a final `E: Predictor`
 together, passing targets to supervised selectors before fitting the estimator.
+
+### `Clusterer` (unsupervised clustering)
+```
+fn fit(&mut self, x: &Matrix) -> Result<()>
+fn predict(&self, x: &Matrix) -> Result<Vec<usize>>      // cluster indices
+fn fit_predict(&mut self, x: &Matrix) -> Result<Vec<usize>>  // default: fit + predict
+fn fit_transform(&mut self, x: &Matrix) -> Result<Matrix>    // default: one-hot labels
+fn n_clusters(&self) -> usize
+fn is_fitted(&self) -> bool
+```
+
+The unsupervised counterpart to `Predictor`. `fit` takes only `X` (no target
+`y`), and `predict` returns cluster indices as `Vec<usize>` rather than the
+regression targets / class labels returned by supervised predictors. The
+default `fit_transform` emits a one-hot encoding of the cluster assignments.
+Implemented by: KMeans.
 
 ### `Transformer` (numeric → numeric)
 ```
@@ -130,6 +152,19 @@ fn feature_names_out(&self, input_features: Option<&[String]>) -> Vec<String>
 ```
 
 Implemented by every transformer that produces named output columns.
+
+### `Params` (hyperparameter introspection)
+```
+fn get_params(&self) -> Vec<(&'static str, ParamValue)>
+fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()>
+```
+
+An opt-in trait for estimators whose hyperparameters should be searchable (the
+foundation for future `GridSearchCV`). `ParamValue` is a typed enum (`Float`,
+`Int`, `Bool`). Not every estimator needs `Params` — only those with tunable
+hyperparameters.
+
+Implemented by: KMeans, LogisticRegression.
 
 ## Type Erasure
 

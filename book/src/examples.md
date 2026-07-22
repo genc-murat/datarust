@@ -44,6 +44,12 @@ Compares `Ridge` (L2) and `Lasso` (L1) across multiple `alpha` values on an 8-fe
 
 Production-style model persistence. Trains a `SupervisedPipeline<Ridge>` (StandardScaler → PCA → Ridge), writes it to a JSON file with `save_json`, reloads it with `load_json`, and confirms the restored model is still `is_fitted()` and produces bit-identical predictions **without refitting**. Requires the `serde` feature.
 
+## KMeans clustering
+
+`cargo run --example kmeans_clustering`
+
+Unsupervised clustering on synthetic 2-D point data. Generates three well-separated blobs, fits a `KMeans` with k-means++ initialization, inspects the learned centroids against the true blob centers, predicts cluster assignments for new points, compares k-means++ vs random initialization by inertia, and (with `--features serde`) round-trips the fitted model through JSON. Demonstrates the `Clusterer` trait.
+
 ## Benchmark comparison
 
 `cargo run --release --example bench_compare_rust`

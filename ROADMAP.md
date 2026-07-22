@@ -1,14 +1,17 @@
 # Roadmap
 
-This document tracks the path from the current **preprocessing-first** library
-(v0.5.0) toward a **complete scikit-learn-style ML toolkit** for Rust (v1.0).
-It is a living document — priorities may shift, but the principles and the
-destination stay fixed.
+This document tracks the path from the current release (v0.6.0) toward a
+**complete scikit-learn-style ML toolkit** for Rust (v1.0). It is a living
+document — priorities may shift, but the principles and the destination stay
+fixed.
 
-> **Where we are today (0.5.0):** the deepest preprocessing coverage in the Rust
-> ecosystem (18 transformers/encoders/imputers/selectors), four linear models,
-> `Pipeline` + `ColumnTransformer`, cross-validation, and metrics — all with
-> zero external dependencies by default.
+> **Where we are today (v0.6.0):** the deepest preprocessing coverage in the
+> Rust ecosystem (18 transformers/encoders/imputers/selectors), four linear
+> models with binary + multiclass (softmax) support, `KMeans` clustering, 15
+> metrics (including ROC-AUC, PR-AUC, Cohen's kappa, Matthews corrcoef,
+> silhouette), `Pipeline` + `ColumnTransformer`, cross-validation, the `Params`
+> trait for hyperparameter introspection — all with zero external dependencies
+> by default.
 
 ## Guiding principles
 
@@ -17,7 +20,7 @@ These are non-negotiable. Every item on the roadmap respects them.
 1. **Zero dependencies by default.** The default build compiles with no
    external crates beyond `std`. Every algorithm ships as pure Rust — no
    BLAS, no LAPACK, no C/C++ runtime. This keeps datarust embeddable in WASM,
-> embedded targets, CLI tools, and services without a toolchain headache.
+   embedded targets, CLI tools, and services without a toolchain headache.
 2. **CPU-first.** GPU computing, distributed training, and deep learning are
    deliberately out of scope — [candle], [burn], and [tch-rs] already serve
    that space. datarust owns the *classical ML on CPU* niche.
@@ -40,42 +43,24 @@ These are non-negotiable. Every item on the roadmap respects them.
 
 ---
 
+## Recently shipped (v0.6.0)
+
+The v0.6 "Core ML foundations" release closed the most painful gaps in the
+classifier and clustering story. All of its deliverables are now part of the
+stable API:
+
+- ✅ `Clusterer` trait + `KMeans` (Lloyd's algorithm, k-means++ initialization)
+- ✅ Multiclass `LogisticRegression` (softmax Newton-Raphson)
+- ✅ Multiclass metrics (n×n confusion matrix, macro-averaged precision/recall/F1)
+- ✅ ROC-AUC, average precision, Cohen's kappa, Matthews correlation coefficient
+- ✅ Silhouette score for clustering evaluation
+- ✅ `Params` trait for hyperparameter introspection (foundation for GridSearchCV)
+
+---
+
 ## Release track
 
 Progress on each item can be tracked by the checkboxes below.
-
-### v0.6 — Core ML foundations
-
-> *Theme: close the most painful gaps in the classifier and clustering story.*
-
-The 0.5.x series left classification binary-only and clustering absent
-entirely. v0.6 fixes both and lays the plumbing that later phases depend on.
-
-**Architectural prerequisites (do these first):**
-
-- [ ] Add a `Clusterer` trait (`fit`, `fit_predict`, `labels`, `n_clusters`)
-      to `src/traits.rs`. The existing `Predictor`/`Transformer` hierarchy
-      cannot represent clustering, whose output is cluster indices, not a
-      `Matrix` or regression target.
-- [ ] Add `get_params` / `set_params` (or an equivalent parameter-introspection
-      mechanism) to `Estimator`. This is the foundation for `GridSearchCV` in
-      v0.8 — Rust has no reflection, so a small, typed parameter map is needed.
-- [ ] Generalize classification metrics to multiclass: `confusion_matrix` is
-      currently hard-coded to 2×2; promote it to a general `n_classes ×
-      n_classes` layout and add macro/micro averaging to precision/recall/F1.
-
-**Deliverables:**
-
-- [ ] Multiclass `LogisticRegression` — softmax and one-vs-rest strategies.
-      Today the classifier only handles binary `{0, 1}` targets, which excludes
-      the majority of real classification problems.
-- [ ] ROC-AUC and average-precision (PR-AUC) metrics, building on the existing
-      `predict_proba` infrastructure.
-- [ ] Multiclass metric suite: macro/micro precision, recall, F1; general
-      confusion matrix; Cohen's kappa; Matthews correlation coefficient.
-- [ ] `KMeans` (Lloyd's algorithm) — the first concrete `Clusterer`, and the
-      proving ground for the new trait.
-- [ ] Silhouette score (clustering evaluation metric).
 
 ### v0.7 — Tree-based learning
 
@@ -111,9 +96,9 @@ This phase also broadens sparse-matrix support, which text features depend on.
 
 **Deliverables:**
 
-- [ ] `GridSearchCV` and `RandomizedSearchCV` — built on the `get_params` /
-      `set_params` plumbing from v0.6 and the existing `cross_val_score` loop.
-      Must support pipeline parameter addressing (`step__param` naming).
+- [ ] `GridSearchCV` and `RandomizedSearchCV` — built on the `Params` trait
+      (`get_params` / `set_params`) from v0.6 and the existing `cross_val_score`
+      loop. Must support pipeline parameter addressing (`step__param` naming).
 - [ ] `validation_curve` and `learning_curve` diagnostics.
 - [ ] `src/feature_extraction/text/` module:
   - [ ] `CountVectorizer` (tokenizer, n-grams, vocabulary).

@@ -17,6 +17,7 @@
 - [Imputers](./guide/imputers.md)
 - [Decomposition](./guide/decomposition.md)
 - [Linear Models](./guide/linear-models.md)
+- [Clustering](./guide/cluster.md)
 - [Metrics](./guide/metrics.md)
 - [Model Selection](./guide/model-selection.md)
 - [Compose: Pipeline & ColumnTransformer](./guide/compose.md)

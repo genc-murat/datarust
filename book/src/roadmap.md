@@ -24,43 +24,34 @@ The principles that shape every decision:
 [candle]: https://crates.io/crates/candle-core
 [burn]: https://crates.io/crates/burn
 
-## Where we are (v0.5.0)
+## Where we are (v0.6.0)
 
-The preprocessing and linear-model foundations are solid:
+The preprocessing, linear-model, and clustering foundations are solid:
 
 - **18 transformers/encoders/imputers/selectors** — the deepest preprocessing
   coverage of any Rust ML library.
-- **4 linear models** (Linear / Ridge / Lasso / Logistic regression).
-- `Pipeline`, `ColumnTransformer`, cross-validation, and a binary metric suite.
+- **4 linear models** (Linear / Ridge / Lasso / Logistic regression) with
+  binary IRLS and multiclass softmax support.
+- **KMeans clustering** (Lloyd's algorithm, k-means++ initialization) +
+  silhouette score.
+- 15 metrics: regression (MSE, MAE, R², ...), classification (accuracy,
+  precision, recall, F1, ROC-AUC, PR-AUC, kappa, Matthews, ...), clustering
+  (silhouette).
+- `Pipeline`, `ColumnTransformer`, cross-validation, `Params` trait.
 - **Zero external dependencies** by default; `serde` / `rayon` /
   `matrixmultiply` are opt-in.
 
-What is *conspicuously absent*: multiclass classification, clustering, trees
-and ensembles, hyperparameter search, text features, and SVM. The roadmap
-below addresses each, in order of impact.
+What is *conspicuously absent*: trees and ensembles, hyperparameter search,
+text features, and SVM. The roadmap below addresses each, in order of impact.
 
 ## The release track
 
-### v0.6 — Core ML foundations
-
-**Why this comes first.** The 0.5.x series left classification binary-only
-and clustering absent. Almost every real workflow needs multiclass labels and
-some form of evaluation beyond accuracy — so this phase closes the most
-painful gaps *and* lays two pieces of plumbing that later phases depend on:
-the `Clusterer` trait (without which no clustering algorithm can exist) and
-parameter introspection on `Estimator` (without which `GridSearchCV` cannot
-exist).
-
-Highlights: multiclass `LogisticRegression` (softmax + OvR), ROC-AUC and
-PR-AUC, a general multiclass confusion matrix with macro/micro averaging,
-`KMeans`, and the silhouette score.
-
 ### v0.7 — Tree-based learning
 
-**Why this comes second.** Trees and ensembles are the single most requested
-feature and the backbone of tabular ML. It cannot come before v0.6 because the
-multiclass metric work and the shared RNG infrastructure (needed for bootstrap
-sampling) are prerequisites.
+**Why this comes first.** Trees and ensembles are the single most requested
+feature and the backbone of tabular ML. A shared, seedable RNG is a
+prerequisite for bootstrap sampling in ensembles — the current private
+`xorshift64` needs to be promoted first.
 
 Highlights: `DecisionTree` (CART), `RandomForest`, `ExtraTrees`, a `Bagging`
 meta-estimator, and `feature_importances_` output. A new `src/tree/` and
@@ -68,11 +59,11 @@ meta-estimator, and `feature_importances_` output. A new `src/tree/` and
 
 ### v0.8 — Model selection & text
 
-**Why this comes third.** Once the algorithm catalog is broader, the next
+**Why this comes second.** Once the algorithm catalog is broader, the next
 bottleneck is *tuning* and *NLP*. `GridSearchCV` builds directly on the
-parameter-introspection work from v0.6. Text vectorizers depend on sparse
-matrix arithmetic, which today does not exist — so this phase widens
-`SparseMatrix` from read-only storage into a real linear-algebra type.
+`Params` trait (`get_params`/`set_params`) shipped in v0.6. Text vectorizers
+depend on sparse matrix arithmetic, which today does not exist — so this phase
+widens `SparseMatrix` from read-only storage into a real linear-algebra type.
 
 Highlights: `GridSearchCV`/`RandomizedSearchCV`, `validation_curve`/
 `learning_curve`, `CountVectorizer`/`TfidfVectorizer`, `KNeighbors`, and
@@ -82,7 +73,7 @@ stack.
 ### v0.9 — Depth & breadth
 
 **Why this is late.** These are high-value but lower-leverage than the
-foundational phases. Many users will be productive with v0.6–0.8 alone.
+foundational phases. Many users will be productive with v0.7–0.8 alone.
 
 Highlights: `GradientBoosting`/`AdaBoost`/`Voting`/`Stacking`, `LinearSVC`/`SVC`
 (SMO solver, pure Rust), `DBSCAN`/`AgglomerativeClustering`, `ElasticNet`/

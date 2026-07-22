@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-22
+
+The "Core ML foundations" release. This version closes the most painful gaps
+in the classifier and clustering story: multiclass (softmax) logistic
+regression, k-means clustering, a full multiclass metric suite, and the
+hyperparameter-introspection plumbing that future releases will build on.
+
+### Added
+
+- **`roc_auc_score`** and **`average_precision_score`** (`src/metrics/classification.rs`):
+  ROC-AUC via the rank-based Mann–Whitney U equivalence (with tie handling)
+  and average precision via the step-function PR-curve approximation. Both
+  consume `predict_proba` output and are the standard binary-classification
+  ranking metrics.
+- **`cohen_kappa_score`** and **`matthews_corrcoef`**
+  (`src/metrics/classification.rs`): Cohen's kappa (chance-corrected agreement,
+  binary + multiclass) and Matthews correlation coefficient (balanced binary
+  classification measure, robust to class imbalance).
+- **`silhouette_score`** (`src/cluster/metrics.rs`): mean silhouette coefficient
+  for clustering evaluation without ground truth, mirroring
+  `sklearn.metrics.silhouette_score`.
+- **`Params` trait and `ParamValue` enum** (`src/traits.rs`): opt-in
+  hyperparameter introspection (`get_params` / `set_params`) for estimators
+  whose hyperparameters should be searchable. `KMeans` and `LogisticRegression`
+  implement it; this is the foundation for `GridSearchCV` (planned v0.8).
+- **Multiclass `LogisticRegression`** (`src/linear_model/logistic_regression.rs`):
+  targets with more than two classes (`{0, 1, 2, …}`) are now fit via
+  multinomial (softmax) logistic regression with Newton-Raphson on the
+  cross-entropy loss. `predict` returns the highest-probability class label;
+  `predict_proba` returns an `(n, k)` probability matrix. The last class is the
+  reference (coefficients zero); a tiny Levenberg–Marquardt ridge and SVD
+  fallback keep the solver stable under near-separation. Binary `{0, 1}` targets
+  keep using the existing fast IRLS path. New accessors: `classes()`,
+  `coef() -> &[Vec<f64>]` (one row per class), `intercept() -> &[f64]`.
+- **Multiclass classification metrics** (`src/metrics/classification.rs`):
+  `confusion_matrix` now returns a general `n_classes × n_classes`
+  `Vec<Vec<usize>>` (was `[[usize; 2]; 2]`). `precision_score`, `recall_score`,
+  and `f1_score` auto-detect binary vs multiclass input and apply macro-averaging
+  for multiclass labels. `accuracy_score` uses exact integer-label comparison
+  instead of the binary ≥ 0.5 threshold. Binary `{0, 1}` inputs remain fully
+  backward-compatible.
+- **`Clusterer` trait** (`src/traits.rs`): the unsupervised counterpart to
+  `Predictor`. Exposes `fit(&Matrix)`, `predict(&Matrix) -> Result<Vec<usize>>`
+  (cluster indices, not regression targets), `fit_predict`, `fit_transform`
+  (default one-hot encoding of assignments), `n_clusters`, and `is_fitted`.
+  The trait derives from `Estimator`, not `Predictor`, because clustering takes
+  no target `y`.
+- **`cluster` module** (`src/cluster/`): the new home for clustering
+  estimators, parallel to `linear_model` / `decomposition`.
+- **`KMeans`** (`src/cluster/kmeans.rs`): k-means clustering via Lloyd's
+  algorithm with k-means++ initialization. Mirrors `sklearn.cluster.KMeans`:
+  builder API (`with_n_clusters`, `with_init`, `with_max_iter`, `with_tol`,
+  `with_n_init`, `with_random_state`), fitted state (`cluster_centers`,
+  `labels`, `inertia`, `n_iter`), k-means++ and `Random` initialization
+  strategies (`KMeansInit`), `n_init` restarts keeping the lowest-inertia run,
+  and a deterministic `random_state`. Serde-serializable under the `serde`
+  feature; ships with unit, integration, and doctest coverage.
+
+### Changed
+
+- **`LogisticRegression::coef()`** now returns `&[Vec<f64>]` (one row per class)
+  instead of `&[f64]`. Binary models return a single-row slice.
+- **`LogisticRegression::intercept()`** now returns `&[f64]` instead of `f64`.
+- **`confusion_matrix`** return type changed from `[[usize; 2]; 2]` to
+  `Vec<Vec<usize>>` to support arbitrary class counts. Existing binary call
+  sites must update from `cm[0][0]` array access to `cm[0][0]` `Vec` access
+  (semantically identical, type changes).
+- **`precision_score` / `recall_score` / `f1_score`** on binary input now return
+  the macro-averaged value across both classes, not the positive-class-only
+  value. For binary `{0, 1}` inputs this changes results: e.g. on the classic
+  `cm = [[2,1],[1,3]]` example the metrics now report `17/24 ≈ 0.708` instead of
+  `0.75`. Use the per-class helper (internal `per_class`) if positive-class-only
+  semantics are required.
+
 ## [0.5.0] - 2026-07-21
 
 The estimator-contract release. This version makes the first supervised model

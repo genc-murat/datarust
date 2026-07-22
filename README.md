@@ -28,8 +28,9 @@ let normalized = scaler.fit_transform(&data)?;
 | **Selection** | VarianceThreshold, SelectKBest (ANOVA F / Chi2 / Mutual Information) |
 | **Decomposition** | PCA (with whiten, inverse_transform), TruncatedSVD (SVDComponents: Count/Variance/All) |
 | **Linear Models** | LinearRegression (Cholesky & SVD), Ridge (L2), Lasso (L1, coordinate descent, sparse) |
-| **Classification** | LogisticRegression (binary, IRLS solver, Cholesky & SVD) |
-| **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, precision, recall, F1, confusion_matrix, log_loss |
+| **Classification** | LogisticRegression (binary IRLS + multiclass softmax, Cholesky & SVD) |
+| **Clustering** | KMeans (Lloyd's algorithm, k-means++ initialization, n_init restarts), silhouette_score |
+| **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, precision, recall, F1, confusion_matrix (n×n), log_loss, ROC-AUC, average precision, Cohen's kappa, Matthews corrcoef (macro-averaged for multiclass) |
 | **Model Selection** | train_test_split, KFold, StratifiedKFold, cross_val_score |
 | **Pipeline** | Sequential + supervised Pipeline (serde-serializable), ColumnTransformer (numeric + categorical) |
 | **Feature Names** | `FeatureNames` trait on all transformers for output column names |
@@ -134,6 +135,45 @@ pub trait PredictProba: Classifier {
 If you implement datarust traits for your own type, first add the marker
 `impl Estimator for MyType {}`. Custom supervised models then implement
 `Predictor` before their `Regressor` or `Classifier` semantic trait.
+
+### Clusterer Trait
+
+Unsupervised clustering estimators implement the [`Clusterer`](https://docs.rs/datarust/latest/datarust/trait.Clusterer.html) trait. Unlike `Predictor`, `fit` takes only `X` (no target `y`), and `predict` returns cluster indices as `Vec<usize>` rather than regression targets or class labels:
+
+```rust
+pub trait Clusterer: Estimator {
+    fn fit(&mut self, x: &Matrix) -> Result<()>;
+    fn predict(&self, x: &Matrix) -> Result<Vec<usize>>;
+    fn fit_predict(&mut self, x: &Matrix) -> Result<Vec<usize>> { ... }
+    fn fit_transform(&mut self, x: &Matrix) -> Result<Matrix> { ... }  // one-hot
+    fn n_clusters(&self) -> usize;
+    fn is_fitted(&self) -> bool;
+}
+```
+
+Implemented by [KMeans](#kmeans). Custom clustering estimators follow the same
+pattern: add the marker `impl Estimator for MyClusterer {}`, then implement
+`Clusterer`.
+
+### Params Trait (hyperparameter introspection)
+
+Estimators whose hyperparameters should be searchable (for future
+`GridSearchCV`) implement the [`Params`](https://docs.rs/datarust/latest/datarust/trait.Params.html) trait.
+It exposes `get_params` / `set_params` over a type-safe [`ParamValue`](https://docs.rs/datarust/latest/datarust/enum.ParamValue.html) enum:
+
+```rust
+pub trait Params {
+    fn get_params(&self) -> Vec<(&'static str, ParamValue)>;
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()>;
+}
+
+pub enum ParamValue { Float(f64), Int(usize), Bool(bool) }
+```
+
+Implemented by [KMeans](#kmeans) (`n_clusters`, `max_iter`, `tol`, `n_init`) and
+[LogisticRegression](#logisticregression) (`max_iter`, `tol`, `fit_intercept`).
+Not every estimator needs `Params` — only those whose hyperparameters should be
+tunable by an automated search.
 
 ### CategoricalTransformer Trait
 
@@ -594,9 +634,12 @@ model.n_iter(); // iterations actually run
 
 #### LogisticRegression
 
-Binary classification via IRLS (Iteratively Reweighted Least Squares). Mirrors `sklearn.linear_model.LogisticRegression`.
+Logistic regression for binary and multiclass classification. Mirrors `sklearn.linear_model.LogisticRegression`.
 
-Estimates `P(y = 1 | x) = σ(x·β + b)` by maximising the log-likelihood via Newton-Raphson. Each iteration solves a weighted least-squares system using the shared Cholesky (default) or SVD solver. Targets must be `0.0` or `1.0`.
+- **Binary** targets (`{0, 1}`) are fit via IRLS (Iteratively Reweighted Least Squares / Newton-Raphson on the logistic loss).
+- **Multiclass** targets (`{0, 1, 2, …}`) are fit via multinomial (softmax) logistic regression with Newton-Raphson on the cross-entropy loss. The last class is the reference.
+
+`fit` auto-detects binary vs multiclass and dispatches accordingly.
 
 ```rust
 use datarust::linear_model::{LogisticRegression, LogisticSolver};
@@ -607,11 +650,55 @@ let mut model = LogisticRegression::new()
     .with_max_iter(100)                    // default 100
     .with_tol(1e-4);                       // convergence tolerance
 
-model.fit(&x, &y)?;          // y must be 0.0 / 1.0
-let classes = model.predict(&new_x)?;       // Vec<f64> of 0.0 / 1.0
-let probabilities = model.predict_proba(&new_x)?; // Matrix: P(class=0), P(class=1)
-let acc = model.score(&x, &y)?;            // mean accuracy (f64)
+// Binary: y must be 0.0 / 1.0
+model.fit(&x, &y)?;
+let classes = model.predict(&new_x)?;           // Vec<f64> of class labels
+let probabilities = model.predict_proba(&new_x)?; // binary: (n,2) [P(0),P(1)]
+                                                    // multiclass: (n,k)
+
+// Multiclass: y can be {0, 1, 2, …}
+model.fit(&x_multi, &y_multi)?;
+model.classes();   // &[0.0, 1.0, 2.0] — sorted unique labels
+model.coef();      // &[Vec<f64>] — one row per class (k-1 for multiclass)
+model.intercept(); // &[f64] — one per class
 ```
+
+`predict_positive_proba` (binary-only, returns `P(y=1)`) errors on multiclass models — use `predict_proba` instead.
+
+### Clustering
+
+#### KMeans
+
+k-means clustering via Lloyd's algorithm with k-means++ initialization, mirroring `sklearn.cluster.KMeans`. Minimizes within-cluster sum of squares; `n_init` restarts are run and the lowest-inertia result is kept.
+
+```rust
+use datarust::cluster::{KMeans, KMeansInit};
+use datarust::traits::Clusterer;
+use datarust::Matrix;
+
+let x = Matrix::new(vec![
+    vec![0.0, 0.0], vec![0.1, 0.0], vec![0.0, 0.1],
+    vec![10.0, 10.0], vec![10.1, 10.0], vec![10.0, 10.1],
+    vec![20.0, 20.0], vec![20.1, 20.0], vec![20.0, 20.1],
+])?;
+
+let mut km = KMeans::new()
+    .with_n_clusters(3)
+    .with_init(KMeansInit::KMeansPlusPlus)  // or Random
+    .with_n_init(10)                        // restarts, keep best inertia
+    .with_max_iter(300)
+    .with_tol(1e-4)
+    .with_random_state(42);                 // deterministic
+
+let labels = km.fit_predict(&x)?;           // Vec<usize>, one cluster index per row
+let centers = km.cluster_centers();         // &[Vec<f64>], one centroid per cluster
+let inertia = km.inertia();                 // f64, sum of squared distances
+let iters = km.n_iter();                    // usize, Lloyd's iterations of best run
+
+let new_labels = km.predict(&x)?;           // assign new points to nearest centroid
+```
+
+Builder methods: `with_n_clusters` (default 8), `with_init` (default `KMeansPlusPlus`), `with_max_iter` (300), `with_tol` (1e-4), `with_n_init` (10), `with_random_state` (deterministic seed). Serde-serializable under the `serde` feature.
 
 ### Metrics
 
@@ -628,17 +715,32 @@ let me   = max_error(&y_true, &y_pred)?;
 let ev   = explained_variance_score(&y_true, &y_pred)?;
 ```
 
-Classification metrics for binary labels (`0.0` / `1.0`):
+Classification metrics — auto-detect binary vs multiclass integer labels
+(`{0, 1, 2, …}`). Precision/recall/F1 apply macro-averaging for multiclass:
 
 ```rust
 use datarust::metrics::classification::*;
 
 let acc  = accuracy_score(&y_true, &y_pred)?;
-let prec = precision_score(&y_true, &y_pred)?;
+let prec = precision_score(&y_true, &y_pred)?;     // macro-average for multiclass
 let rec  = recall_score(&y_true, &y_pred)?;
 let f1   = f1_score(&y_true, &y_pred)?;
-let cm   = confusion_matrix(&y_true, &y_pred)?; // [[tn, fp], [fn, tp]]
-let ll   = log_loss(&y_true, &y_proba, 1e-15)?;  // cross-entropy
+let cm   = confusion_matrix(&y_true, &y_pred)?;    // Vec<Vec<usize>>, n×n
+let ll   = log_loss(&y_true, &y_proba, 1e-15)?;     // binary cross-entropy
+
+// Ranking & correlation metrics (binary):
+let auc  = roc_auc_score(&y_true, &y_score)?;        // ROC-AUC (Mann–Whitney U)
+let ap   = average_precision_score(&y_true, &y_score)?; // PR-AUC
+let kap  = cohen_kappa_score(&y_true, &y_pred)?;     // chance-corrected agreement
+let mcc  = matthews_corrcoef(&y_true, &y_pred)?;     // MCC (binary + multiclass)
+```
+
+Clustering evaluation (no ground truth):
+
+```rust
+use datarust::cluster::metrics::silhouette_score;
+
+let s = silhouette_score(&x, &labels)?;  // f64 in [-1, 1], higher is better
 ```
 
 ### Model Selection
@@ -999,6 +1101,7 @@ When enabled, the following use parallel iterators:
 | SelectKBest | ✓ (F-classif / Chi2 / Mutual Info) | ✓ |
 | PCA | ✓ (Jacobi EV + power-iteration deflation + randomized SVD, count/variance/all, whiten, `PCASolver`) | ✓ |
 | TruncatedSVD | ✓ (SVDComponents: Count/Variance/All) | ✓ |
+| KMeans | ✓ (Lloyd's algorithm, k-means++ init, n_init restarts, serde) | ✓ |
 | Pipeline | ✓ (TransformerKind, serde) | ✓ |
 | ColumnTransformer | ✓ (Numeric + Categorical + Target specs, Output table, duplicate detection, remainder passthrough) | ✓ |
 | FunctionTransformer | ✓ (optional inverse, closure-based) | ✓ |
@@ -1007,6 +1110,11 @@ When enabled, the following use parallel iterators:
 | Pipeline Ergonomics | ✓ (get_step, step, set_step, insert, remove) | — |
 | Matrix Slicing | ✓ (select_columns, select_rows) | — |
 | Covariance / Correlation | ✓ (ddof-configurable) | — |
+| ROC-AUC / PR-AUC | ✓ (roc_auc_score, average_precision_score) | ✓ |
+| Cohen's Kappa / Matthews Corrcoef | ✓ (binary + multiclass) | ✓ |
+| Multiclass Confusion Matrix | ✓ (n×n Vec, macro-averaged P/R/F1) | ✓ |
+| Silhouette Score | ✓ (cluster::metrics) | ✓ |
+| Params Trait (hyperparameter introspection) | ✓ (get_params / set_params) | — |
 | JSON Serialization | ✓ (serde feature) | — (joblib) |
 | Sparse Output | ✓ (CSR via SparseMatrix) | ✓ |
 | Parallelism | ✓ (rayon feature) | — (joblib) |
@@ -1065,7 +1173,8 @@ or PR if a cell is stale.
 | TruncatedSVD | ✓ | ✗ | ✓ |
 | SVM | ✗ | ✓ | ✓ |
 | RandomForest / DecisionTree | ✗ | ✓ | ✓ |
-| KMeans / DBSCAN | ✗ | ✓ | ✓ |
+| KMeans | ✓ (k-means++ init) | ✓ | ✓ |
+| DBSCAN | ✗ | ✓ | ✓ |
 
 ### Infrastructure
 
@@ -1086,9 +1195,10 @@ or PR if a cell is stale.
 
 - **datarust** — the deepest sklearn-style **preprocessing** coverage in Rust
   (18 transformers/encoders/imputers/selectors vs ≤5 elsewhere), a type-safe
-  `Pipeline` + `ColumnTransformer`, and a **zero-dependency default build** that
-  compiles to WASM/embedded with no BLAS or LAPACK. Trade-off: only four linear
-  models — no SVM, trees, or clustering yet (see the [Roadmap](#roadmap)).
+  `Pipeline` + `ColumnTransformer`, KMeans clustering, and a **zero-dependency
+  default build** that compiles to WASM/embedded with no BLAS or LAPACK.
+  Trade-off: only four linear models and KMeans — no SVM, trees, or DBSCAN yet
+  (see the [Roadmap](#roadmap)).
 - **smartcore** — the broadest **single-crate algorithm zoo** (SVM, RandomForest,
   DecisionTree, KMeans, DBSCAN, KNN, NaiveBayes…) with model selection and
   metrics. Trade-off: thin preprocessing (StandardScaler + OneHotEncoder only)
@@ -1586,6 +1696,33 @@ let names = pipe.feature_names_out(Some(input_names));
 println!("output columns: {:?}", names);
 ```
 
+### KMeans clustering
+
+```rust,ignore
+use datarust::cluster::KMeans;
+use datarust::traits::Clusterer;
+use datarust::Matrix;
+
+// Three visually distinct point clouds.
+let x = Matrix::new(vec![
+    vec![0.0, 0.0], vec![0.1, 0.0], vec![0.0, 0.1], vec![0.1, 0.1],
+    vec![10.0, 10.0], vec![10.1, 10.0], vec![10.0, 10.1], vec![10.1, 10.1],
+    vec![20.0, 20.0], vec![20.1, 20.0], vec![20.0, 20.1], vec![20.1, 20.1],
+])?;
+
+let mut km = KMeans::new()
+    .with_n_clusters(3)
+    .with_random_state(42);
+
+let labels = km.fit_predict(&x)?;          // [0,0,0,0, 1,1,1,1, 2,2,2,2] (up to permutation)
+let centers = km.cluster_centers();        // ≈ [[0.05,0.05], [10.05,10.05], [20.05,20.05]]
+let inertia = km.inertia();                // ≈ 0.04 (tight clusters)
+
+// Assign new points to their nearest learned centroid.
+let test = Matrix::new(vec![vec![0.2, 0.2], vec![19.9, 19.9]])?;
+let predicted = km.predict(&test)?;        // e.g. [0, 2]
+```
+
 ## Roadmap
 
 datarust is working toward a complete scikit-learn-style ML toolkit for Rust,
@@ -1608,7 +1745,7 @@ and checkboxes):
 
 | Version | Theme | Headline deliverables |
 |---|---|---|
-| **v0.6** | Core ML foundations | `Clusterer` trait, multiclass `LogisticRegression`, ROC-AUC / PR-AUC, `KMeans`, multiclass metrics |
+| **v0.6** ✅ shipped | Core ML foundations | `Clusterer` trait + `KMeans`, multiclass `LogisticRegression` (softmax), ROC-AUC / PR-AUC, Cohen's kappa, Matthews corrcoef, silhouette score, `Params` trait |
 | **v0.7** | Tree-based learning | `DecisionTree`, `RandomForest`, `ExtraTrees`, `Bagging`, feature importances |
 | **v0.8** | Model selection & text | `GridSearchCV`, `CountVectorizer` / `TfidfVectorizer`, sparse-matrix arithmetic, `KNeighbors`, Naive Bayes |
 | **v0.9** | Depth & breadth | `GradientBoosting` / `AdaBoost`, `SVC` (SMO), `DBSCAN`, `ElasticNet`, `NMF`, embedded `datasets`, CSV reader |

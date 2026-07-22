@@ -28,26 +28,54 @@ let ev   = explained_variance_score(&y_true, &y_pred)?;
 
 ## Classification metrics
 
-In [`datarust::metrics::classification`](https://docs.rs/datarust/latest/datarust/metrics/classification/index.html). Labels are `0.0` / `1.0` floats.
+In [`datarust::metrics::classification`](https://docs.rs/datarust/latest/datarust/metrics/classification/index.html). All metrics auto-detect binary `{0, 1}` vs multiclass `{0, 1, 2, …}` integer labels. Precision, recall, and F1 apply **macro-averaging** (mean of per-class scores) for multiclass input.
 
 ```rust
 use datarust::metrics::classification::*;
 
+// Hard-label metrics (work for binary and multiclass):
 let acc  = accuracy_score(&y_true, &y_pred)?;
-let prec = precision_score(&y_true, &y_pred)?;
+let prec = precision_score(&y_true, &y_pred)?;     // macro-avg for multiclass
 let rec  = recall_score(&y_true, &y_pred)?;
 let f1   = f1_score(&y_true, &y_pred)?;
-let cm   = confusion_matrix(&y_true, &y_pred)?; // [[tn, fp], [fn, tp]]
-let ll   = log_loss(&y_true, &y_proba, 1e-15)?;  // cross-entropy (needs probabilities)
+let cm   = confusion_matrix(&y_true, &y_pred)?;    // Vec<Vec<usize>>, n×n
+let ll   = log_loss(&y_true, &y_proba, 1e-15)?;     // binary cross-entropy
+
+// Ranking metrics (binary, consume predict_proba output):
+let auc  = roc_auc_score(&y_true, &y_score)?;        // ROC-AUC (Mann–Whitney U)
+let ap   = average_precision_score(&y_true, &y_score)?; // PR-AUC
+
+// Agreement & correlation (binary + multiclass):
+let kap  = cohen_kappa_score(&y_true, &y_pred)?;     // chance-corrected agreement
+let mcc  = matthews_corrcoef(&y_true, &y_pred)?;     // Matthews correlation
+```
+
+| Metric | Range | Best | Binary | Multiclass | Notes |
+|---|---|---|---|---|---|
+| accuracy | `[0, 1]` | 1 | ✓ | ✓ | Fraction correctly classified |
+| precision | `[0, 1]` | 1 | ✓ | ✓ (macro) | TP / (TP + FP) |
+| recall | `[0, 1]` | 1 | ✓ | ✓ (macro) | TP / (TP + FN) |
+| F1 | `[0, 1]` | 1 | ✓ | ✓ (macro) | Harmonic mean of precision & recall |
+| confusion_matrix | `n×n` | diagonal | ✓ (2×2) | ✓ (n×n) | `cm[true][pred]` counts |
+| log_loss | `[0, ∞)` | 0 | ✓ | — | Cross-entropy; needs probabilities |
+| roc_auc_score | `[0, 1]` | 1 | ✓ | — | Ranking quality; needs scores |
+| average_precision_score | `[0, 1]` | 1 | ✓ | — | PR-curve area; needs scores |
+| cohen_kappa_score | `[-1, 1]` | 1 | ✓ | ✓ | Chance-corrected agreement |
+| matthews_corrcoef | `[-1, 1]` | 1 | ✓ | ✓ | Balanced; robust to imbalance |
+
+## Clustering metrics
+
+In [`datarust::cluster::metrics`](https://docs.rs/datarust/latest/datarust/cluster/metrics/index.html). Evaluate clustering quality without ground-truth labels.
+
+```rust
+use datarust::cluster::metrics::silhouette_score;
+
+let s = silhouette_score(&x, &labels)?;  // [-1, 1], higher is better
 ```
 
 | Metric | Range | Best | Notes |
 |---|---|---|---|
-| accuracy | `[0, 1]` | 1 | Fraction correctly classified |
-| precision | `[0, 1]` | 1 | TP / (TP + FP) |
-| recall | `[0, 1]` | 1 | TP / (TP + FN) |
-| F1 | `[0, 1]` | 1 | Harmonic mean of precision & recall |
-| log_loss | `[0, ∞)` | 0 | Cross-entropy; needs probabilities, not hard labels |
+| silhouette_score | `[-1, 1]` | 1 | `(b−a)/max(a,b)` averaged over samples |
 
 ## Estimator `.score()` shorthand
 
