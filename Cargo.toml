@@ -1,6 +1,6 @@
 [package]
 name = "datarust"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.70"
 description = "Scikit-learn-style preprocessing and classical ML in Rust"
@@ -70,6 +70,10 @@ path = "examples/regularization_comparison.rs"
 name = "model_persistence"
 path = "examples/model_persistence.rs"
 required-features = ["serde"]
+
+[[example]]
+name = "kmeans_clustering"
+path = "examples/kmeans_clustering.rs"
 
 [package.metadata.docs.rs]
 features = ["serde", "rayon", "matrixmultiply"]

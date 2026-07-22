@@ -10,6 +10,43 @@ use crate::matrix::{Matrix, StrMatrix};
 /// the more specific [`Transformer`], [`Regressor`], and [`Classifier`] traits.
 pub trait Estimator {}
 
+/// A type-erased scalar parameter value, used by [`Params`] for hyperparameter
+/// introspection.
+///
+/// This enables [`GridSearchCV`](crate::model_selection)-style hyperparameter
+/// search without runtime reflection: estimators enumerate their tunable
+/// parameters as `(name, value)` pairs that the search driver can read and
+/// write back before each refit.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParamValue {
+    /// A floating-point hyperparameter (e.g. `alpha`, `tol`).
+    Float(f64),
+    /// An integer hyperparameter (e.g. `n_clusters`, `max_iter`).
+    Int(usize),
+    /// A boolean hyperparameter (e.g. `fit_intercept`).
+    Bool(bool),
+}
+
+/// Hyperparameter introspection for estimators that support tuning.
+///
+/// Estimators opt into this trait to expose their tunable hyperparameters as a
+/// flat `(name, value)` map. This is the foundation for
+/// [`GridSearchCV`](crate::model_selection)-style hyperparameter search: the
+/// search driver reads the current parameters via [`get_params`](Params::get_params),
+/// applies a candidate combination via [`set_params`](Params::set_params), then
+/// refits and scores the model.
+///
+/// Not every estimator needs to implement `Params` — only those whose
+/// hyperparameters should be searchable.
+pub trait Params {
+    /// Returns the current hyperparameters as `(name, value)` pairs.
+    fn get_params(&self) -> Vec<(&'static str, ParamValue)>;
+
+    /// Applies a named hyperparameter. Returns an error if `name` is unknown or
+    /// `value` is the wrong type for that parameter.
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()>;
+}
+
 /// Trait for numeric transformers operating on `Matrix -> Matrix`.
 ///
 /// All scalers, decompositions, and other numeric transformers implement this
@@ -270,6 +307,56 @@ pub trait LabelTransformer: Estimator {
     fn is_fitted(&self) -> bool;
 }
 
+/// Trait for clustering estimators operating on `Matrix` features with no target.
+///
+/// Clustering is unsupervised: `fit` takes only `X`, and [`predict`](Clusterer::predict)
+/// returns cluster indices (`Vec<usize>`), not the regression targets or class
+/// labels used by [`Predictor`]. This mirrors `sklearn.cluster` estimators such
+/// as `KMeans`, which expose `fit_predict` and `predict` returning integer labels.
+///
+/// Implementors provide [`fit`](Clusterer::fit) and [`predict`](Clusterer::predict);
+/// the convenience methods have default implementations.
+pub trait Clusterer: Estimator {
+    /// Human-readable name of the estimator, used for diagnostics.
+    fn name(&self) -> &'static str;
+
+    /// Fit the estimator to the data, learning cluster structure.
+    fn fit(&mut self, x: &Matrix) -> Result<()>;
+
+    /// Assign each input row to its nearest fitted cluster, returning the
+    /// cluster index per row.
+    fn predict(&self, x: &Matrix) -> Result<Vec<usize>>;
+
+    /// Convenience: fit, then return the cluster index assigned to each training
+    /// row. Equivalent to `fit` followed by `predict` on the same data, but
+    /// implementations may compute the labels more efficiently during fitting.
+    fn fit_predict(&mut self, x: &Matrix) -> Result<Vec<usize>> {
+        self.fit(x)?;
+        self.predict(x)
+    }
+
+    /// Convenience: fit then transform. The default implementation returns a
+    /// one-hot encoding of the cluster assignments (one column per cluster);
+    /// implementations may override it to produce a different embedding (e.g.
+    /// spectral clustering's affinity matrix).
+    fn fit_transform(&mut self, x: &Matrix) -> Result<Matrix> {
+        let labels = self.fit_predict(x)?;
+        let k = self.n_clusters();
+        let n = x.nrows();
+        let mut data = vec![0.0; n * k];
+        for (i, &label) in labels.iter().enumerate() {
+            data[i * k + label] = 1.0;
+        }
+        Matrix::from_flat(n, k, data)
+    }
+
+    /// Number of clusters learned during `fit`. Available only after fitting.
+    fn n_clusters(&self) -> usize;
+
+    /// Whether the estimator has been fitted.
+    fn is_fitted(&self) -> bool;
+}
+
 macro_rules! impl_estimator_from_transformer {
     ($($ty:path),+ $(,)?) => {
         $(
@@ -329,3 +416,13 @@ impl_estimator_from_target_transformer!(
 );
 
 impl Estimator for crate::encoder::LabelEncoder {}
+
+macro_rules! impl_estimator_from_clusterer {
+    ($($ty:path),+ $(,)?) => {
+        $(
+            impl Estimator for $ty {}
+        )+
+    };
+}
+
+impl_estimator_from_clusterer!(crate::cluster::KMeans,);
