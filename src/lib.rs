@@ -18,6 +18,7 @@
 //! - [`model_selection`] — train_test_split, KFold, StratifiedKFold, cross_val_score
 //! - [`pipeline`] — sequential Transformer pipelines
 //! - [`compose`] — ColumnTransformer
+//! - [`cluster`] — KMeans (Lloyd's algorithm, k-means++ initialization)
 //! - [`function_transformer`] — wrap arbitrary functions as a Transformer
 //! - [`stats`] — column and 1-D statistics, covariance and correlation matrices
 //! - [`matrix`] — `Matrix`, `StrMatrix` and `SparseMatrix` data containers
@@ -36,6 +37,8 @@
 //! target values during `fit`).
 //! The [`LabelEncoder`] implements the [`LabelTransformer`] trait (1-D
 //! string ↔ int mapping).
+//! Clustering estimators (KMeans) implement the [`Clusterer`] trait (`fit` on
+//! `X` only, then `predict` returning cluster indices).
 //!
 //! [`TargetEncoder`]: encoder::TargetEncoder
 //! [`LabelEncoder`]: encoder::LabelEncoder
@@ -55,6 +58,7 @@
 #![deny(unreachable_patterns)]
 
 pub mod categorical_kind;
+pub mod cluster;
 pub mod compose;
 pub mod decomposition;
 pub mod encoder;
@@ -86,6 +90,7 @@ pub mod traits;
 pub mod transformer_kind;
 
 pub use categorical_kind::CategoricalTransformerKind;
+pub use cluster::{KMeans, KMeansInit};
 pub use compose::{ColumnSpec, ColumnTransformer, Output, Remainder, Table};
 pub use encoder::{
     DropStrategy, FrequencyEncoder, HandleUnknown, LabelEncoder, OneHotEncoder, OrdinalCategories,
@@ -102,7 +107,8 @@ pub use model_selection::{
 pub use pipeline::{Pipeline, SupervisedPipeline};
 pub use target_kind::TargetTransformerKind;
 pub use traits::{
-    default_input_names, CategoricalTransformer, Classifier, Estimator, FeatureNames,
-    LabelTransformer, PredictProba, Predictor, Regressor, TargetTransformer, Transformer,
+    default_input_names, CategoricalTransformer, Classifier, Clusterer, Estimator, FeatureNames,
+    LabelTransformer, ParamValue, Params, PredictProba, Predictor, Regressor, TargetTransformer,
+    Transformer,
 };
 pub use transformer_kind::TransformerKind;

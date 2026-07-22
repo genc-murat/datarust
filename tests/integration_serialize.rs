@@ -502,10 +502,14 @@ fn logistic_regression_round_trip() {
     for (o, orig) in out.iter().zip(original.iter()) {
         assert!(approx(*o, *orig, 1e-12));
     }
-    for (a, b) in restored.coef().iter().zip(model.coef().iter()) {
+    for (row_a, row_b) in restored.coef().iter().zip(model.coef().iter()) {
+        for (a, b) in row_a.iter().zip(row_b.iter()) {
+            assert!(approx(*a, *b, 1e-12));
+        }
+    }
+    for (a, b) in restored.intercept().iter().zip(model.intercept().iter()) {
         assert!(approx(*a, *b, 1e-12));
     }
-    assert!(approx(restored.intercept(), model.intercept(), 1e-12));
     assert_eq!(restored.n_iter(), model.n_iter());
     assert_eq!(restored.n_features_in(), model.n_features_in());
 }

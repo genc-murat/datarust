@@ -94,10 +94,12 @@ fn n_iter_positive_and_bounded() {
 }
 
 #[test]
-fn non_binary_labels_rejected() {
+fn non_integer_labels_rejected() {
+    // Multiclass integer labels {0, 1, 2} are now valid; only non-integer
+    // values such as 2.5 are rejected.
     let x = Matrix::new(vec![vec![1.0], vec![2.0], vec![3.0]]).unwrap();
     let mut model = LogisticRegression::new();
-    let err = model.fit(&x, &[0.0, 1.0, 2.0]).unwrap_err();
+    let err = model.fit(&x, &[0.0, 1.0, 2.5]).unwrap_err();
     assert!(matches!(err, datarust::DatarustError::InvalidInput(_)));
 }
 
@@ -139,7 +141,7 @@ fn fit_intercept_false_still_classifies() {
         .with_fit_intercept(false)
         .with_max_iter(100);
     model.fit(&x, &y).unwrap();
-    assert!(model.intercept().abs() < 1e-12);
+    assert!(model.intercept()[0].abs() < 1e-12);
     let classes = model.predict_class(&x).unwrap();
     assert_eq!(classes, y);
 }
@@ -148,14 +150,15 @@ fn fit_intercept_false_still_classifies() {
 fn metrics_known_values() {
     let y_true = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
     let y_pred = vec![0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0];
-    // cm = [[2,1],[1,3]], accuracy=5/7, precision=3/4, recall=3/4, f1=0.75
+    // cm = [[2,1],[1,3]], accuracy=5/7.
+    // Macro precision/recall/f1: per-class then averaged → 17/24.
     assert!((accuracy_score(&y_true, &y_pred).unwrap() - 5.0 / 7.0).abs() < 1e-12);
-    assert!((precision_score(&y_true, &y_pred).unwrap() - 0.75).abs() < 1e-12);
-    assert!((recall_score(&y_true, &y_pred).unwrap() - 0.75).abs() < 1e-12);
-    assert!((f1_score(&y_true, &y_pred).unwrap() - 0.75).abs() < 1e-12);
+    assert!((precision_score(&y_true, &y_pred).unwrap() - 17.0 / 24.0).abs() < 1e-12);
+    assert!((recall_score(&y_true, &y_pred).unwrap() - 17.0 / 24.0).abs() < 1e-12);
+    assert!((f1_score(&y_true, &y_pred).unwrap() - 17.0 / 24.0).abs() < 1e-12);
     assert_eq!(
         confusion_matrix(&y_true, &y_pred).unwrap(),
-        [[2, 1], [1, 3]]
+        vec![vec![2, 1], vec![1, 3]]
     );
 }
 
@@ -198,4 +201,84 @@ fn logistic_implements_classifier_trait() {
     let mut model = LogisticRegression::new();
     model.fit(&x, &y).unwrap();
     assert_eq!(predict_via_trait(&model, &x), x.nrows());
+}
+
+// ── Multiclass integration tests ───────────────────────────────────────
+
+/// Three linearly separable clusters in 2-D, placed at triangle vertices.
+fn separable_3class_2d() -> (Matrix, Vec<f64>) {
+    let mut rows: Vec<Vec<f64>> = Vec::new();
+    let mut y = Vec::new();
+    for _ in 0..15 {
+        rows.push(vec![-5.0, -5.0]);
+        y.push(0.0);
+    }
+    for _ in 0..15 {
+        rows.push(vec![0.0, 5.0]);
+        y.push(1.0);
+    }
+    for _ in 0..15 {
+        rows.push(vec![5.0, -5.0]);
+        y.push(2.0);
+    }
+    (Matrix::new(rows).unwrap(), y)
+}
+
+#[test]
+fn multiclass_fits_and_predicts() {
+    let (x, y) = separable_3class_2d();
+    let mut model = LogisticRegression::new().with_max_iter(200);
+    model.fit(&x, &y).unwrap();
+    assert_eq!(model.classes(), [0.0, 1.0, 2.0]);
+    let pred = model.predict(&x).unwrap();
+    assert_eq!(pred.len(), y.len());
+    let acc = model.score(&x, &y).unwrap();
+    assert!((acc - 1.0).abs() < 1e-9, "multiclass accuracy={acc}");
+}
+
+#[test]
+fn multiclass_predict_proba_columns_match_classes() {
+    let (x, y) = separable_3class_2d();
+    let mut model = LogisticRegression::new().with_max_iter(100);
+    model.fit(&x, &y).unwrap();
+    let probs = model.predict_proba(&x).unwrap();
+    assert_eq!(probs.ncols(), 3);
+    for i in 0..x.nrows() {
+        let sum: f64 = (0..3).map(|c| probs.get(i, c)).sum();
+        assert!((sum - 1.0).abs() < 1e-9, "row {i} sums to {sum}");
+        for c in 0..3 {
+            assert!((0.0..=1.0).contains(&probs.get(i, c)));
+        }
+    }
+}
+
+#[test]
+fn multiclass_confusion_matrix_is_diagonal_on_separable() {
+    let (x, y) = separable_3class_2d();
+    let mut model = LogisticRegression::new().with_max_iter(200);
+    model.fit(&x, &y).unwrap();
+    let pred = model.predict(&x).unwrap();
+    let cm = confusion_matrix(&y, &pred).unwrap();
+    assert_eq!(cm.len(), 3);
+    // Perfectly classified → off-diagonal entries are zero.
+    for (i, row) in cm.iter().enumerate() {
+        for (j, &count) in row.iter().enumerate() {
+            if i == j {
+                assert_eq!(count, 15);
+            } else {
+                assert_eq!(count, 0, "cm[{i}][{j}]={count}");
+            }
+        }
+    }
+}
+
+#[test]
+fn multiclass_macro_metrics_one_on_perfect() {
+    let (x, y) = separable_3class_2d();
+    let mut model = LogisticRegression::new().with_max_iter(200);
+    model.fit(&x, &y).unwrap();
+    let pred = model.predict(&x).unwrap();
+    assert!((precision_score(&y, &pred).unwrap() - 1.0).abs() < 1e-9);
+    assert!((recall_score(&y, &pred).unwrap() - 1.0).abs() < 1e-9);
+    assert!((f1_score(&y, &pred).unwrap() - 1.0).abs() < 1e-9);
 }
