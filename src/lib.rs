@@ -50,6 +50,8 @@
 //! - `matrixmultiply` — enables a tuned pure-Rust GEMM (no system BLAS) for
 //!   `Matrix::matmul` and covariance computation, speeding up PCA and
 //!   TruncatedSVD on large dense inputs.
+//! - `datasets` — embeds classic toy datasets (Iris, Breast Cancer, Wine,
+//!   Diabetes) as `const` arrays for examples, tests, and onboarding.
 //!
 //! The default build has **zero external dependencies**.
 
@@ -60,6 +62,8 @@
 pub mod categorical_kind;
 pub mod cluster;
 pub mod compose;
+#[cfg(feature = "datasets")]
+pub mod datasets;
 pub mod decomposition;
 pub mod encoder;
 /// Error types returned by fallible operations.
