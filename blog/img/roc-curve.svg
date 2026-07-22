@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 400" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <!-- Background -->
+  <rect x="0" y="0" width="520" height="400" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="260" y="28" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">ROC Curve — Customer Churn Model</text>
+
+  <!-- Plot area -->
+  <rect x="70" y="50" width="380" height="290" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+
+  <!-- Grid lines -->
+  <line x1="70"  y1="108" x2="450" y2="108" stroke="#eef2f7" stroke-width="1"/>
+  <line x1="70"  y1="166" x2="450" y2="166" stroke="#eef2f7" stroke-width="1"/>
+  <line x1="70"  y1="224" x2="450" y2="224" stroke="#eef2f7" stroke-width="1"/>
+  <line x1="70"  y1="282" x2="450" y2="282" stroke="#eef2f7" stroke-width="1"/>
+  <line x1="146" y1="50"  x2="146" y2="340" stroke="#eef2f7" stroke-width="1"/>
+  <line x1="222" y1="50"  x2="222" y2="340" stroke="#eef2f7" stroke-width="1"/>
+  <line x1="298" y1="50"  x2="298" y2="340" stroke="#eef2f7" stroke-width="1"/>
+  <line x1="374" y1="50"  x2="374" y2="340" stroke="#eef2f7" stroke-width="1"/>
+
+  <!-- Axes -->
+  <line x1="70" y1="340" x2="450" y2="340" stroke="#334155" stroke-width="2"/>
+  <line x1="70" y1="50"  x2="70"  y2="340" stroke="#334155" stroke-width="2"/>
+
+  <!-- Axis labels -->
+  <text x="260" y="370" text-anchor="middle" font-size="13" font-weight="600" fill="#334155">False Positive Rate</text>
+  <text x="25" y="195" text-anchor="middle" font-size="13" font-weight="600" fill="#334155" transform="rotate(-90, 25, 195)">True Positive Rate</text>
+
+  <!-- Tick labels -->
+  <text x="70"  y="358" text-anchor="middle" font-size="11" fill="#64748b">0.0</text>
+  <text x="146" y="358" text-anchor="middle" font-size="11" fill="#64748b">0.2</text>
+  <text x="222" y="358" text-anchor="middle" font-size="11" fill="#64748b">0.4</text>
+  <text x="298" y="358" text-anchor="middle" font-size="11" fill="#64748b">0.6</text>
+  <text x="374" y="358" text-anchor="middle" font-size="11" fill="#64748b">0.8</text>
+  <text x="450" y="358" text-anchor="middle" font-size="11" fill="#64748b">1.0</text>
+
+  <text x="62" y="344" text-anchor="end" font-size="11" fill="#64748b">0.0</text>
+  <text x="62" y="286" text-anchor="end" font-size="11" fill="#64748b">0.2</text>
+  <text x="62" y="228" text-anchor="end" font-size="11" fill="#64748b">0.4</text>
+  <text x="62" y="170" text-anchor="end" font-size="11" fill="#64748b">0.6</text>
+  <text x="62" y="112" text-anchor="end" font-size="11" fill="#64748b">0.8</text>
+  <text x="62" y="54"  text-anchor="end" font-size="11" fill="#64748b">1.0</text>
+
+  <!-- Diagonal (random classifier) -->
+  <line x1="70" y1="340" x2="450" y2="50" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="380" y="100" font-size="11" fill="#94a3b8" font-style="italic">random (AUC=0.50)</text>
+
+  <!-- ROC curve (AUC ≈ 0.88) — smooth path from (0,0) to (1,1) -->
+  <!-- Points (FPR, TPR) → (x, y): x=70+FPR*380, y=340-TPR*290 -->
+  <!-- (0, 0), (0.02, 0.15), (0.05, 0.35), (0.1, 0.55), (0.18, 0.72), (0.3, 0.83), (0.5, 0.91), (0.75, 0.96), (1.0, 1.0) -->
+  <path d="M 70,340
+           C 72,326 75,297 78,268
+           C 82,254 85,239 89,224
+           C 95,209 103,195 108,181
+           C 116,167 128,154 138,143
+           C 155,128 180,118 200,112
+           C 230,102 270,98 300,95
+           C 340,91 390,89 450,87"
+        fill="none" stroke="#3b82f6" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- AUC fill -->
+  <path d="M 70,340
+           C 72,326 75,297 78,268
+           C 82,254 85,239 89,224
+           C 95,209 103,195 108,181
+           C 116,167 128,154 138,143
+           C 155,128 180,118 200,112
+           C 230,102 270,98 300,95
+           C 340,91 390,89 450,87
+           L 450,340 L 70,340 Z"
+        fill="#3b82f6" opacity="0.1"/>
+
+  <!-- AUC label -->
+  <rect x="300" y="60" width="135" height="32" rx="6" fill="#1e40af" opacity="0.95"/>
+  <text x="367" y="74" text-anchor="middle" font-size="11" fill="#bfdbfe">datarust</text>
+  <text x="367" y="87" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff">AUC = 0.88</text>
+
+  <!-- Operating point annotation -->
+  <circle cx="138" cy="143" r="5" fill="#ef4444" stroke="#fff" stroke-width="2"/>
+  <line x1="138" y1="143" x2="138" y2="340" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,3" opacity="0.5"/>
+  <line x1="138" y1="143" x2="70" y2="143" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,3" opacity="0.5"/>
+  <text x="152" y="140" font-size="11" font-weight="600" fill="#dc2626">threshold = 0.5</text>
+  <text x="152" y="155" font-size="10" fill="#dc2626">recall=0.72, FPR=0.18</text>
+</svg>
