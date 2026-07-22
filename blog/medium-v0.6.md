@@ -65,7 +65,7 @@ I want to do four things to this data:
 3. **One-hot encode** the contract type
 4. Do all of the above in a single, composable step
 
-Here's the `ColumnTransformer` — datarust's equivalent of sklearn's同名 class:
+Here's the `ColumnTransformer` — datarust's equivalent of sklearn's class of the same name:
 
 ```rust
 use datarust::compose::{ColumnTransformer, Remainder, Table};
