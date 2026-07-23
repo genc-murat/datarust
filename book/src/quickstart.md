@@ -6,14 +6,14 @@ Get from `cargo add` to a fitted, transformed pipeline in five minutes.
 
 ```toml
 [dependencies]
-datarust = "0.5"
+datarust = "0.6"
 ```
 
 Or with the most useful feature flags:
 
 ```toml
 [dependencies]
-datarust = { version = "0.5", features = ["serde", "rayon"] }
+datarust = { version = "0.6", features = ["serde", "rayon"] }
 ```
 
 See [Installation](./installation.md) for what each feature does.

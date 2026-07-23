@@ -70,14 +70,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-datarust = "0.5"
+datarust = "0.6"
 ```
 
 ### Optional features
 
 ```toml
 [dependencies]
-datarust = { version = "0.5", features = ["serde", "rayon"] }
+datarust = { version = "0.6", features = ["serde", "rayon"] }
 ```
 
 - **`serde`** — enables JSON serialization/deserialization of fitted transformers via `datarust::serialize::{save_json, load_json, to_json, from_json}`.
@@ -1068,7 +1068,7 @@ PCA also exposes [`noise_variance()`](https://docs.rs/datarust/latest/datarust/d
 Enable the `serde` feature for JSON save/load of fitted transformers.
 
 ```toml
-datarust = { version = "0.5", features = ["serde"] }
+datarust = { version = "0.6", features = ["serde"] }
 ```
 
 ```rust
@@ -1093,7 +1093,7 @@ All leaf transformers, `Pipeline` (via `TransformerKind`), and `ColumnTransforme
 Enable the `rayon` feature for parallel column operations on large datasets.
 
 ```toml
-datarust = { version = "0.5", features = ["rayon"] }
+datarust = { version = "0.6", features = ["rayon"] }
 ```
 
 When enabled, the following use parallel iterators:
@@ -1755,7 +1755,7 @@ let predicted = km.predict(&test)?;        // e.g. [0, 2]
 
 datarust is working toward a complete scikit-learn-style ML toolkit for Rust,
 with every algorithm implemented in pure Rust and zero external dependencies
-by default. The path from the current **preprocessing-first** v0.5.0 to a
+by default. The path from the current **preprocessing-first** v0.6.0 to a
 **v1.0 stability** release is tracked in [`ROADMAP.md`](ROADMAP.md) and the
 [book's roadmap page](https://genc-murat.github.io/datarust/roadmap.html).
 
