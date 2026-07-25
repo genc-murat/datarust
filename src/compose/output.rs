@@ -46,3 +46,31 @@ impl Output {
         self.numeric.ncols() + self.categorical.ncols()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_combined_shape() {
+        let output = Output::new(
+            Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap(),
+            StrMatrix::new(vec![vec!["a".into()], vec!["b".into()]]).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(output.nrows(), 2);
+        assert_eq!(output.ncols(), 3);
+    }
+
+    #[test]
+    fn rejects_mismatched_row_counts() {
+        let error = Output::new(
+            Matrix::new(vec![vec![1.0], vec![2.0]]).unwrap(),
+            StrMatrix::new(vec![vec!["a".into()]]).unwrap(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, DatarustError::ShapeMismatch { .. }));
+    }
+}

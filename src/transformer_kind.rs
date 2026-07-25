@@ -232,7 +232,14 @@ impl FeatureNames for TransformerKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scaler::{Binarizer, MinMaxScaler, StandardScaler};
+    use crate::decomposition::{PCAComponents, SVDComponents};
+    use crate::function_transformer::FunctionTransformer;
+    use crate::imputer::{ImputeStrategy, KnnWeights};
+    use crate::scaler::{
+        Binarizer, KBinsDiscretizer, MaxAbsScaler, MinMaxScaler, Normalizer, PowerTransformer,
+        QuantileTransformer, RobustScaler, StandardScaler,
+    };
+    use crate::selection::{ScoreFunc, SelectKBest, VarianceThreshold};
 
     fn sample_matrix() -> Matrix {
         Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]).unwrap()
@@ -322,6 +329,122 @@ mod tests {
             for j in 0..x.ncols() {
                 assert!((r.get(i, j) - x.get(i, j)).abs() < 1e-9, "i={i} j={j}");
             }
+        }
+    }
+
+    fn identity(x: &Matrix) -> Result<Matrix> {
+        Ok(x.clone())
+    }
+
+    #[test]
+    fn every_variant_dispatches_through_the_wrapper() {
+        let x = Matrix::new(vec![
+            vec![1.0, 4.0, 2.0],
+            vec![2.0, 2.0, 6.0],
+            vec![3.0, 6.0, 4.0],
+            vec![4.0, 8.0, 8.0],
+        ])
+        .unwrap();
+        let input_names = vec![
+            "first".to_string(),
+            "second".to_string(),
+            "third".to_string(),
+        ];
+        let mut variants = vec![
+            (
+                TransformerKind::StandardScaler(StandardScaler::new()),
+                "StandardScaler",
+            ),
+            (
+                TransformerKind::MinMaxScaler(MinMaxScaler::new()),
+                "MinMaxScaler",
+            ),
+            (
+                TransformerKind::MaxAbsScaler(MaxAbsScaler::new()),
+                "MaxAbsScaler",
+            ),
+            (
+                TransformerKind::RobustScaler(RobustScaler::new()),
+                "RobustScaler",
+            ),
+            (
+                TransformerKind::Normalizer(Normalizer::default()),
+                "Normalizer",
+            ),
+            (TransformerKind::Binarizer(Binarizer::new()), "Binarizer"),
+            (
+                TransformerKind::KBinsDiscretizer(KBinsDiscretizer::default()),
+                "KBinsDiscretizer",
+            ),
+            (
+                TransformerKind::QuantileTransformer(QuantileTransformer::default()),
+                "QuantileTransformer",
+            ),
+            (
+                TransformerKind::PowerTransformer(PowerTransformer::new()),
+                "PowerTransformer",
+            ),
+            (
+                TransformerKind::PolynomialFeatures(crate::polynomial::PolynomialFeatures::new(2)),
+                "PolynomialFeatures",
+            ),
+            (
+                TransformerKind::VarianceThreshold(VarianceThreshold::default()),
+                "VarianceThreshold",
+            ),
+            (
+                TransformerKind::PCA(crate::decomposition::PCA::new(PCAComponents::Count(2))),
+                "PCA",
+            ),
+            (
+                TransformerKind::TruncatedSVD(
+                    crate::decomposition::TruncatedSVD::new(SVDComponents::Count(2)).unwrap(),
+                ),
+                "TruncatedSVD",
+            ),
+            (
+                TransformerKind::SimpleImputer(crate::imputer::SimpleImputer::new(
+                    ImputeStrategy::Mean,
+                )),
+                "SimpleImputer",
+            ),
+            (
+                TransformerKind::KnnImputer(crate::imputer::KnnImputer::new(
+                    2,
+                    KnnWeights::Uniform,
+                )),
+                "KnnImputer",
+            ),
+            (
+                TransformerKind::SelectKBest(SelectKBest::new(ScoreFunc::FClassif, 2).unwrap()),
+                "SelectKBest",
+            ),
+            (
+                TransformerKind::FunctionTransformer(FunctionTransformer::new(identity)),
+                "FunctionTransformer",
+            ),
+        ];
+
+        for (kind, tag) in &mut variants {
+            assert_eq!(kind.tag(), *tag);
+            assert_eq!(kind.name(), *tag);
+
+            if matches!(kind, TransformerKind::SelectKBest(_)) {
+                kind.fit_with_target(&x, &[0.0, 0.0, 1.0, 1.0]).unwrap();
+            } else {
+                kind.fit(&x).unwrap();
+            }
+            assert!(kind.is_fitted(), "{tag} should be fitted");
+            assert!(
+                !kind.feature_names_out(Some(&input_names)).is_empty(),
+                "{tag} should expose output names after fitting"
+            );
+
+            let transformed = kind.transform(&x).unwrap();
+            assert_eq!(transformed.nrows(), x.nrows(), "{tag}");
+            // Successful and unsupported inverses are both part of the public
+            // wrapper contract; this exercises delegation for every variant.
+            let _ = kind.inverse_transform(&transformed);
         }
     }
 }

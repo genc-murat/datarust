@@ -112,6 +112,47 @@ mod tests {
     }
 
     #[test]
+    fn display_covers_all_string_error_variants() {
+        let cases = [
+            (
+                DatarustError::InvalidInput("bad value".into()),
+                "invalid input: bad value",
+            ),
+            (
+                DatarustError::EmptyInput("no rows".into()),
+                "empty input: no rows",
+            ),
+            (
+                DatarustError::AllMissing("column 1".into()),
+                "all values missing: column 1",
+            ),
+            (
+                DatarustError::UnknownCategory("blue".into()),
+                "unknown category: blue",
+            ),
+            (
+                DatarustError::UnknownLabel("other".into()),
+                "unknown label: other",
+            ),
+            (
+                DatarustError::InvalidConfig("bad k".into()),
+                "invalid configuration: bad k",
+            ),
+            (
+                DatarustError::Singular("rank deficient".into()),
+                "singular/unstable operation: rank deficient",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(error.to_string(), expected);
+        }
+        assert!(DatarustError::InvalidInput("bad value".into())
+            .source()
+            .is_none());
+    }
+
+    #[test]
     fn from_io_error() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
         let e: DatarustError = io_err.into();

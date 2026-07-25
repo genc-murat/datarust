@@ -426,3 +426,247 @@ macro_rules! impl_estimator_from_clusterer {
 }
 
 impl_estimator_from_clusterer!(crate::cluster::KMeans,);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct NumericTransformer {
+        fitted: bool,
+    }
+
+    impl Estimator for NumericTransformer {}
+
+    impl Transformer for NumericTransformer {
+        fn name(&self) -> &'static str {
+            "NumericTransformer"
+        }
+
+        fn fit(&mut self, _x: &Matrix) -> Result<()> {
+            self.fitted = true;
+            Ok(())
+        }
+
+        fn transform(&self, x: &Matrix) -> Result<Matrix> {
+            Ok(x.clone())
+        }
+
+        fn is_fitted(&self) -> bool {
+            self.fitted
+        }
+    }
+
+    #[derive(Default)]
+    struct CategoricalTransformerStub {
+        fitted: bool,
+    }
+
+    impl Estimator for CategoricalTransformerStub {}
+
+    impl CategoricalTransformer for CategoricalTransformerStub {
+        fn name(&self) -> &'static str {
+            "CategoricalTransformerStub"
+        }
+
+        fn fit(&mut self, _x: &StrMatrix) -> Result<()> {
+            self.fitted = true;
+            Ok(())
+        }
+
+        fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
+            Matrix::zeros(x.nrows(), x.ncols())
+        }
+
+        fn is_fitted(&self) -> bool {
+            self.fitted
+        }
+    }
+
+    #[derive(Default)]
+    struct TargetTransformerStub {
+        fitted: bool,
+    }
+
+    impl Estimator for TargetTransformerStub {}
+
+    impl TargetTransformer for TargetTransformerStub {
+        fn name(&self) -> &'static str {
+            "TargetTransformerStub"
+        }
+
+        fn fit(&mut self, _x: &StrMatrix, _y: &[f64]) -> Result<()> {
+            self.fitted = true;
+            Ok(())
+        }
+
+        fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
+            Matrix::zeros(x.nrows(), x.ncols())
+        }
+
+        fn is_fitted(&self) -> bool {
+            self.fitted
+        }
+    }
+
+    #[derive(Default)]
+    struct PredictorStub {
+        fitted: bool,
+    }
+
+    impl Estimator for PredictorStub {}
+
+    impl Predictor for PredictorStub {
+        fn fit(&mut self, _x: &Matrix, _y: &[f64]) -> Result<()> {
+            self.fitted = true;
+            Ok(())
+        }
+
+        fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
+            Ok((0..x.nrows()).map(|i| i as f64).collect())
+        }
+
+        fn is_fitted(&self) -> bool {
+            self.fitted
+        }
+    }
+
+    impl Regressor for PredictorStub {
+        fn name(&self) -> &'static str {
+            "PredictorStub"
+        }
+    }
+
+    impl Classifier for PredictorStub {}
+
+    #[derive(Default)]
+    struct LabelTransformerStub {
+        fitted: bool,
+    }
+
+    impl Estimator for LabelTransformerStub {}
+
+    impl LabelTransformer for LabelTransformerStub {
+        fn name(&self) -> &'static str {
+            "LabelTransformerStub"
+        }
+
+        fn fit(&mut self, _x: &[String]) -> Result<()> {
+            self.fitted = true;
+            Ok(())
+        }
+
+        fn transform(&self, x: &[String]) -> Result<Vec<usize>> {
+            Ok((0..x.len()).collect())
+        }
+
+        fn inverse_transform(&self, x: &[usize]) -> Result<Vec<String>> {
+            Ok(x.iter().map(|i| i.to_string()).collect())
+        }
+
+        fn is_fitted(&self) -> bool {
+            self.fitted
+        }
+    }
+
+    #[derive(Default)]
+    struct ClustererStub {
+        fitted: bool,
+    }
+
+    impl Estimator for ClustererStub {}
+
+    impl Clusterer for ClustererStub {
+        fn name(&self) -> &'static str {
+            "ClustererStub"
+        }
+
+        fn fit(&mut self, _x: &Matrix) -> Result<()> {
+            self.fitted = true;
+            Ok(())
+        }
+
+        fn predict(&self, x: &Matrix) -> Result<Vec<usize>> {
+            Ok((0..x.nrows()).map(|i| i % 2).collect())
+        }
+
+        fn n_clusters(&self) -> usize {
+            2
+        }
+
+        fn is_fitted(&self) -> bool {
+            self.fitted
+        }
+    }
+
+    fn numeric_input() -> Matrix {
+        Matrix::new(vec![vec![1.0], vec![2.0]]).unwrap()
+    }
+
+    #[test]
+    fn default_numeric_transformer_methods_delegate_and_report_unsupported_inverse() {
+        let x = numeric_input();
+        let mut transformer = NumericTransformer::default();
+
+        let transformed = transformer.fit_transform(&x).unwrap();
+        assert_eq!(transformed, x);
+        assert!(transformer.is_fitted());
+        transformer.fit_with_target(&x, &[0.0, 1.0]).unwrap();
+        assert!(matches!(
+            transformer.inverse_transform(&x),
+            Err(DatarustError::InvalidInput(_))
+        ));
+        assert_eq!(
+            default_input_names(3),
+            vec!["x0".to_string(), "x1".to_string(), "x2".to_string()]
+        );
+    }
+
+    #[test]
+    fn default_categorical_and_target_methods_delegate_and_report_unsupported_inverse() {
+        let x = StrMatrix::from_column(["a", "b"]).unwrap();
+        let numeric = numeric_input();
+
+        let mut categorical = CategoricalTransformerStub::default();
+        assert_eq!(categorical.fit_transform(&x).unwrap().nrows(), 2);
+        assert!(matches!(
+            categorical.inverse_transform(&numeric),
+            Err(DatarustError::InvalidInput(_))
+        ));
+
+        let mut target = TargetTransformerStub::default();
+        assert_eq!(target.fit_transform(&x, &[0.0, 1.0]).unwrap().ncols(), 1);
+        assert!(matches!(
+            target.inverse_transform(&numeric),
+            Err(DatarustError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn default_predictor_regressor_classifier_and_label_helpers_delegate() {
+        let x = numeric_input();
+        let y = [0.0, 1.0];
+        let mut predictor = PredictorStub::default();
+
+        assert_eq!(predictor.fit_predict(&x, &y).unwrap(), y.to_vec());
+        assert_eq!(Regressor::score(&predictor, &x, &y).unwrap(), 1.0);
+        assert_eq!(Classifier::score(&predictor, &x, &y).unwrap(), 1.0);
+
+        let labels = vec!["low".to_string(), "high".to_string()];
+        let mut label_transformer = LabelTransformerStub::default();
+        assert_eq!(
+            label_transformer.fit_transform(&labels).unwrap(),
+            vec![0, 1]
+        );
+    }
+
+    #[test]
+    fn default_clusterer_helpers_return_predictions_and_one_hot_encoding() {
+        let x = numeric_input();
+        let mut clusterer = ClustererStub::default();
+
+        assert_eq!(clusterer.fit_predict(&x).unwrap(), vec![0, 1]);
+        let transformed = clusterer.fit_transform(&x).unwrap();
+        assert_eq!(transformed.rows_ref(), vec![vec![1.0, 0.0], vec![0.0, 1.0]]);
+    }
+}
