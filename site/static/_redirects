@@ -1,0 +1,13 @@
+/documentation /docs/ 301
+/guide/:page.html /docs/guide/:page/ 301
+/guide/:page /docs/guide/:page/ 301
+/quickstart.html /docs/quickstart/ 301
+/installation.html /docs/installation/ 301
+/concepts.html /docs/concepts/ 301
+/performance.html /docs/performance/ 301
+/comparison.html /docs/comparison/ 301
+/examples.html /docs/examples/ 301
+/architecture.html /docs/architecture/ 301
+/roadmap.html /docs/roadmap/ 301
+/changelog.html /docs/changelog/ 301
+/api.html /docs/api/ 301

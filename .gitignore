@@ -19,3 +19,7 @@ lcov.info
 
 # mdBook build output (generated locally, built in CI)
 /book/book/
+
+# Cloudflare Pages site output and Node dependencies
+/dist/
+/node_modules/
