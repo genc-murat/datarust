@@ -560,6 +560,78 @@ mod tests {
     }
 
     #[test]
+    fn randomized_solver_round_trips_rank_two_data_with_whitening() {
+        // The five features are linear combinations of two independent signals,
+        // so a two-component randomized PCA must reconstruct them exactly.
+        let x = Matrix::new(
+            (0..8)
+                .map(|i| {
+                    let a = i as f64 - 3.5;
+                    let b = (i % 3) as f64 - 1.0;
+                    vec![a, 2.0 * a + b, b, a - b, -3.0 * a + 0.5 * b]
+                })
+                .collect(),
+        )
+        .unwrap();
+        let mut pca = PCA::new(PCAComponents::Count(2))
+            .solver(PCASolver::Randomized)
+            .whiten(true);
+
+        let projected = pca.fit_transform(&x).unwrap();
+        assert_eq!(projected.ncols(), 2);
+        assert_eq!(pca.components().len(), 2);
+        assert_eq!(pca.mean().len(), x.ncols());
+
+        let reconstructed = pca.inverse_transform(&projected).unwrap();
+        for i in 0..x.nrows() {
+            for j in 0..x.ncols() {
+                assert!(
+                    approx(reconstructed.get(i, j), x.get(i, j), 1e-6),
+                    "reconstruction differs at ({i}, {j})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn default_and_constant_variance_component_selection_are_supported() {
+        let rank_one = Matrix::new(vec![vec![1.0, 2.0], vec![2.0, 4.0], vec![3.0, 6.0]]).unwrap();
+        let mut default_pca = PCA::default();
+        default_pca.fit(&rank_one).unwrap();
+        assert_eq!(default_pca.n_components(), 1);
+
+        let constant = Matrix::new(vec![vec![5.0, 5.0], vec![5.0, 5.0], vec![5.0, 5.0]]).unwrap();
+        let mut constant_pca = PCA::new(PCAComponents::Variance(0.95));
+        constant_pca.fit(&constant).unwrap();
+        assert_eq!(constant_pca.n_components(), 2);
+    }
+
+    #[test]
+    fn zero_component_count_and_invalid_inverse_inputs_error() {
+        let x = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]).unwrap();
+        let mut zero_components = PCA::new(PCAComponents::Count(0));
+        assert!(matches!(
+            zero_components.fit(&x),
+            Err(DatarustError::InvalidConfig(_))
+        ));
+
+        let pca = PCA::new(PCAComponents::Count(1));
+        let projected = Matrix::new(vec![vec![1.0]]).unwrap();
+        assert!(matches!(
+            pca.inverse_transform(&projected),
+            Err(DatarustError::NotFitted(_))
+        ));
+
+        let mut fitted = PCA::new(PCAComponents::Count(1));
+        fitted.fit(&x).unwrap();
+        let wrong_width = Matrix::new(vec![vec![1.0, 2.0]]).unwrap();
+        assert!(matches!(
+            fitted.inverse_transform(&wrong_width),
+            Err(DatarustError::ShapeMismatch { .. })
+        ));
+    }
+
+    #[test]
     fn variance_target_selects_k() {
         let x = Matrix::new(vec![
             vec![1.0, 2.0],

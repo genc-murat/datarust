@@ -63,7 +63,7 @@ pub fn column_variance(data: &[Vec<f64>], ddof: usize) -> Vec<f64> {
     let n = data.len();
     // Guard against a non-positive denominator (ddof >= n); fall back to NaN
     // rather than producing +/-inf and propagating it through downstream transforms.
-    let denom = (n - ddof) as f64;
+    let denom = n.saturating_sub(ddof) as f64;
     let means = column_mean(data);
     #[cfg(feature = "rayon")]
     {
@@ -197,7 +197,7 @@ pub fn variance(data: &[f64], ddof: usize) -> f64 {
     if n == 0 || ddof >= n {
         return f64::NAN;
     }
-    let denom = (n - ddof) as f64;
+    let denom = n.saturating_sub(ddof) as f64;
     let m = mean(data);
     let s: f64 = data.iter().map(|&x| (x - m) * (x - m)).sum();
     s / denom
@@ -469,7 +469,7 @@ pub fn column_mean_var(data: &[Vec<f64>], ddof: usize) -> (Vec<f64>, Vec<f64>) {
             m2[j] += delta * (x - mean[j]);
         }
     }
-    let denom = (n - ddof) as f64;
+    let denom = n.saturating_sub(ddof) as f64;
     let var = if denom > 0.0 {
         m2.iter().map(|&m| m / denom).collect()
     } else {
@@ -503,7 +503,7 @@ pub fn column_mean_var_flat(
             m2[j] += delta * (x - mean[j]);
         }
     }
-    let denom = (rows - ddof) as f64;
+    let denom = rows.saturating_sub(ddof) as f64;
     let var = if denom > 0.0 {
         m2.iter().map(|&m| m / denom).collect()
     } else {
@@ -681,7 +681,7 @@ pub(crate) fn covariance_centered(x_centered: &[Vec<f64>], ddof: usize) -> Vec<V
             }
         }
     }
-    let denom = (n - ddof) as f64;
+    let denom = n.saturating_sub(ddof) as f64;
     if denom > 0.0 {
         let inv = 1.0 / denom;
         for i in 0..p {
@@ -738,7 +738,7 @@ fn covariance_centered_flat_scalar(
             }
         }
     }
-    let denom = (n - ddof) as f64;
+    let denom = n.saturating_sub(ddof) as f64;
     if denom > 0.0 {
         let inv = 1.0 / denom;
         for row in cov.iter_mut() {
@@ -780,7 +780,7 @@ fn covariance_centered_flat_gemm(
             1,
         );
     }
-    let denom = (n - ddof) as f64;
+    let denom = n.saturating_sub(ddof) as f64;
     let mut cov: Vec<Vec<f64>> = cov_flat.chunks_exact(p).map(|row| row.to_vec()).collect();
     if denom > 0.0 {
         let inv = 1.0 / denom;
@@ -834,7 +834,7 @@ fn covariance_centered_gemm(
             1,          // csc
         );
     }
-    let denom = (n - ddof) as f64;
+    let denom = n.saturating_sub(ddof) as f64;
     let mut cov: Vec<Vec<f64>> = cov_flat.chunks_exact(p).map(|row| row.to_vec()).collect();
     if denom > 0.0 {
         let inv = 1.0 / denom;
@@ -969,6 +969,121 @@ mod tests {
         assert!((mn[0] - 1.0).abs() < 1e-12);
         assert!((mx[0] - 5.0).abs() < 1e-12);
         assert!((mn[1] - -1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn basic_column_helpers_handle_values_and_empty_inputs() {
+        let data = vec![vec![1.0, 6.0], vec![3.0, 2.0], vec![5.0, 4.0]];
+
+        assert_eq!(column_mean(&data), vec![3.0, 4.0]);
+        assert_eq!(
+            column_mean_flat(&[1.0, 6.0, 3.0, 2.0, 5.0, 4.0], 3, 2),
+            vec![3.0, 4.0]
+        );
+        assert_eq!(column_min(&data), vec![1.0, 2.0]);
+        assert_eq!(column_max(&data), vec![5.0, 6.0]);
+        assert_eq!(column_std(&data, 1), vec![2.0, 2.0]);
+
+        assert!(column_variance(&data, 99)
+            .iter()
+            .all(|value| value.is_nan()));
+        assert!(column_std(&data, 99).iter().all(|value| value.is_nan()));
+        assert!(column_mean(&[]).is_empty());
+        assert!(column_mean_flat(&[], 0, 0).is_empty());
+        assert!(column_variance(&[], 0).is_empty());
+        assert!(column_min(&[]).is_empty());
+        assert!(column_max(&[]).is_empty());
+    }
+
+    #[test]
+    fn column_quantile_and_median_validate_and_preserve_column_order() {
+        let data = vec![
+            vec![1.0, 4.0],
+            vec![3.0, 2.0],
+            vec![5.0, 6.0],
+            vec![7.0, 0.0],
+        ];
+
+        assert_eq!(quantile_column(&data, 0.25).unwrap(), vec![2.5, 1.5]);
+        assert_eq!(median_column(&data), vec![4.0, 3.0]);
+        assert!(quantile_column(&data, -0.1).is_err());
+        assert!(quantile_column(&[], 0.5).unwrap().is_empty());
+        assert!(median_column(&[]).is_empty());
+    }
+
+    #[test]
+    fn fused_column_helpers_match_individual_operations() {
+        let data = vec![
+            vec![1.0, 4.0],
+            vec![3.0, 2.0],
+            vec![5.0, 6.0],
+            vec![7.0, 0.0],
+        ];
+        let flat = [1.0, 4.0, 3.0, 2.0, 5.0, 6.0, 7.0, 0.0];
+
+        let (means, variances) = column_mean_var(&data, 1);
+        assert_eq!(means, column_mean(&data));
+        assert_eq!(variances, column_variance(&data, 1));
+
+        let (flat_means, flat_variances) = column_mean_var_flat(&flat, 4, 2, 1);
+        assert_eq!(flat_means, means);
+        assert_eq!(flat_variances, variances);
+
+        let (mins, maxes) = column_min_max(&data);
+        assert_eq!(mins, column_min(&data));
+        assert_eq!(maxes, column_max(&data));
+        assert_eq!(column_min_max_flat(&flat, 4, 2), (mins, maxes));
+
+        let (_, invalid_variances) = column_mean_var(&data, 99);
+        assert!(invalid_variances.iter().all(|value| value.is_nan()));
+        let (_, invalid_flat_variances) = column_mean_var_flat(&flat, 4, 2, 99);
+        assert!(invalid_flat_variances.iter().all(|value| value.is_nan()));
+        assert_eq!(column_mean_var(&[], 0), (vec![], vec![]));
+        assert_eq!(column_mean_var_flat(&[], 0, 0, 0), (vec![], vec![]));
+        assert_eq!(column_min_max(&[]), (vec![], vec![]));
+        assert_eq!(column_min_max_flat(&[], 0, 0), (vec![], vec![]));
+    }
+
+    #[test]
+    fn multiple_column_quantiles_match_flat_storage_and_validate_input() {
+        let data = vec![
+            vec![1.0, 4.0],
+            vec![3.0, 2.0],
+            vec![5.0, 6.0],
+            vec![7.0, 0.0],
+        ];
+        let flat = [1.0, 4.0, 3.0, 2.0, 5.0, 6.0, 7.0, 0.0];
+        let qs = [0.0, 0.5, 1.0];
+        let expected = vec![vec![1.0, 0.0], vec![4.0, 3.0], vec![7.0, 6.0]];
+
+        assert_eq!(column_quantiles_many(&data, &qs).unwrap(), expected);
+        assert_eq!(
+            column_quantiles_many_flat(&flat, 4, 2, &qs).unwrap(),
+            expected
+        );
+        assert!(column_quantiles_many(&data, &[1.1]).is_err());
+        assert!(column_quantiles_many_flat(&flat, 4, 2, &[-0.1]).is_err());
+        assert_eq!(
+            column_quantiles_many(&[], &qs).unwrap(),
+            vec![Vec::<f64>::new(); 3]
+        );
+        assert_eq!(
+            column_quantiles_many_flat(&[], 0, 0, &qs).unwrap(),
+            vec![Vec::<f64>::new(); 3]
+        );
+    }
+
+    #[test]
+    fn covariance_with_excess_ddof_remains_finite_and_empty_inputs_stay_empty() {
+        let data = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
+        // With ddof >= n the documented behavior is to leave the centered
+        // cross-product unscaled instead of dividing by zero.
+        assert_eq!(
+            covariance_matrix(&data, 99),
+            vec![vec![2.0, 2.0], vec![2.0, 2.0]]
+        );
+        assert!(covariance_matrix(&[], 0).is_empty());
+        assert!(correlation_matrix(&[]).is_empty());
     }
 
     // ---- 1-D (single-slice) statistics ----
