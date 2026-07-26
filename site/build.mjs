@@ -9,7 +9,7 @@ const DIST = path.join(ROOT, 'dist');
 const DOCS_ROOT = path.join(ROOT, 'book', 'src');
 const BLOG_ROOT = path.join(ROOT, 'blog');
 const STATIC_ROOT = path.join(ROOT, 'site', 'static');
-const SITE_URL = normalizeOrigin(process.env.SITE_URL || 'https://datarust.pages.dev');
+const SITE_URL = normalizeOrigin(process.env.SITE_URL || 'https://datarust.dev');
 const GITHUB_URL = 'https://github.com/genc-murat/datarust';
 const CRATES_URL = 'https://crates.io/crates/datarust';
 
