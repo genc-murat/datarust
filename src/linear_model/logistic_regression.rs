@@ -2,10 +2,10 @@
 //!
 //! Mirrors `sklearn.linear_model.LogisticRegression` (no regularization).
 //!
-//! - **Binary** targets (`{0, 1}`) are fit via Iteratively Reweighted Least
+//! - **Binary** targets are fit via Iteratively Reweighted Least
 //!   Squares (IRLS / Newton-Raphson on the logistic loss). `predict` returns
-//!   `{0, 1}` hard labels and `predict_proba` returns an `(n, 2)` matrix.
-//! - **Multiclass** targets (`{0, 1, 2, …}`) are fit via multinomial (softmax)
+//!   the original hard labels and `predict_proba` returns an `(n, 2)` matrix.
+//! - **Multiclass** targets are fit via multinomial (softmax)
 //!   logistic regression with Newton-Raphson on the cross-entropy loss. The
 //!   reference class is the last one; coefficients for the remaining classes are
 //!   estimated jointly. `predict` returns the highest-probability class label
@@ -15,6 +15,7 @@
 //! linear system solver from [`crate::linalg`].
 
 use crate::error::{DatarustError, Result};
+use crate::label_space::LabelSpace;
 use crate::linalg::cholesky;
 use crate::matrix::Matrix;
 use crate::stats;
@@ -36,9 +37,9 @@ pub enum LogisticSolver {
 
 /// Logistic regression for binary and multiclass classification.
 ///
-/// `fit` auto-detects whether the targets are binary (`{0, 1}`) or multiclass
-/// (`{0, 1, 2, …}`) and dispatches to the binary IRLS or multinomial softmax
-/// solver accordingly.
+/// `fit` accepts arbitrary non-negative integer-valued labels, compacts them
+/// internally, and dispatches to the binary IRLS or multinomial softmax solver.
+/// Predictions always use the original labels supplied during fitting.
 ///
 /// `predict` returns hard class labels (one per row); `predict_proba` returns a
 /// probability matrix with one column per class in sorted label order.
@@ -193,17 +194,18 @@ impl LogisticRegression {
 
     /// Per-class probability estimates in sorted-label column order.
     ///
-    /// For binary input the result is `(n, 2)` with columns `[P(class=0),
-    /// P(class=1)]`; for multiclass it is `(n, k)`.
+    /// For binary input the result is `(n, 2)`; for multiclass it is `(n, k)`.
+    /// In both cases column `i` is the probability of `classes()[i]`.
     pub fn predict_proba(&self, x: &Matrix) -> Result<Matrix> {
         <Self as PredictProba>::predict_proba(self, x)
     }
 
-    /// Positive-class probability `P(y = 1 | x)` for each row.
+    /// Probability of the second sorted class for each row.
     ///
-    /// Only valid for binary models (fit on `{0, 1}` targets). Use
-    /// [`predict_proba`](Self::predict_proba) for multiclass probability
-    /// matrices.
+    /// For the conventional `{0, 1}` target this is `P(y = 1 | x)`. For an
+    /// arbitrary binary target such as `{2, 5}`, it is `P(y = 5 | x)`. Use
+    /// [`predict_proba_for_class`](Self::predict_proba_for_class) when the
+    /// desired original label should be explicit.
     pub fn predict_positive_proba(&self, x: &Matrix) -> Result<Vec<f64>> {
         if self.classes_.len() != 2 {
             return Err(DatarustError::InvalidInput(format!(
@@ -212,6 +214,32 @@ impl LogisticRegression {
             )));
         }
         self.positive_probabilities_binary(x)
+    }
+
+    /// Probability assigned to one fitted class label for every row.
+    ///
+    /// This is the unambiguous alternative to
+    /// [`predict_positive_proba`](Self::predict_positive_proba) when binary
+    /// labels are not `{0, 1}` or when a multiclass probability column is
+    /// needed.
+    pub fn predict_proba_for_class(&self, x: &Matrix, class_label: f64) -> Result<Vec<f64>> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("LogisticRegression".into()));
+        }
+        let class_index = self
+            .classes_
+            .iter()
+            .position(|&label| label == class_label)
+            .ok_or_else(|| {
+                DatarustError::UnknownLabel(format!(
+                    "class {class_label}; fitted classes are {:?}",
+                    self.classes_
+                ))
+            })?;
+        let probabilities = self.probabilities(x)?;
+        Ok((0..probabilities.nrows())
+            .map(|row| probabilities.get(row, class_index))
+            .collect())
     }
 
     /// Backward-compatible alias for [`predict`](Predictor::predict).
@@ -225,7 +253,7 @@ impl LogisticRegression {
         crate::metrics::classification::accuracy_score(y, &pred)
     }
 
-    /// Binary-mode positive probabilities `P(y = 1 | x)`.
+    /// Binary-mode probabilities for the second sorted fitted class.
     fn positive_probabilities_binary(&self, x: &Matrix) -> Result<Vec<f64>> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("LogisticRegression".into()));
@@ -405,10 +433,11 @@ impl LogisticRegression {
     // We estimate `B`, an `(k-1) × p` matrix flattened row-major into a vector
     // of length `(k-1)*p`. Intercepts are absorbed via column-mean centering
     // and recovered at the end.
-    fn fit_multiclass(&mut self, x: &Matrix, y_idx: &[usize], k: usize) -> Result<()> {
+    fn fit_multiclass(&mut self, x: &Matrix, y_idx: &[usize], classes: &[f64]) -> Result<()> {
         let n = x.nrows();
         let p = x.ncols();
         let x_slice = x.as_slice();
+        let k = classes.len();
         let km1 = k - 1;
 
         let (design, x_mean) = if self.fit_intercept {
@@ -543,7 +572,7 @@ impl LogisticRegression {
             .collect();
         self.coef_ = coef_rows;
         self.intercept_ = intercept_vec;
-        self.classes_ = (0..k).map(|c| c as f64).collect();
+        self.classes_ = classes.to_vec();
         self.n_features_in_ = p;
         self.n_iter_ = n_iter;
         self.fitted = true;
@@ -596,25 +625,14 @@ impl Predictor for LogisticRegression {
                 actual: format!("{} targets", y.len()),
             });
         }
-        // Labels must be non-negative integers (0, 1, 2, …).
-        for (i, &v) in y.iter().enumerate() {
-            if v.is_nan() || v < 0.0 || (v - v.round()).abs() > 1e-9 {
-                return Err(DatarustError::InvalidInput(format!(
-                    "LogisticRegression requires integer class labels in {{0, 1, 2, …}}, found {v} at index {i}"
-                )));
-            }
-        }
         if self.max_iter == 0 {
             return Err(DatarustError::InvalidConfig("max_iter must be > 0".into()));
         }
 
-        // Discover unique classes.
-        let classes: Vec<f64> = {
-            let mut s: Vec<f64> = y.to_vec();
-            s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            s.dedup_by(|a, b| a == b);
-            s
-        };
+        // Validate labels once and share the same compact vocabulary used by
+        // classification metrics.
+        let label_space = LabelSpace::fit(y)?;
+        let classes = label_space.labels().to_vec();
         if classes.len() < 2 {
             return Err(DatarustError::InvalidInput(
                 "LogisticRegression requires at least 2 distinct classes".into(),
@@ -633,19 +651,15 @@ impl Predictor for LogisticRegression {
             return Ok(());
         }
 
-        // Multiclass path: map labels to contiguous indices {0..k}.
-        // classes is already sorted; build label → index map.
-        let label_to_idx = |v: f64| -> usize {
-            classes
-                .binary_search_by(|c| c.partial_cmp(&v).unwrap_or(std::cmp::Ordering::Equal))
-                .unwrap_or(0)
-        };
         // For multiclass, sklearn uses the classes in sorted order; remap y.
-        let y_idx: Vec<usize> = y.iter().map(|&v| label_to_idx(v)).collect();
-        // The fit_multiclass routine assumes indices 0..k-1 correspond to
-        // sorted classes, which they do here.
-        let _ = classes; // moved into self.classes_ inside fit_multiclass
-        self.fit_multiclass(x, &y_idx, k)
+        let y_idx: Vec<usize> = y
+            .iter()
+            .map(|&label| label_space.encode(label))
+            .collect::<Result<_>>()?;
+        // The fit_multiclass routine uses compact indices internally while
+        // preserving these original sorted labels for prediction and
+        // probability-column metadata.
+        self.fit_multiclass(x, &y_idx, &classes)
     }
 
     fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
@@ -914,6 +928,31 @@ mod tests {
         let mut model = LogisticRegression::new();
         model.fit(&x, &y).unwrap();
         assert_eq!(model.classes(), &[0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn multiclass_preserves_non_contiguous_labels() {
+        let (x, y) = separable_3class_2d();
+        let remapped: Vec<f64> = y
+            .iter()
+            .map(|label| match *label as usize {
+                0 => 2.0,
+                1 => 5.0,
+                _ => 9.0,
+            })
+            .collect();
+        let mut model = LogisticRegression::new().with_max_iter(200);
+        model.fit(&x, &remapped).unwrap();
+
+        assert_eq!(model.classes(), &[2.0, 5.0, 9.0]);
+        assert_eq!(model.predict(&x).unwrap(), remapped);
+
+        let all_probabilities = model.predict_proba(&x).unwrap();
+        let class_five = model.predict_proba_for_class(&x, 5.0).unwrap();
+        for (row, &probability) in class_five.iter().enumerate() {
+            assert!(approx(probability, all_probabilities.get(row, 1), 1e-12));
+        }
+        assert!(model.predict_proba_for_class(&x, 7.0).is_err());
     }
 
     #[test]

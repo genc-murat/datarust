@@ -515,6 +515,32 @@ fn logistic_regression_round_trip() {
 }
 
 #[test]
+fn logistic_multiclass_external_labels_round_trip() {
+    use datarust::linear_model::LogisticRegression;
+    use datarust::traits::Predictor;
+
+    let mut rows = Vec::new();
+    let mut labels = Vec::new();
+    for _ in 0..8 {
+        rows.push(vec![-5.0, -5.0]);
+        labels.push(2.0);
+        rows.push(vec![0.0, 5.0]);
+        labels.push(5.0);
+        rows.push(vec![5.0, -5.0]);
+        labels.push(9.0);
+    }
+    let x = datarust::Matrix::new(rows).unwrap();
+    let mut model = LogisticRegression::new().with_max_iter(200);
+    model.fit(&x, &labels).unwrap();
+
+    let json = to_json(&model).unwrap();
+    let restored: LogisticRegression = from_json(&json).unwrap();
+
+    assert_eq!(restored.classes(), &[2.0, 5.0, 9.0]);
+    assert_eq!(restored.predict(&x).unwrap(), labels);
+}
+
+#[test]
 fn supervised_pipeline_round_trip() {
     use datarust::linear_model::{LogisticRegression, LogisticSolver};
     use datarust::pipeline::{Pipeline, SupervisedPipeline};

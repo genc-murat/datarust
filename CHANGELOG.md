@@ -7,14 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-26
+
+This patch release makes classification labels safe and explicit throughout
+the metrics and logistic-regression APIs. It also includes the embedded
+datasets module prepared since v0.6.0.
+
 ### Added
 
+- **Compact classification label spaces** (`LabelSpace`) and
+  `confusion_matrix_labeled`, which retain the original row/column mapping.
+- **Explicit classification averaging**: `Average::{Binary, Macro, Weighted,
+  Micro}`, `ZeroDivision`, the `precision_score_with` / `recall_score_with` /
+  `f1_score_with` families, and per-class `classification_report`. Existing
+  score helpers remain macro-averaged for compatibility.
 - **`datasets` module** (`src/datasets/`, gated on the `datasets` feature):
   four classic sklearn datasets compiled as `const` arrays — Iris (150×4, 3
   classes), Breast Cancer (569×30, 2 classes), Wine (178×13, 3 classes), and
   Diabetes (442×10, regression). No file I/O, no network access — the data is
   embedded in the binary. Each loader returns a `Dataset` struct with
   `features()`, `targets()`, `feature_names()`, and `target_names()`.
+
+### Fixed
+
+- Hard-label metrics now compact arbitrary non-negative integer labels instead
+  of allocating by the largest label value. Gapped labels such as `{10, 20}`
+  therefore produce a 2×2 confusion matrix and correct macro scores.
+- Multiclass `LogisticRegression` now maps predictions and probability columns
+  back to the original labels supplied during fitting. The new
+  `predict_proba_for_class` helper selects a probability column by label.
+- Fractional, negative, and non-finite classification labels are rejected
+  consistently instead of being rounded or silently accepted.
 
 ## [0.6.0] - 2026-07-22
 

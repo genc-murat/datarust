@@ -56,8 +56,9 @@ pub trait Predictor: Estimator {
 ```
 
 - `LinearRegression`, `Ridge`, `Lasso` — `predict` returns continuous predictions.
-- `LogisticRegression` — implements `Classifier`; `predict` returns hard 0/1 labels.
-  Its `predict_proba` method returns two columns: `P(class=0)` and `P(class=1)`.
+- `LogisticRegression` — implements `Classifier`; `predict` returns the original
+  hard labels used during fitting. `predict_proba` returns one column per class
+  in `classes()` order.
 
 ## 4. The `Clusterer` trait (unsupervised)
 

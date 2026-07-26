@@ -638,8 +638,9 @@ model.n_iter(); // iterations actually run
 
 Logistic regression for binary and multiclass classification. Mirrors `sklearn.linear_model.LogisticRegression`.
 
-- **Binary** targets (`{0, 1}`) are fit via IRLS (Iteratively Reweighted Least Squares / Newton-Raphson on the logistic loss).
-- **Multiclass** targets (`{0, 1, 2, …}`) are fit via multinomial (softmax) logistic regression with Newton-Raphson on the cross-entropy loss. The last class is the reference.
+- **Binary** targets are fit via IRLS (Iteratively Reweighted Least Squares / Newton-Raphson on the logistic loss).
+- **Multiclass** targets are fit via multinomial (softmax) logistic regression with Newton-Raphson on the cross-entropy loss. The last class is the reference.
+- Labels can be any non-negative integers (for example `{2, 5, 9}`); predictions retain those original values.
 
 `fit` auto-detects binary vs multiclass and dispatches accordingly.
 
@@ -652,20 +653,21 @@ let mut model = LogisticRegression::new()
     .with_max_iter(100)                    // default 100
     .with_tol(1e-4);                       // convergence tolerance
 
-// Binary: y must be 0.0 / 1.0
+// Binary: arbitrary non-negative integer labels are accepted
 model.fit(&x, &y)?;
 let classes = model.predict(&new_x)?;           // Vec<f64> of class labels
-let probabilities = model.predict_proba(&new_x)?; // binary: (n,2) [P(0),P(1)]
-                                                    // multiclass: (n,k)
+let probabilities = model.predict_proba(&new_x)?; // binary: (n,2), multiclass: (n,k)
+// Probability column i corresponds to model.classes()[i].
+let selected_probability = model.predict_proba_for_class(&new_x, 5.0)?;
 
-// Multiclass: y can be {0, 1, 2, …}
+// Multiclass: y can be {2, 5, 9}
 model.fit(&x_multi, &y_multi)?;
-model.classes();   // &[0.0, 1.0, 2.0] — sorted unique labels
+model.classes();   // &[2.0, 5.0, 9.0] — sorted unique original labels
 model.coef();      // &[Vec<f64>] — one row per class (k-1 for multiclass)
 model.intercept(); // &[f64] — one per class
 ```
 
-`predict_positive_proba` (binary-only, returns `P(y=1)`) errors on multiclass models — use `predict_proba` instead.
+`predict_positive_proba` is binary-only and returns the probability of the second sorted class. Use `predict_proba_for_class` when the label should be explicit, or `predict_proba` for the full matrix.
 
 ### Clustering
 
@@ -717,8 +719,9 @@ let me   = max_error(&y_true, &y_pred)?;
 let ev   = explained_variance_score(&y_true, &y_pred)?;
 ```
 
-Classification metrics — auto-detect binary vs multiclass integer labels
-(`{0, 1, 2, …}`). Precision/recall/F1 apply macro-averaging for multiclass:
+Classification metrics accept arbitrary non-negative integer labels and compact
+them internally. The compatibility precision/recall/F1 helpers use macro averaging;
+the `*_with` variants support binary, macro, weighted, and micro averaging:
 
 ```rust
 use datarust::metrics::classification::*;
@@ -727,7 +730,10 @@ let acc  = accuracy_score(&y_true, &y_pred)?;
 let prec = precision_score(&y_true, &y_pred)?;     // macro-average for multiclass
 let rec  = recall_score(&y_true, &y_pred)?;
 let f1   = f1_score(&y_true, &y_pred)?;
-let cm   = confusion_matrix(&y_true, &y_pred)?;    // Vec<Vec<usize>>, n×n
+let cm   = confusion_matrix(&y_true, &y_pred)?;    // compact Vec<Vec<usize>>, n×n
+let labeled = confusion_matrix_labeled(&y_true, &y_pred)?; // includes labels
+let weighted_f1 = f1_score_with(&y_true, &y_pred, Average::Weighted)?;
+let per_class = classification_report(&y_true, &y_pred)?;
 let ll   = log_loss(&y_true, &y_proba, 1e-15)?;     // binary cross-entropy
 
 // Ranking & correlation metrics (binary):
@@ -1755,7 +1761,7 @@ let predicted = km.predict(&test)?;        // e.g. [0, 2]
 
 datarust is working toward a complete scikit-learn-style ML toolkit for Rust,
 with every algorithm implemented in pure Rust and zero external dependencies
-by default. The path from the current **preprocessing-first** v0.6.0 to a
+by default. The path from the current **preprocessing-first** v0.6.1 to a
 **v1.0 stability** release is tracked in [`ROADMAP.md`](ROADMAP.md) and the
 [book's roadmap page](https://genc-murat.github.io/datarust/roadmap.html).
 

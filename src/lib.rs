@@ -71,6 +71,8 @@ pub mod error;
 /// Wrap arbitrary functions as a [`Transformer`].
 pub mod function_transformer;
 pub mod imputer;
+/// Compact mapping between original class labels and dense model indices.
+pub mod label_space;
 /// Shared linear-algebra primitives (Cholesky solver, etc.).
 pub mod linalg;
 /// Regression & classification estimators: LinearRegression, Ridge, Lasso, LogisticRegression.
@@ -101,6 +103,7 @@ pub use encoder::{
     OrdinalEncoder, OrdinalHandleUnknown, TargetEncoder, UnknownFrequency, UnknownTarget,
 };
 pub use error::{DatarustError, Result};
+pub use label_space::LabelSpace;
 pub use linear_model::{
     Lasso, LinearRegression, LinearSolver, LogisticRegression, LogisticSolver, Ridge, RidgeSolver,
 };

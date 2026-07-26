@@ -1,11 +1,11 @@
 # Roadmap
 
-This document tracks the path from the current release (v0.6.0) toward a
+This document tracks the path from the current release (v0.6.1) toward a
 **complete scikit-learn-style ML toolkit** for Rust (v1.0). It is a living
 document — priorities may shift, but the principles and the destination stay
 fixed.
 
-> **Where we are today (v0.6.0):** the deepest preprocessing coverage in the
+> **Where we are today (v0.6.1):** the deepest preprocessing coverage in the
 > Rust ecosystem (18 transformers/encoders/imputers/selectors), four linear
 > models with binary + multiclass (softmax) support, `KMeans` clustering, 15
 > metrics (including ROC-AUC, PR-AUC, Cohen's kappa, Matthews corrcoef,
@@ -43,7 +43,7 @@ These are non-negotiable. Every item on the roadmap respects them.
 
 ---
 
-## Recently shipped (v0.6.0)
+## Recently shipped (v0.6.1)
 
 The v0.6 "Core ML foundations" release closed the most painful gaps in the
 classifier and clustering story. All of its deliverables are now part of the

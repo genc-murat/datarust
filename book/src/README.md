@@ -41,8 +41,8 @@ let standardized = scaler.fit_transform(&x)?;
 | **Selection** | VarianceThreshold, SelectKBest (ANOVA F / Chi2 / Mutual Information) |
 | **Decomposition** | PCA (whiten, inverse_transform, randomized SVD), TruncatedSVD |
 | **Linear Models** | LinearRegression (Cholesky & SVD), Ridge (L2), Lasso (L1, coordinate descent, sparse) |
-| **Classification** | LogisticRegression (binary, IRLS solver, Cholesky & SVD) |
-| **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, precision, recall, F1, confusion_matrix, log_loss |
+| **Classification** | LogisticRegression (binary IRLS + multiclass softmax, Cholesky & SVD) |
+| **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, explicit precision/recall/F1 averaging, labeled confusion matrices, log_loss |
 | **Model Selection** | train_test_split, KFold, StratifiedKFold, cross_val_score |
 | **Pipeline** | Sequential Pipeline (serde-serializable), ColumnTransformer (numeric + categorical) |
 | **Feature Names** | `FeatureNames` trait on all transformers for output column names |

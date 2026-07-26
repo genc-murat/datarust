@@ -63,7 +63,7 @@ model.n_iter(); // iterations actually run
 
 ## LogisticRegression
 
-Binary classification via IRLS (Iteratively Reweighted Least Squares / Newton-Raphson). The crate's first classifier.
+Binary classification via IRLS and multiclass classification via multinomial softmax regression. Labels can be any non-negative integers; the model compacts them internally and maps predictions back to their original values.
 
 ```rust
 use datarust::linear_model::{LogisticRegression, LogisticSolver};
@@ -74,9 +74,11 @@ let mut model = LogisticRegression::new()
     .with_max_iter(100)                    // default 100
     .with_tol(1e-4);
 
-model.fit(&x, &y)?;             // y must be 0.0 / 1.0
-let classes = model.predict(&x)?; // 0.0 / 1.0
-let probabilities = model.predict_proba(&x)?; // P(class=0), P(class=1)
+model.fit(&x, &y)?;               // for example, labels can be 2.0 / 5.0 / 9.0
+let classes = model.predict(&x)?; // returns the original labels
+let probabilities = model.predict_proba(&x)?;
+// Probability column i always corresponds to model.classes()[i].
+let class_five_probability = model.predict_proba_for_class(&x, 5.0)?;
 let acc = model.score(&x, &y)?; // mean accuracy
 ```
 
@@ -87,4 +89,4 @@ let acc = model.score(&x, &y)?; // mean accuracy
 | Simple baseline regression | `LinearRegression` |
 | Collinear features, regularization | `Ridge` (L2) |
 | Feature selection via sparsity | `Lasso` (L1) |
-| Binary classification | `LogisticRegression` |
+| Binary or multiclass classification | `LogisticRegression` |

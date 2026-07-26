@@ -1,14 +1,15 @@
 //! Classification metrics mirroring `sklearn.metrics`.
 //!
 //! Each function takes ground-truth `y_true` and predictions `y_pred` as flat
-//! `&[f64]` slices. Labels are represented as non-negative integer-valued floats
-//! (`0.0`, `1.0`, `2.0`, …), consistent with the [`Predictor`](crate::traits::Predictor)
-//! trait's hard-label `Vec<f64>` output. Binary labels (`{0.0, 1.0}`) and
-//! multiclass labels (`{0.0, 1.0, 2.0, …}`) are both supported: the metric
-//! functions auto-detect the number of classes and apply macro-averaging for
-//! multiclass inputs.
+//! `&[f64]` slices. Labels are represented as non-negative integer-valued floats,
+//! consistent with the [`Predictor`](crate::traits::Predictor) trait's hard-label
+//! `Vec<f64>` output. Labels do not need to be contiguous: `{10.0, 20.0}` is a
+//! valid two-class space and is compacted internally rather than allocating 21
+//! confusion-matrix rows.
 
 use crate::error::{DatarustError, Result};
+use crate::label_space::canonical_label;
+pub use crate::label_space::LabelSpace;
 
 fn check_lengths(y_true: &[f64], y_pred: &[f64]) -> Result<()> {
     if y_true.is_empty() {
@@ -23,64 +24,55 @@ fn check_lengths(y_true: &[f64], y_pred: &[f64]) -> Result<()> {
     Ok(())
 }
 
-/// Maps a label float to a `usize` class index. Labels are rounded to the
-/// nearest integer and must be non-negative.
-fn label_to_index(v: f64) -> Result<usize> {
-    if v.is_nan() || v < 0.0 {
-        return Err(DatarustError::InvalidInput(format!(
-            "classification labels must be non-negative integers, found {v}"
-        )));
-    }
-    Ok(v.round() as usize)
+/// Confusion counts paired with the original label represented by each row and
+/// column.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConfusionMatrix {
+    /// Sorted original labels. `labels[i]` names row and column `i`.
+    pub labels: Vec<f64>,
+    /// Counts in `[true_label_index][predicted_label_index]` order.
+    pub counts: Vec<Vec<usize>>,
 }
 
-/// Detects the number of distinct classes present across both slices and
-/// returns `(n_classes, label_indices_true, label_indices_pred)`.
-fn encode_labels(y_true: &[f64], y_pred: &[f64]) -> Result<(usize, Vec<usize>, Vec<usize>)> {
-    let mut idx_true = Vec::with_capacity(y_true.len());
-    let mut idx_pred = Vec::with_capacity(y_pred.len());
-    let mut max_label = 0usize;
-    for &v in y_true {
-        let i = label_to_index(v)?;
-        max_label = max_label.max(i);
-        idx_true.push(i);
-    }
-    for &v in y_pred {
-        let i = label_to_index(v)?;
-        max_label = max_label.max(i);
-        idx_pred.push(i);
-    }
-    Ok((max_label + 1, idx_true, idx_pred))
-}
-
-/// Confusion matrix for arbitrary integer labels `{0, 1, 2, …}`.
+/// Confusion matrix for arbitrary non-negative integer labels.
 ///
-/// Returns an `n_classes × n_classes` matrix where `cm[true_class][pred_class]`
-/// is the count of samples with the given true/predicted label pair. The matrix
-/// dimension is `max(label) + 1`, so all labels present in either input appear.
+/// Labels are compacted in sorted order. For example, `{10, 20}` produces a
+/// 2×2 matrix rather than a 21×21 matrix. Use
+/// [`confusion_matrix_labeled`] when the row/column label mapping is needed.
 ///
 /// For binary `{0, 1}` input this reduces to the familiar `[[tn, fp], [fn, tp]]`
 /// 2×2 layout.
 pub fn confusion_matrix(y_true: &[f64], y_pred: &[f64]) -> Result<Vec<Vec<usize>>> {
-    check_lengths(y_true, y_pred)?;
-    let (n_classes, idx_true, idx_pred) = encode_labels(y_true, y_pred)?;
-    let mut cm = vec![vec![0_usize; n_classes]; n_classes];
-    for (&t, &p) in idx_true.iter().zip(idx_pred.iter()) {
-        cm[t][p] += 1;
+    Ok(confusion_matrix_labeled(y_true, y_pred)?.counts)
+}
+
+/// Confusion matrix retaining the mapping from compact rows and columns to the
+/// original class labels.
+pub fn confusion_matrix_labeled(y_true: &[f64], y_pred: &[f64]) -> Result<ConfusionMatrix> {
+    let space = LabelSpace::from_pair(y_true, y_pred)?;
+    let n_classes = space.len();
+    let mut counts = vec![vec![0_usize; n_classes]; n_classes];
+    for (&truth, &predicted) in y_true.iter().zip(y_pred.iter()) {
+        let truth_index = space.encode(truth)?;
+        let predicted_index = space.encode(predicted)?;
+        counts[truth_index][predicted_index] += 1;
     }
-    Ok(cm)
+    Ok(ConfusionMatrix {
+        labels: space.labels().to_vec(),
+        counts,
+    })
 }
 
 /// Fraction of correctly classified samples.
 ///
 /// Mirrors `sklearn.metrics.accuracy_score`. Works for binary and multiclass
-/// labels; two samples agree when their rounded integer labels are equal.
+/// labels; two samples agree when their validated integer labels are equal.
 pub fn accuracy_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
     check_lengths(y_true, y_pred)?;
     let n = y_true.len();
     let mut correct = 0usize;
     for (&t, &p) in y_true.iter().zip(y_pred.iter()) {
-        if label_to_index(t)? == label_to_index(p)? {
+        if canonical_label(t)? == canonical_label(p)? {
             correct += 1;
         }
     }
@@ -92,6 +84,10 @@ struct PerClassMetrics {
     precision: Vec<f64>,
     recall: Vec<f64>,
     f1: Vec<f64>,
+    support: Vec<usize>,
+    precision_defined: Vec<bool>,
+    recall_defined: Vec<bool>,
+    f1_defined: Vec<bool>,
 }
 
 /// Computes per-class precision/recall/F1 and returns them, handling
@@ -101,21 +97,29 @@ fn per_class(cm: &[Vec<usize>]) -> PerClassMetrics {
     let mut precision = vec![0.0; k];
     let mut recall = vec![0.0; k];
     let mut f1 = vec![0.0; k];
+    let mut support = vec![0; k];
+    let mut precision_defined = vec![false; k];
+    let mut recall_defined = vec![false; k];
+    let mut f1_defined = vec![false; k];
     for c in 0..k {
         let tp = cm[c][c];
         let fp: usize = (0..k).filter(|&j| j != c).map(|j| cm[j][c]).sum();
         let fn_: usize = (0..k).filter(|&j| j != c).map(|j| cm[c][j]).sum();
-        precision[c] = if tp + fp == 0 {
+        support[c] = tp + fn_;
+        precision_defined[c] = tp + fp > 0;
+        recall_defined[c] = tp + fn_ > 0;
+        precision[c] = if !precision_defined[c] {
             0.0
         } else {
             tp as f64 / (tp + fp) as f64
         };
-        recall[c] = if tp + fn_ == 0 {
+        recall[c] = if !recall_defined[c] {
             0.0
         } else {
             tp as f64 / (tp + fn_) as f64
         };
-        f1[c] = if precision[c] + recall[c] == 0.0 {
+        f1_defined[c] = precision[c] + recall[c] > 0.0;
+        f1[c] = if !f1_defined[c] {
             0.0
         } else {
             2.0 * precision[c] * recall[c] / (precision[c] + recall[c])
@@ -125,6 +129,10 @@ fn per_class(cm: &[Vec<usize>]) -> PerClassMetrics {
         precision,
         recall,
         f1,
+        support,
+        precision_defined,
+        recall_defined,
+        f1_defined,
     }
 }
 
@@ -136,43 +144,260 @@ fn mean(xs: &[f64]) -> f64 {
     xs.iter().sum::<f64>() / xs.len() as f64
 }
 
-/// Precision: of all predicted positives, how many are real.
+/// Averaging strategy for multiclass precision, recall, and F1.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Average {
+    /// Score one selected positive label. The observed label space must contain
+    /// no more than two classes.
+    Binary {
+        /// Original label to treat as the positive class.
+        positive_label: f64,
+    },
+    /// Give every observed class equal weight.
+    Macro,
+    /// Weight each per-class score by its true-label support.
+    Weighted,
+    /// Pool all one-vs-rest decisions before computing the score. For
+    /// single-label classification this equals accuracy.
+    Micro,
+}
+
+/// Policy for a class whose requested metric has a zero denominator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZeroDivision {
+    /// Return `0.0`, matching the compatibility helpers in this module.
+    Zero,
+    /// Return an [`InvalidInput`](DatarustError::InvalidInput) error.
+    Error,
+}
+
+/// Per-class classification metrics in original-label order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassMetrics {
+    /// Original class label.
+    pub label: f64,
+    /// One-vs-rest precision for this class.
+    pub precision: f64,
+    /// One-vs-rest recall for this class.
+    pub recall: f64,
+    /// Harmonic mean of precision and recall.
+    pub f1: f64,
+    /// Number of true rows carrying this label.
+    pub support: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum MetricKind {
+    Precision,
+    Recall,
+    F1,
+}
+
+impl MetricKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Precision => "precision",
+            Self::Recall => "recall",
+            Self::F1 => "F1",
+        }
+    }
+}
+
+fn metric_is_defined(metrics: &PerClassMetrics, metric: MetricKind, index: usize) -> bool {
+    match metric {
+        MetricKind::Precision => metrics.precision_defined[index],
+        MetricKind::Recall => metrics.recall_defined[index],
+        MetricKind::F1 => metrics.f1_defined[index],
+    }
+}
+
+fn undefined_metric_error(metric: MetricKind, label: f64) -> DatarustError {
+    DatarustError::InvalidInput(format!(
+        "{} is undefined for class {label} because its denominator is zero",
+        metric.name()
+    ))
+}
+
+fn averaged_score(
+    y_true: &[f64],
+    y_pred: &[f64],
+    average: Average,
+    metric: MetricKind,
+    zero_division: ZeroDivision,
+) -> Result<f64> {
+    let labeled = confusion_matrix_labeled(y_true, y_pred)?;
+    let per_class = per_class(&labeled.counts);
+    let values = match metric {
+        MetricKind::Precision => &per_class.precision,
+        MetricKind::Recall => &per_class.recall,
+        MetricKind::F1 => &per_class.f1,
+    };
+
+    match average {
+        Average::Binary { positive_label } => {
+            if labeled.labels.len() > 2 {
+                return Err(DatarustError::InvalidInput(format!(
+                    "binary averaging requires at most 2 observed classes, found {}",
+                    labeled.labels.len()
+                )));
+            }
+            let positive_label = canonical_label(positive_label)?;
+            let index = labeled
+                .labels
+                .binary_search_by(|candidate| candidate.total_cmp(&positive_label))
+                .ok();
+            match index {
+                Some(index)
+                    if zero_division == ZeroDivision::Error
+                        && !metric_is_defined(&per_class, metric, index) =>
+                {
+                    Err(undefined_metric_error(metric, positive_label))
+                }
+                Some(index) => Ok(values[index]),
+                None if zero_division == ZeroDivision::Error => {
+                    Err(undefined_metric_error(metric, positive_label))
+                }
+                None => Ok(0.0),
+            }
+        }
+        Average::Macro => {
+            if zero_division == ZeroDivision::Error {
+                if let Some(index) =
+                    (0..values.len()).find(|&index| !metric_is_defined(&per_class, metric, index))
+                {
+                    return Err(undefined_metric_error(metric, labeled.labels[index]));
+                }
+            }
+            Ok(mean(values))
+        }
+        Average::Weighted => {
+            let total_support: usize = per_class.support.iter().sum();
+            if total_support == 0 {
+                return Ok(0.0);
+            }
+            if zero_division == ZeroDivision::Error {
+                if let Some(index) = (0..values.len()).find(|&index| {
+                    per_class.support[index] > 0 && !metric_is_defined(&per_class, metric, index)
+                }) {
+                    return Err(undefined_metric_error(metric, labeled.labels[index]));
+                }
+            }
+            Ok(values
+                .iter()
+                .zip(per_class.support.iter())
+                .map(|(&value, &support)| value * support as f64)
+                .sum::<f64>()
+                / total_support as f64)
+        }
+        Average::Micro => {
+            let correct: usize = labeled
+                .counts
+                .iter()
+                .enumerate()
+                .map(|(index, row)| row[index])
+                .sum();
+            let total: usize = labeled.counts.iter().flatten().sum();
+            Ok(if total == 0 {
+                0.0
+            } else {
+                correct as f64 / total as f64
+            })
+        }
+    }
+}
+
+/// Return precision, recall, F1, and support for every observed class.
+pub fn classification_report(y_true: &[f64], y_pred: &[f64]) -> Result<Vec<ClassMetrics>> {
+    let labeled = confusion_matrix_labeled(y_true, y_pred)?;
+    let metrics = per_class(&labeled.counts);
+    Ok(labeled
+        .labels
+        .into_iter()
+        .enumerate()
+        .map(|(index, label)| ClassMetrics {
+            label,
+            precision: metrics.precision[index],
+            recall: metrics.recall[index],
+            f1: metrics.f1[index],
+            support: metrics.support[index],
+        })
+        .collect())
+}
+
+/// Precision with an explicit averaging strategy.
+pub fn precision_score_with(y_true: &[f64], y_pred: &[f64], average: Average) -> Result<f64> {
+    precision_score_with_options(y_true, y_pred, average, ZeroDivision::Zero)
+}
+
+/// Recall with an explicit averaging strategy.
+pub fn recall_score_with(y_true: &[f64], y_pred: &[f64], average: Average) -> Result<f64> {
+    recall_score_with_options(y_true, y_pred, average, ZeroDivision::Zero)
+}
+
+/// F1 with an explicit averaging strategy.
+pub fn f1_score_with(y_true: &[f64], y_pred: &[f64], average: Average) -> Result<f64> {
+    f1_score_with_options(y_true, y_pred, average, ZeroDivision::Zero)
+}
+
+/// Precision with explicit averaging and zero-division policies.
+pub fn precision_score_with_options(
+    y_true: &[f64],
+    y_pred: &[f64],
+    average: Average,
+    zero_division: ZeroDivision,
+) -> Result<f64> {
+    averaged_score(
+        y_true,
+        y_pred,
+        average,
+        MetricKind::Precision,
+        zero_division,
+    )
+}
+
+/// Recall with explicit averaging and zero-division policies.
+pub fn recall_score_with_options(
+    y_true: &[f64],
+    y_pred: &[f64],
+    average: Average,
+    zero_division: ZeroDivision,
+) -> Result<f64> {
+    averaged_score(y_true, y_pred, average, MetricKind::Recall, zero_division)
+}
+
+/// F1 with explicit averaging and zero-division policies.
+pub fn f1_score_with_options(
+    y_true: &[f64],
+    y_pred: &[f64],
+    average: Average,
+    zero_division: ZeroDivision,
+) -> Result<f64> {
+    averaged_score(y_true, y_pred, average, MetricKind::F1, zero_division)
+}
+
+/// Precision macro-averaged over every observed class.
 ///
-/// For binary `{0, 1}` input this is the standard `tp / (tp + fp)` of the
-/// positive class. For multiclass input it returns the **macro average** — the
-/// mean of per-class precision, giving equal weight to each class.
-///
-/// Mirrors `sklearn.metrics.precision_score(average='macro')`.
+/// This compatibility helper is equivalent to
+/// `precision_score_with(y_true, y_pred, Average::Macro)` for both binary and
+/// multiclass inputs.
 pub fn precision_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
-    let cm = confusion_matrix(y_true, y_pred)?;
-    let m = per_class(&cm);
-    Ok(mean(&m.precision))
+    precision_score_with(y_true, y_pred, Average::Macro)
 }
 
-/// Recall (sensitivity): of all real positives, how many found.
+/// Recall macro-averaged over every observed class.
 ///
-/// For binary `{0, 1}` input this is the standard `tp / (tp + fn)` of the
-/// positive class. For multiclass input it returns the **macro average** — the
-/// mean of per-class recall.
-///
-/// Mirrors `sklearn.metrics.recall_score(average='macro')`.
+/// This compatibility helper is equivalent to
+/// `recall_score_with(y_true, y_pred, Average::Macro)`.
 pub fn recall_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
-    let cm = confusion_matrix(y_true, y_pred)?;
-    let m = per_class(&cm);
-    Ok(mean(&m.recall))
+    recall_score_with(y_true, y_pred, Average::Macro)
 }
 
-/// F1 score: harmonic mean of precision and recall.
+/// F1 macro-averaged over every observed class.
 ///
-/// For binary `{0, 1}` input this is the standard F1 of the positive class.
-/// For multiclass input it returns the **macro average** — the mean of per-class
-/// F1 scores.
-///
-/// Mirrors `sklearn.metrics.f1_score(average='macro')`.
+/// This compatibility helper is equivalent to
+/// `f1_score_with(y_true, y_pred, Average::Macro)`.
 pub fn f1_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
-    let cm = confusion_matrix(y_true, y_pred)?;
-    let m = per_class(&cm);
-    Ok(mean(&m.f1))
+    f1_score_with(y_true, y_pred, Average::Macro)
 }
 
 /// Cross-entropy (log) loss for binary classification.
@@ -575,6 +800,150 @@ mod tests {
     #[test]
     fn negative_label_rejected() {
         let err = confusion_matrix(&[-1.0, 0.0], &[0.0, 0.0]).unwrap_err();
+        assert!(matches!(err, DatarustError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn gapped_labels_are_compacted_and_retain_mapping() {
+        let truth = vec![10.0, 10.0, 20.0, 20.0];
+        let predicted = truth.clone();
+        let labeled = confusion_matrix_labeled(&truth, &predicted).unwrap();
+
+        assert_eq!(labeled.labels, vec![10.0, 20.0]);
+        assert_eq!(labeled.counts, vec![vec![2, 0], vec![0, 2]]);
+        assert_eq!(confusion_matrix(&truth, &predicted).unwrap().len(), 2);
+        assert!((f1_score(&truth, &predicted).unwrap() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn large_labels_do_not_control_matrix_allocation() {
+        let truth = vec![10.0, 1_000_000_000_000.0];
+        let labeled = confusion_matrix_labeled(&truth, &truth).unwrap();
+
+        assert_eq!(labeled.labels, truth);
+        assert_eq!(labeled.counts, vec![vec![1, 0], vec![0, 1]]);
+    }
+
+    #[test]
+    fn fractional_and_non_finite_labels_are_rejected() {
+        for invalid in [1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let err = confusion_matrix(&[0.0, invalid], &[0.0, 1.0]).unwrap_err();
+            assert!(matches!(err, DatarustError::InvalidInput(_)));
+        }
+    }
+
+    #[test]
+    fn label_space_encodes_and_decodes_original_values() {
+        let space = LabelSpace::fit(&[20.0, 10.0, 20.0, -0.0]).unwrap();
+        assert_eq!(space.labels(), &[0.0, 10.0, 20.0]);
+        assert_eq!(space.encode(10.0).unwrap(), 1);
+        assert_eq!(space.decode(2).unwrap(), 20.0);
+        assert!(space.encode(30.0).is_err());
+        assert!(space.decode(3).is_err());
+    }
+
+    #[test]
+    fn explicit_averaging_strategies_match_hand_computation() {
+        // cm = [[2, 1], [0, 2]]
+        let truth = vec![0.0, 0.0, 0.0, 1.0, 1.0];
+        let predicted = vec![0.0, 0.0, 1.0, 1.0, 1.0];
+
+        assert!(
+            (precision_score_with(
+                &truth,
+                &predicted,
+                Average::Binary {
+                    positive_label: 1.0,
+                },
+            )
+            .unwrap()
+                - 2.0 / 3.0)
+                .abs()
+                < 1e-12
+        );
+        assert!(
+            (recall_score_with(
+                &truth,
+                &predicted,
+                Average::Binary {
+                    positive_label: 1.0,
+                },
+            )
+            .unwrap()
+                - 1.0)
+                .abs()
+                < 1e-12
+        );
+        assert!(
+            (f1_score_with(
+                &truth,
+                &predicted,
+                Average::Binary {
+                    positive_label: 1.0,
+                },
+            )
+            .unwrap()
+                - 0.8)
+                .abs()
+                < 1e-12
+        );
+
+        assert!(
+            (precision_score_with(&truth, &predicted, Average::Macro).unwrap() - 5.0 / 6.0).abs()
+                < 1e-12
+        );
+        assert!(
+            (precision_score_with(&truth, &predicted, Average::Weighted).unwrap() - 13.0 / 15.0)
+                .abs()
+                < 1e-12
+        );
+        assert!(
+            (recall_score_with(&truth, &predicted, Average::Weighted).unwrap() - 0.8).abs() < 1e-12
+        );
+        assert!((f1_score_with(&truth, &predicted, Average::Micro).unwrap() - 0.8).abs() < 1e-12);
+    }
+
+    #[test]
+    fn classification_report_uses_original_labels() {
+        let truth = vec![10.0, 10.0, 20.0];
+        let predicted = vec![10.0, 20.0, 20.0];
+        let report = classification_report(&truth, &predicted).unwrap();
+
+        assert_eq!(report.len(), 2);
+        assert_eq!(report[0].label, 10.0);
+        assert_eq!(report[0].support, 2);
+        assert_eq!(report[1].label, 20.0);
+        assert_eq!(report[1].support, 1);
+    }
+
+    #[test]
+    fn binary_average_rejects_multiclass_input() {
+        let labels = vec![0.0, 1.0, 2.0];
+        let err = f1_score_with(
+            &labels,
+            &labels,
+            Average::Binary {
+                positive_label: 1.0,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, DatarustError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn zero_division_policy_can_return_zero_or_error() {
+        let truth = vec![0.0, 1.0];
+        let predicted = vec![0.0, 0.0];
+        let average = Average::Binary {
+            positive_label: 1.0,
+        };
+
+        assert_eq!(
+            precision_score_with_options(&truth, &predicted, average, ZeroDivision::Zero).unwrap(),
+            0.0
+        );
+        let err = precision_score_with_options(&truth, &predicted, average, ZeroDivision::Error)
+            .unwrap_err();
         assert!(matches!(err, DatarustError::InvalidInput(_)));
     }
 

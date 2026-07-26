@@ -3,7 +3,9 @@
 
 use datarust::linear_model::LogisticRegression;
 use datarust::metrics::classification::{
-    accuracy_score, confusion_matrix, f1_score, log_loss, precision_score, recall_score,
+    accuracy_score, classification_report, confusion_matrix, confusion_matrix_labeled, f1_score,
+    f1_score_with, log_loss, precision_score, precision_score_with, recall_score,
+    recall_score_with, Average, LabelSpace,
 };
 use datarust::traits::{Classifier, Predictor};
 use datarust::Matrix;
@@ -281,4 +283,79 @@ fn multiclass_macro_metrics_one_on_perfect() {
     assert!((precision_score(&y, &pred).unwrap() - 1.0).abs() < 1e-9);
     assert!((recall_score(&y, &pred).unwrap() - 1.0).abs() < 1e-9);
     assert!((f1_score(&y, &pred).unwrap() - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn public_metrics_compact_gapped_labels() {
+    let truth = vec![10.0, 10.0, 20.0, 20.0];
+    let predicted = truth.clone();
+    let space = LabelSpace::fit(&truth).unwrap();
+    let labeled = confusion_matrix_labeled(&truth, &predicted).unwrap();
+
+    assert_eq!(space.labels(), &[10.0, 20.0]);
+    assert_eq!(labeled.labels, vec![10.0, 20.0]);
+    assert_eq!(labeled.counts, vec![vec![2, 0], vec![0, 2]]);
+    assert!((f1_score(&truth, &predicted).unwrap() - 1.0).abs() < 1e-12);
+}
+
+#[test]
+fn public_metric_averaging_is_explicit() {
+    let truth = vec![0.0, 0.0, 0.0, 1.0, 1.0];
+    let predicted = vec![0.0, 0.0, 1.0, 1.0, 1.0];
+
+    assert!(
+        (precision_score_with(
+            &truth,
+            &predicted,
+            Average::Binary {
+                positive_label: 1.0,
+            },
+        )
+        .unwrap()
+            - 2.0 / 3.0)
+            .abs()
+            < 1e-12
+    );
+    assert!(
+        (recall_score_with(
+            &truth,
+            &predicted,
+            Average::Binary {
+                positive_label: 1.0,
+            },
+        )
+        .unwrap()
+            - 1.0)
+            .abs()
+            < 1e-12
+    );
+    assert!((f1_score_with(&truth, &predicted, Average::Micro).unwrap() - 0.8).abs() < 1e-12);
+
+    let report = classification_report(&truth, &predicted).unwrap();
+    assert_eq!(report.len(), 2);
+    assert_eq!(report[0].support, 3);
+    assert_eq!(report[1].support, 2);
+}
+
+#[test]
+fn multiclass_model_preserves_external_class_labels() {
+    let (x, y) = separable_3class_2d();
+    let remapped: Vec<f64> = y
+        .iter()
+        .map(|label| match *label as usize {
+            0 => 2.0,
+            1 => 5.0,
+            _ => 9.0,
+        })
+        .collect();
+    let mut model = LogisticRegression::new().with_max_iter(200);
+    model.fit(&x, &remapped).unwrap();
+
+    assert_eq!(model.classes(), &[2.0, 5.0, 9.0]);
+    assert_eq!(model.predict(&x).unwrap(), remapped);
+    let class_five = model.predict_proba_for_class(&x, 5.0).unwrap();
+    let all = model.predict_proba(&x).unwrap();
+    for (row, probability) in class_five.iter().enumerate() {
+        assert!(approx(*probability, all.get(row, 1), 1e-12));
+    }
 }

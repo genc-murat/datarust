@@ -6,6 +6,16 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
 
 ## Unreleased
 
+## 0.6.1
+
+- Classification labels are now compacted safely, so metrics and
+  `LogisticRegression` support non-contiguous labels such as `{2, 5, 9}` while
+  preserving original predictions and probability-column mappings.
+- Precision, recall, and F1 now expose explicit binary, macro, weighted, and
+  micro averaging, configurable zero-division handling, and per-class reports.
+- The optional `datasets` feature adds embedded Iris, Breast Cancer, Wine, and
+  Diabetes datasets with no runtime file or network dependency.
+
 ## 0.5.0
 
 - **Estimator hierarchy** — `Estimator`, `Predictor`, `Classifier`, and
