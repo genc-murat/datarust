@@ -323,4 +323,32 @@ mod tests {
             assert!(tr.is_disjoint(&te));
         }
     }
+
+    #[test]
+    fn defaults_and_empty_inputs_are_covered() {
+        let kf = KFold::default();
+        assert!(kf.split(0).is_err());
+
+        let skf = StratifiedKFold::default();
+        assert!(skf.split(&[]).is_err());
+    }
+
+    #[test]
+    fn stratified_invalid_split_counts_are_rejected() {
+        let y = [0.0, 1.0, 0.0];
+        assert!(StratifiedKFold::new().with_n_splits(1).split(&y).is_err());
+        assert!(StratifiedKFold::new().with_n_splits(4).split(&y).is_err());
+    }
+
+    #[test]
+    fn stratified_shuffle_is_seeded_and_deterministic() {
+        let y: Vec<f64> = (0..24).map(|i| (i % 2) as f64).collect();
+        let skf = StratifiedKFold::new()
+            .with_n_splits(4)
+            .with_shuffle(true)
+            .with_random_state(42);
+        let first: Vec<_> = skf.split(&y).unwrap().collect();
+        let second: Vec<_> = skf.split(&y).unwrap().collect();
+        assert_eq!(first, second);
+    }
 }

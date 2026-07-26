@@ -452,4 +452,50 @@ mod tests {
         let mut s3 = RobustScaler::new().quantile_range(0.25, 1.0);
         assert!(s3.fit(&x).is_err());
     }
+
+    #[test]
+    fn default_accessors_and_generated_feature_names() {
+        let mut s = RobustScaler::default().quantile_range(0.1, 0.9);
+        assert_eq!(s.quantile_range_value(), (0.1, 0.9));
+        s.fit(&m1()).unwrap();
+        assert_eq!(s.feature_names_out(None), vec!["x0", "x1"]);
+    }
+
+    #[test]
+    fn transform_rejects_nan_with_its_position() {
+        let mut s = RobustScaler::new();
+        s.fit(&m1()).unwrap();
+        let x = Matrix::new(vec![vec![f64::NAN, 1.0]]).unwrap();
+        let err = s.transform(&x).unwrap_err();
+        assert!(matches!(
+            err,
+            DatarustError::InvalidInput(message) if message.contains("(0, 0)")
+        ));
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn parallel_transform_handles_variable_constant_and_nan_columns() {
+        let fit = Matrix::new(vec![vec![0.0, 5.0], vec![10.0, 5.0]]).unwrap();
+        let mut s = RobustScaler::new();
+        s.fit(&fit).unwrap();
+
+        let mut values = Vec::with_capacity(4096 * 2);
+        for i in 0..4096 {
+            values.extend_from_slice(&[(i % 11) as f64, 5.0]);
+        }
+        let x = Matrix::from_flat(4096, 2, values.clone()).unwrap();
+        let out = s.transform(&x).unwrap();
+        assert_eq!((out.nrows(), out.ncols()), (4096, 2));
+        assert_eq!(out.get(0, 1), 0.0);
+        assert!((out.get(10, 0) - 1.0).abs() < 1e-12);
+
+        values[31 * 2 + 1] = f64::NAN;
+        let with_nan = Matrix::from_flat(4096, 2, values).unwrap();
+        let err = s.transform(&with_nan).unwrap_err();
+        assert!(matches!(
+            err,
+            DatarustError::InvalidInput(message) if message.contains("(31, 1)")
+        ));
+    }
 }

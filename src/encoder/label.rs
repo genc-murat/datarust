@@ -263,4 +263,24 @@ mod tests {
         let decoded = le.inverse_transform(&out).unwrap();
         assert_eq!(decoded, vec!["a", "", "b"]);
     }
+
+    #[test]
+    fn label_transformer_trait_delegates_every_operation() {
+        let mut le = LabelEncoder::default();
+        let labels = vec!["beta".to_string(), "alpha".to_string()];
+        let transformer: &mut dyn LabelTransformer = &mut le;
+
+        assert_eq!(transformer.name(), "LabelEncoder");
+        assert!(!transformer.is_fitted());
+        assert!(matches!(
+            transformer.inverse_transform(&[0]),
+            Err(DatarustError::NotFitted(_))
+        ));
+
+        transformer.fit(&labels).unwrap();
+        assert!(transformer.is_fitted());
+        let encoded = transformer.transform(&labels).unwrap();
+        assert_eq!(encoded, vec![1, 0]);
+        assert_eq!(transformer.inverse_transform(&encoded).unwrap(), labels);
+    }
 }

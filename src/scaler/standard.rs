@@ -397,4 +397,50 @@ mod tests {
         let default_names = s.feature_names_out(None);
         assert_eq!(default_names, vec!["x0", "x1"]);
     }
+
+    #[test]
+    fn default_constructs_an_unfitted_scaler() {
+        let s = StandardScaler::default();
+        assert!(!s.is_fitted());
+        assert!(s.mean().is_empty());
+        assert!(s.std().is_empty());
+    }
+
+    #[test]
+    fn transform_rejects_nan_with_its_position() {
+        let mut s = StandardScaler::new();
+        s.fit(&m1()).unwrap();
+        let x = Matrix::new(vec![vec![f64::NAN, 10.0]]).unwrap();
+        let err = s.transform(&x).unwrap_err();
+        assert!(matches!(
+            err,
+            DatarustError::InvalidInput(message) if message.contains("(0, 0)")
+        ));
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn parallel_transform_handles_variable_constant_and_nan_columns() {
+        let fit = Matrix::new(vec![vec![0.0, 5.0], vec![10.0, 5.0]]).unwrap();
+        let mut s = StandardScaler::new();
+        s.fit(&fit).unwrap();
+
+        let mut values = Vec::with_capacity(4096 * 2);
+        for i in 0..4096 {
+            values.extend_from_slice(&[(i % 11) as f64, 5.0]);
+        }
+        let x = Matrix::from_flat(4096, 2, values.clone()).unwrap();
+        let out = s.transform(&x).unwrap();
+        assert_eq!((out.nrows(), out.ncols()), (4096, 2));
+        assert_eq!(out.get(0, 1), 0.0);
+        assert!((out.get(10, 0) - 1.0).abs() < 1e-12);
+
+        values[23 * 2] = f64::NAN;
+        let with_nan = Matrix::from_flat(4096, 2, values).unwrap();
+        let err = s.transform(&with_nan).unwrap_err();
+        assert!(matches!(
+            err,
+            DatarustError::InvalidInput(message) if message.contains("(23, 0)")
+        ));
+    }
 }
