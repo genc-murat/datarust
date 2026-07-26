@@ -8,12 +8,16 @@
     "build": "node site/build.mjs",
     "check": "node site/check.mjs",
     "preview": "node site/serve.mjs",
-    "deploy": "npm run build && npx wrangler pages deploy dist"
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:pages": "npm run build && wrangler pages deploy dist"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
     "marked": "18.0.7"
+  },
+  "devDependencies": {
+    "wrangler": "4.114.0"
   }
 }
