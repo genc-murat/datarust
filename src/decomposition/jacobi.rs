@@ -403,4 +403,35 @@ mod tests {
         assert!(approx(cov[0][1], 2.0, 1e-9));
         assert!(approx(cov[1][0], 2.0, 1e-9));
     }
+
+    #[test]
+    fn eigh_topk_validates_inputs_and_handles_empty_request() {
+        assert!(eigh_topk_flat(&[], 0, 1, 10).is_none());
+        assert!(eigh_topk_flat(&[1.0, 0.0, 0.0], 2, 1, 10).is_none());
+
+        let matrix = [4.0, 0.0, 0.0, 1.0];
+        let (values, vectors) = eigh_topk_flat(&matrix, 2, 0, 10).unwrap();
+        assert!(values.is_empty());
+        assert!(vectors.is_empty());
+    }
+
+    #[test]
+    fn eigh_topk_matches_known_diagonal_spectrum_in_both_paths() {
+        let small = [4.0, 0.0, 0.0, 1.0];
+        let (values, vectors) = eigh_topk_flat(&small, 2, 1, 10).unwrap();
+        assert_eq!(values, vec![4.0]);
+        assert_eq!(vectors.len(), 2);
+
+        let large = [
+            9.0, 0.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let (values, vectors) = eigh_topk_flat(&large, 4, 2, 200).unwrap();
+        assert!(approx(values[0], 9.0, 1e-9));
+        assert!(approx(values[1], 5.0, 1e-9));
+        assert_eq!(vectors.len(), 8);
+        for vector in vectors.chunks_exact(4) {
+            let norm = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
+            assert!(approx(norm, 1.0, 1e-9));
+        }
+    }
 }

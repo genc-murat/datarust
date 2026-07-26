@@ -1070,4 +1070,103 @@ mod tests {
         assert_eq!(sub.get(1, 0), 10.0);
         assert_eq!(sub.get(2, 0), 20.0);
     }
+
+    #[test]
+    fn dense_accessors_and_row_conversions_preserve_layout() {
+        let mut m = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+
+        assert_eq!(m.as_slice(), &[1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(m.checked_get(1, 0), Some(3.0));
+        assert_eq!(m.checked_get(2, 0), None);
+        assert_eq!(m.checked_get(0, 2), None);
+        m.as_mut_slice()[1] = 20.0;
+        m.set(1, 0, 30.0);
+        assert_eq!(m.row(0), [1.0, 20.0]);
+        assert_eq!(m.col(0), vec![1.0, 30.0]);
+        assert_eq!(
+            m.iter_rows().collect::<Vec<_>>(),
+            vec![&[1.0, 20.0][..], &[30.0, 4.0][..]]
+        );
+        assert_eq!(m.rows_ref(), vec![vec![1.0, 20.0], vec![30.0, 4.0]]);
+        assert_eq!(
+            m.clone().into_rows(),
+            vec![vec![1.0, 20.0], vec![30.0, 4.0]]
+        );
+        assert!(m.validate_no_nan().is_ok());
+
+        m.set(1, 1, f64::NAN);
+        assert!(matches!(
+            m.validate_no_nan(),
+            Err(DatarustError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn dense_constructor_edge_cases_are_rejected() {
+        assert!(Matrix::zeros(0, 1).is_err());
+        assert!(Matrix::identity(0).is_err());
+        assert!(Matrix::from_flat(0, 1, vec![]).is_err());
+        assert!(Matrix::from_flat(usize::MAX, 2, vec![]).is_err());
+        assert!(Matrix::from_columns(vec![]).is_err());
+        assert!(Matrix::from_columns(vec![vec![]]).is_err());
+        assert!(Matrix::from_columns(vec![vec![1.0], vec![2.0, 3.0]]).is_err());
+        assert!(Matrix::try_from(vec![vec![1.0], vec![]]).is_err());
+    }
+
+    #[test]
+    fn strmatrix_accessors_and_validation_cover_edge_cases() {
+        let strings = StrMatrix::new(vec![
+            vec!["a".into(), "b".into()],
+            vec!["c".into(), "d".into()],
+        ])
+        .unwrap();
+        assert_eq!(strings.checked_get(1, 1), Some("d"));
+        assert_eq!(strings.checked_get(2, 0), None);
+        assert_eq!(strings.checked_get(0, 2), None);
+        assert_eq!(strings.column(1), vec!["b".to_string(), "d".to_string()]);
+        assert_eq!(strings.row(0), ["a".to_string(), "b".to_string()]);
+        assert!(StrMatrix::new(vec![]).is_err());
+        assert!(StrMatrix::new(vec![vec![]]).is_err());
+        assert!(StrMatrix::new(vec![vec!["a".into()], vec!["b".into(), "c".into()]]).is_err());
+        assert!(StrMatrix::from_column(Vec::<String>::new()).is_err());
+    }
+
+    #[test]
+    fn raw_sparse_construction_and_bounds_checks() {
+        let sparse = SparseMatrix::new(2, 3, vec![0, 1, 2], vec![0, 2], vec![1.0, 3.0]).unwrap();
+        assert_eq!(sparse.checked_get(0, 0), Some(1.0));
+        assert_eq!(sparse.checked_get(0, 2), Some(0.0));
+        assert_eq!(sparse.checked_get(2, 0), None);
+        assert_eq!(
+            sparse.to_dense().unwrap().rows_ref(),
+            vec![vec![1.0, 0.0, 0.0], vec![0.0, 0.0, 3.0]]
+        );
+
+        assert!(SparseMatrix::new(0, 1, vec![0], vec![], vec![]).is_err());
+        assert!(SparseMatrix::new(2, 2, vec![0, 0], vec![], vec![]).is_err());
+        assert!(SparseMatrix::new(1, 2, vec![0, 1], vec![], vec![1.0]).is_err());
+        assert!(SparseMatrix::new(1, 2, vec![1, 1], vec![0], vec![1.0]).is_err());
+        assert!(SparseMatrix::new(1, 2, vec![0, 1], vec![2], vec![1.0]).is_err());
+        assert!(SparseMatrix::from_triplets(0, 1, &[]).is_err());
+        assert!(SparseMatrix::from_triplets(1, 1, &[(1, 0, 1.0)]).is_err());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_round_trips_dense_and_string_matrices_and_rejects_jagged_data() {
+        let matrix = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+        let encoded = serde_json::to_string(&matrix).unwrap();
+        assert_eq!(serde_json::from_str::<Matrix>(&encoded).unwrap(), matrix);
+        assert!(serde_json::from_str::<Matrix>(r#"{"data":[[1.0],[2.0,3.0]]}"#).is_err());
+
+        let strings = StrMatrix::from_strings(vec![vec!["north", "south"]]).unwrap();
+        let encoded = serde_json::to_string(&strings).unwrap();
+        assert_eq!(
+            serde_json::from_str::<StrMatrix>(&encoded).unwrap(),
+            strings
+        );
+        assert!(
+            serde_json::from_str::<StrMatrix>(r#"{"data":[["north"],["south","east"]]}"#).is_err()
+        );
+    }
 }
