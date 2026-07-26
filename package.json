@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Static documentation and blog site for datarust",
   "scripts": {
+    "postinstall": "npm run build",
     "build": "node site/build.mjs",
     "check": "node site/check.mjs",
     "preview": "node site/serve.mjs",
