@@ -7,9 +7,9 @@
 I once ran `SelectKBest` on a dataset with six features, kept the top two, and trained a classifier.
 
 ```text
-Feature 0: F=82.1, Chi2=194.3, MI=0.41
-Feature 1: F=0.2,  Chi2=0.8,   MI=0.00
-Feature 2: F=0.3,  Chi2=1.1,   MI=0.38
+Feature 0: F=221.9, Chi2=69.3, MI=0.40
+Feature 1: F=0.5,   Chi2=0.0,  MI=0.05
+Feature 2: F=1.6,   Chi2=1.1,  MI=0.44
 ```
 
 Feature 0 dominated every score. Feature 1 was noise. Feature 2 looked irrelevant by two of the three metrics.
@@ -24,13 +24,13 @@ Let's reproduce this with [**datarust**](https://crates.io/crates/datarust), see
 
 ## The experiment: six features, three kinds of usefulness
 
-We generate 400 rows and six numeric features. Three features carry useful signal, but each one has a different relationship to the binary label:
+We generate 200 rows and six numeric features. All features are non-negative so that chi-square can operate directly. Three features carry useful signal, but each one has a different relationship to the binary label:
 
-- **Feature 0** — linearly separated. Class 0 centers around `0`, class 1 around `5`. Simple, strong, linear.
-- **Feature 1** — pure noise. No relationship with the label at all.
-- **Feature 2** — quadratic. The label depends on whether the feature is far from zero in either direction. The class means are nearly identical; the variances differ.
-- **Feature 3** — nonlinear threshold. Values above `2` belong to class 1, values below belong to class 0, but within each region the feature is uniformly distributed.
-- **Feature 4** — noisy copy of Feature 0. The same linear signal buried in heavy noise.
+- **Feature 0** — linearly separated. Class 0 centers around `10`, class 1 around `14`. Simple, strong, linear.
+- **Feature 1** — pure noise. Centered around `10`, no relationship with the label.
+- **Feature 2** — variance signal. The class means are identical (`20`), but class 0 has std `0.5` while class 1 has std `6`. F-test and chi-square see no mean difference; MI detects the distributional change.
+- **Feature 3** — nonlinear threshold. Values above `10` belong to class 1, values below belong to class 0, but within each region the feature is uniformly distributed.
+- **Feature 4** — noisy linear. A weak mean difference (`30` vs `32`) buried in heavy noise (std `8` for class 1).
 - **Feature 5** — pure noise.
 
 The three scoring functions will see the same six columns. They will not agree on which two are most important.
@@ -84,30 +84,34 @@ fn make_data(rng: &mut Rng) -> (Matrix, Vec<f64>) {
     let mut rows = Vec::new();
     let mut labels = Vec::new();
 
-    for _ in 0..400 {
+    for _ in 0..200 {
         let class = if rng.next_f64() < 0.5 { 0.0 } else { 1.0 };
 
         let feature_0 = if class == 0.0 {
-            rng.normal(1.0)
+            10.0 + rng.normal(2.0)
         } else {
-            5.0 + rng.normal(1.0)
+            14.0 + rng.normal(2.0)
         };
 
-        let feature_1 = rng.normal(1.0);
+        let feature_1 = 10.0 + rng.normal(1.0);
 
-        let raw_2 = rng.normal(2.0);
-        let feature_2 = raw_2 * raw_2;
+        let raw_2 = if class == 0.0 {
+            rng.normal(0.5)
+        } else {
+            rng.normal(6.0)
+        };
+        let feature_2 = 20.0 + raw_2;
 
-        let raw_3 = rng.normal(3.0);
-        let feature_3 = if raw_3 > 2.0 { 10.0 } else { 0.0 } + rng.normal(0.3);
+        let raw_3 = rng.normal(10.0);
+        let feature_3 = if raw_3 > 10.0 { 15.0 } else { 5.0 } + rng.normal(1.0);
 
         let feature_4 = if class == 0.0 {
-            rng.normal(1.0)
+            30.0 + rng.normal(1.0)
         } else {
-            5.0 + rng.normal(4.0)
+            32.0 + rng.normal(8.0)
         };
 
-        let feature_5 = rng.normal(1.0);
+        let feature_5 = 10.0 + rng.normal(1.0);
 
         rows.push(vec![
             feature_0,
@@ -130,7 +134,7 @@ fn score_features(
     let names = [
         "linear",
         "noise_1",
-        "quadratic",
+        "variance",
         "threshold",
         "noisy_linear",
         "noise_2",
@@ -210,14 +214,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = Rng::new(2026);
     let (x, y) = make_data(&mut rng);
 
-    println!("Dataset: 400 rows, 6 features\n");
+    println!("Dataset: 200 rows, 6 features\n");
     println!("Feature types:");
-    println!("  linear      = class 0 ~ N(0,1), class 1 ~ N(5,1)");
-    println!("  noise_1     = N(0,1), independent of label");
-    println!("  quadratic   = N(0,2)^2, variance differs by class");
-    println!("  threshold   = N(0,3) with step at 2.0");
-    println!("  noisy_linear = linear + N(0,4) noise");
-    println!("  noise_2     = N(0,1), independent of label\n");
+    println!("  linear      = class 0 ~ N(10,2), class 1 ~ N(14,2)");
+    println!("  noise_1     = N(10,1), independent of label");
+    println!("  variance    = class 0 ~ N(20,0.5), class 1 ~ N(20,6) (same mean, very different variance)");
+    println!("  threshold   = N(10,2) with step at 10.0");
+    println!("  noisy_linear = class 0 ~ N(30,1), class 1 ~ N(32,8)");
+    println!("  noise_2     = N(10,1), independent of label\n");
 
     score_features(&x, &y)?;
     evaluate_selection(&x, &y)?;
@@ -235,33 +239,33 @@ cargo run --release
 With datarust v0.6 and the fixed seed above, the output is:
 
 ```text
-Dataset: 400 rows, 6 features
+Dataset: 200 rows, 6 features
 
 Feature types:
-  linear      = class 0 ~ N(0,1), class 1 ~ N(5,1)
-  noise_1     = N(0,1), independent of label
-  quadratic   = N(0,2)^2, variance differs by class
-  threshold   = N(0,3) with step at 2.0
-  noisy_linear = linear + N(0,4) noise
-  noise_2     = N(0,1), independent of label
+  linear      = class 0 ~ N(10,2), class 1 ~ N(14,2)
+  noise_1     = N(10,1), independent of label
+  variance    = class 0 ~ N(20,0.5), class 1 ~ N(20,6) (same mean, very different variance)
+  threshold   = N(10,2) with step at 10.0
+  noisy_linear = class 0 ~ N(30,1), class 1 ~ N(32,8)
+  noise_2     = N(10,1), independent of label
 
 feature       F-test    Chi2      MI
-linear           82.103   194.312    0.412
-noise_1           0.187     0.834    0.003
-quadratic         0.312     1.087    0.381
-threshold        45.201   102.445    0.298
-noisy_linear     12.834    28.190    0.089
-noise_2           0.298     1.102    0.001
+linear         221.964     69.296      0.398
+noise_1          0.511      0.043      0.046
+variance         1.631      1.139      0.435
+threshold        0.082      0.209      0.019
+noisy_linear    10.985      9.378      0.365
+noise_2          1.751      0.163      0.062
 
 Top-2 selected by each scoring function:
-  F-test           -> [linear, threshold]
-  Chi2             -> [linear, threshold]
-  Mutual Info      -> [linear, quadratic]
+  F-test           -> [linear, noisy_linear]
+  Chi2             -> [linear, noisy_linear]
+  Mutual Info      -> [linear, variance]
 
 5-fold CV accuracy with top-2 features:
-  F-test           -> 0.893
-  Chi2             -> 0.893
-  Mutual Info      -> 0.878
+  F-test           -> 0.865
+  Chi2             -> 0.865
+  Mutual Info      -> 0.800
 ```
 
 The three scoring functions agree on the best feature but disagree on the second-best. That disagreement is the interesting part.
@@ -284,7 +288,7 @@ A high F-value means the class means are far apart relative to the spread within
 - The classes have roughly equal variance.
 - You care about mean separation.
 
-In our experiment, Feature 0 (`linear`) scores highest because its class means are `0` and `5` with variance `1` each. Feature 3 (`threshold`) scores second because the step function creates a large mean difference. Feature 2 (`quadratic`) scores low because its class means are nearly identical — the signal is in the variance, not the mean.
+In our experiment, Feature 0 (`linear`) scores highest because its class means are `10` and `14` with variance `4` each. Feature 4 (`noisy_linear`) scores second for F-test and Chi2 because it has a weak mean difference (`30` vs `32`). Feature 2 (`variance`) scores low for F-test and Chi2 because its class means are identical — the signal is in the variance, not the mean.
 
 ### Chi-square: does the observed distribution match the expected?
 
@@ -298,7 +302,7 @@ Chi-square requires non-negative features. StandardScaler produces negative valu
 
 MI measures how much knowing the feature value reduces uncertainty about the class. Unlike F-test and chi-square, MI captures any kind of dependency — nonlinear, non-monotonic, variance-based.
 
-That is why MI ranks `quadratic` second. The F-test cannot see that the quadratic feature's variance differs by class because the means are the same. MI detects the dependency because the distribution shape changes.
+That is why MI ranks `variance` second. The F-test cannot see that the variance feature's spread differs by class because the means are the same. MI detects the dependency because the distribution shape changes.
 
 MI is also why Feature 3 (`threshold`) scores lower than expected. The threshold creates a step, but MI's histogram-based estimator smooths the boundary and loses some information in the process.
 
@@ -307,13 +311,13 @@ MI is also why Feature 3 (`threshold`) scores lower than expected. The threshold
 The top-2 features chosen by each method produce different accuracy:
 
 ```text
-F-test / Chi2: linear + threshold -> 89.3%
-MI:            linear + quadratic -> 87.8%
+F-test / Chi2: linear + noisy_linear -> 86.5%
+MI:            linear + variance     -> 80.0%
 ```
 
-F-test and Chi2 do better here because the threshold feature provides a clean decision boundary. MI chose the quadratic feature, which captures a real dependency but is noisier.
+F-test and Chi2 do better here because `noisy_linear` provides a weak but real mean signal that logistic regression can use. MI chose the `variance` feature, which captures a real distributional dependency but is harder for a linear model to exploit — the means are identical, so a linear classifier cannot separate the classes using this feature alone.
 
-This result is specific to this dataset. In another problem where the signal is purely nonlinear — say, a circle separating two classes in 2D — MI would outperform F-test decisively.
+This result is specific to this dataset and this model. In a problem where the signal is purely variance-based — say, a process that becomes more volatile in one class — MI would outperform F-test decisively. A tree-based model might also leverage the variance feature better than logistic regression.
 
 The scoring function is not a detail to be left at default. It is a statement about what kind of relationship you expect the feature to have with the label.
 
@@ -322,8 +326,8 @@ The scoring function is not a detail to be left at default. It is a statement ab
 Both noise features scored near zero across all three metrics:
 
 ```text
-noise_1:  F=0.187, Chi2=0.834, MI=0.003
-noise_2:  F=0.298, Chi2=1.102, MI=0.001
+noise_1:  F=0.511, Chi2=0.043, MI=0.046
+noise_2:  F=1.751, Chi2=0.163, MI=0.062
 ```
 
 In a dataset with thousands of features and only a few useful ones, the scoring function's job is to separate these zeros from the real signals. The danger is not that it fails on obvious noise. The danger is that near-zero scores from weak but real features get mixed with near-zero scores from pure noise, and the threshold between "keep" and "drop" becomes ambiguous.
@@ -424,9 +428,9 @@ The experiment tells a simple story:
 
 | Scoring function | Top-2 features | CV accuracy | Best when |
 |---|---|---|---|
-| F-test | linear, threshold | 0.893 | Linear mean separation |
-| Chi2 | linear, threshold | 0.893 | Non-negative features |
-| Mutual Info | linear, quadratic | 0.878 | Any dependency type |
+| F-test | linear, noisy_linear | 0.865 | Linear mean separation |
+| Chi2 | linear, noisy_linear | 0.865 | Non-negative features |
+| Mutual Info | linear, variance | 0.800 | Any dependency type |
 
 I would carry these habits:
 
