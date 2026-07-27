@@ -23,21 +23,23 @@ jobs:
         run: cargo fmt --all -- --check
 
   clippy:
-    name: Clippy
+    name: Clippy (${{ matrix.config.cache_key }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         # `cache_key` is a comma-free slug used in the cache key (GitHub Actions
         # forbids commas in cache keys). `features` is passed verbatim to cargo.
-        include:
+        config:
           - { features: "",                              cache_key: "default" }
           - { features: "serde",                         cache_key: "serde" }
           - { features: "rayon",                         cache_key: "rayon" }
           - { features: "matrixmultiply",                cache_key: "matrixmultiply" }
+          - { features: "datasets",                      cache_key: "datasets" }
           - { features: "serde,rayon",                   cache_key: "serde-rayon" }
           - { features: "serde,matrixmultiply",          cache_key: "serde-matrixmultiply" }
           - { features: "rayon,matrixmultiply",          cache_key: "rayon-matrixmultiply" }
           - { features: "serde,rayon,matrixmultiply",    cache_key: "serde-rayon-matrixmultiply" }
+          - { features: "serde,rayon,matrixmultiply,datasets", cache_key: "all-features" }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -50,25 +52,27 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-clippy-${{ matrix.cache_key }}-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-clippy-${{ matrix.config.cache_key }}-${{ hashFiles('Cargo.lock') }}
       - name: Run clippy
-        run: cargo clippy --all-targets --no-default-features --features "${{ matrix.features }}" -- -D warnings
+        run: cargo clippy --all-targets --no-default-features --features "${{ matrix.config.features }}" -- -D warnings
 
   test:
-    name: Test
+    name: Test (${{ matrix.os }}, ${{ matrix.config.cache_key }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        include:
+        config:
           - { features: "",                              cache_key: "default" }
           - { features: "serde",                         cache_key: "serde" }
           - { features: "rayon",                         cache_key: "rayon" }
           - { features: "matrixmultiply",                cache_key: "matrixmultiply" }
+          - { features: "datasets",                      cache_key: "datasets" }
           - { features: "serde,rayon",                   cache_key: "serde-rayon" }
           - { features: "serde,matrixmultiply",          cache_key: "serde-matrixmultiply" }
           - { features: "rayon,matrixmultiply",          cache_key: "rayon-matrixmultiply" }
           - { features: "serde,rayon,matrixmultiply",    cache_key: "serde-rayon-matrixmultiply" }
+          - { features: "serde,rayon,matrixmultiply,datasets", cache_key: "all-features" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -80,11 +84,11 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ matrix.os }}-test-${{ matrix.cache_key }}-${{ hashFiles('Cargo.lock') }}
+          key: ${{ matrix.os }}-test-${{ matrix.config.cache_key }}-${{ hashFiles('Cargo.lock') }}
       - name: Run unit + integration tests
-        run: cargo test --no-default-features --features "${{ matrix.features }}" --verbose
+        run: cargo test --no-default-features --features "${{ matrix.config.features }}" --verbose
       - name: Run doctests
-        run: cargo test --no-default-features --features "${{ matrix.features }}" --doc
+        run: cargo test --no-default-features --features "${{ matrix.config.features }}" --doc
 
   msrv:
     name: MSRV (1.70)
@@ -92,8 +96,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.70.0
-      - name: Check build with MSRV
-        run: cargo check --all-features
+      - name: Test with MSRV
+        run: cargo test --all-features --locked
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify the crates.io package
+        run: cargo package --locked
 
   doc:
     name: Docs
@@ -102,6 +115,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Build documentation
-        # `-D warnings` is already enforced via RUSTFLAGS in the env block above;
-        # `cargo doc` does not accept that flag directly.
+        env:
+          RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --all-features --no-deps
+
+  site:
+    name: Docs and blog site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install site dependencies
+        run: npm ci --ignore-scripts
+      - name: Build site
+        run: npm run build
+      - name: Validate generated site
+        run: npm run check

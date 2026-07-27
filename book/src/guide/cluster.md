@@ -26,6 +26,10 @@ let iters = km.n_iter();                        // Lloyd's iterations of best ru
 let new_labels = km.predict(&new_x)?;           // assign new points to nearest centroid
 ```
 
+`n_clusters`, `n_init`, and `max_iter` must be positive. `tol` must be finite
+and non-negative. Invalid values return `InvalidConfig` before clustering; the
+same checks apply immediately when values are supplied through `Params`.
+
 **Initialization strategies** (`KMeansInit`):
 
 - `KMeansPlusPlus` (default) — first centroid is uniform random; each subsequent

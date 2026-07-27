@@ -4,7 +4,7 @@
 //!
 //! `||Xβ − y||² + α ||β||²`
 //!
-//! Unlike [`LinearRegression`](super::linear_regression::LinearRegression), the
+//! Unlike [`LinearRegression`](crate::LinearRegression), the
 //! `α‖β‖²` penalty guarantees the system matrix `XᵀX + αI` is positive-definite
 //! even when `X` is rank-deficient or collinear, so the Cholesky solver always
 //! succeeds for `α > 0`.
@@ -86,7 +86,7 @@ impl Ridge {
     }
 
     /// Builder: regularization strength `alpha` (default `1.0`). Larger values
-    /// shrink coefficients more aggressively. Must be `>= 0`.
+    /// shrink coefficients more aggressively. Must be finite and `>= 0`.
     pub fn with_alpha(mut self, alpha: f64) -> Self {
         self.alpha = alpha;
         self
@@ -144,9 +144,11 @@ impl Predictor for Ridge {
                 actual: format!("{} targets", y.len()),
             });
         }
-        if self.alpha < 0.0 {
+        x.validate_finite()?;
+        super::validate_finite_targets(y)?;
+        if !self.alpha.is_finite() || self.alpha < 0.0 {
             return Err(DatarustError::InvalidConfig(format!(
-                "alpha must be >= 0, got {}",
+                "alpha must be finite and >= 0, got {}",
                 self.alpha
             )));
         }
@@ -213,12 +215,21 @@ impl Predictor for Ridge {
         if !self.fitted {
             return Err(DatarustError::NotFitted("Ridge".into()));
         }
+        if self.coef_.len() != self.n_features_in_
+            || !self.intercept_.is_finite()
+            || self.coef_.iter().any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "Ridge has inconsistent fitted state".into(),
+            ));
+        }
         if x.ncols() != self.n_features_in_ {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.n_features_in_),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let p = self.n_features_in_;
         let beta = &self.coef_;
         let intercept = self.intercept_;
@@ -354,6 +365,16 @@ mod tests {
         let mut model = Ridge::new().with_alpha(-1.0);
         let err = model.fit(&x, &[1.0, 2.0]).unwrap_err();
         assert!(matches!(err, DatarustError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn non_finite_alpha_rejected() {
+        let x = Matrix::new(vec![vec![1.0], vec![2.0]]).unwrap();
+        for alpha in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut model = Ridge::new().with_alpha(alpha);
+            let err = model.fit(&x, &[1.0, 2.0]).unwrap_err();
+            assert!(matches!(err, DatarustError::InvalidConfig(_)));
+        }
     }
 
     #[test]

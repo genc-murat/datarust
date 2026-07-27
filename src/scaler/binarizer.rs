@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
 use crate::traits::{default_input_names, FeatureNames};
 use crate::Transformer;
@@ -50,12 +50,34 @@ impl Transformer for Binarizer {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        if !self.threshold.is_finite() {
+            return Err(DatarustError::InvalidConfig(format!(
+                "threshold must be finite, got {}",
+                self.threshold
+            )));
+        }
+        x.validate_finite()?;
         self.n_features = x.ncols();
         self.fitted = true;
         Ok(())
     }
 
     fn transform(&self, x: &Matrix) -> Result<Matrix> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted("Binarizer".into()));
+        }
+        if !self.threshold.is_finite() {
+            return Err(DatarustError::InvalidInput(
+                "Binarizer has inconsistent fitted state".into(),
+            ));
+        }
+        if x.ncols() != self.n_features {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} features", self.n_features),
+                actual: format!("{} features", x.ncols()),
+            });
+        }
+        x.validate_finite()?;
         let out: Vec<Vec<f64>> = x
             .rows_ref()
             .iter()
@@ -110,6 +132,16 @@ mod tests {
         let out = b.fit_transform(&x).unwrap();
         // 5.0 > 5.0 is false -> 0
         assert_eq!(out.row(0), [0.0, 0.0]);
+    }
+
+    #[test]
+    fn non_finite_threshold_and_input_error() {
+        let x = Matrix::new(vec![vec![1.0]]).unwrap();
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(Binarizer::new().threshold(invalid).fit(&x).is_err());
+            let bad = Matrix::new(vec![vec![invalid]]).unwrap();
+            assert!(Binarizer::new().fit_transform(&bad).is_err());
+        }
     }
 
     #[test]

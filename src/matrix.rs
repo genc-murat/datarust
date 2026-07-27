@@ -2,6 +2,14 @@
 
 use crate::error::{DatarustError, Result};
 
+fn checked_element_count(rows: usize, cols: usize) -> Result<usize> {
+    rows.checked_mul(cols)
+        .ok_or_else(|| DatarustError::ShapeMismatch {
+            expected: "rows * cols within usize range".into(),
+            actual: format!("{} rows × {} cols overflows usize", rows, cols),
+        })
+}
+
 /// Row-major dense matrix of `f64` backed by a single contiguous `Vec<f64>`.
 ///
 /// The flat layout (one allocation, stride-1 row traversal) keeps every numeric
@@ -34,7 +42,8 @@ impl Matrix {
             }
         }
         let rows = data.len();
-        let mut flat = Vec::with_capacity(rows * cols);
+        let element_count = checked_element_count(rows, cols)?;
+        let mut flat = Vec::with_capacity(element_count);
         for row in data {
             flat.extend(row);
         }
@@ -58,12 +67,7 @@ impl Matrix {
         if rows == 0 || cols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
         }
-        let expected = rows
-            .checked_mul(cols)
-            .ok_or_else(|| DatarustError::ShapeMismatch {
-                expected: "rows * cols within usize range".into(),
-                actual: format!("{} rows × {} cols overflows usize", rows, cols),
-            })?;
+        let expected = checked_element_count(rows, cols)?;
         if flat.len() != expected {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} elements", expected),
@@ -82,8 +86,9 @@ impl Matrix {
         if rows == 0 || cols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
         }
+        let element_count = checked_element_count(rows, cols)?;
         Ok(Self {
-            data: vec![0.0; rows * cols],
+            data: vec![0.0; element_count],
             rows,
             cols,
         })
@@ -94,7 +99,8 @@ impl Matrix {
         if n == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
         }
-        let mut data = vec![0.0; n * n];
+        let element_count = checked_element_count(n, n)?;
+        let mut data = vec![0.0; element_count];
         for i in 0..n {
             data[i * n + i] = 1.0;
         }
@@ -141,7 +147,7 @@ impl Matrix {
     /// for a safe alternative that returns `None` on out-of-bounds access.
     #[inline]
     pub fn get(&self, i: usize, j: usize) -> f64 {
-        debug_assert!(
+        assert!(
             i < self.rows && j < self.cols,
             "Matrix::get: index ({}, {}) out of bounds for {}×{}",
             i,
@@ -149,8 +155,7 @@ impl Matrix {
             self.rows,
             self.cols
         );
-        // SAFETY: debug_assert above + the struct invariant (data.len() == rows*cols).
-        unsafe { *self.data.get_unchecked(i * self.cols + j) }
+        self.data[i * self.cols + j]
     }
 
     /// Returns `Some(element)` at row `i`, column `j`, or `None` if the indices
@@ -179,6 +184,41 @@ impl Matrix {
                 return Err(DatarustError::InvalidInput(format!(
                     "NaN value at position ({}, {})",
                     i, j
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns `Ok(())` if every matrix element is finite.
+    ///
+    /// Unlike [`validate_no_nan`](Self::validate_no_nan), this also rejects
+    /// positive and negative infinity. Algorithms whose numerical kernels do
+    /// not define missing-value semantics should call this before fitting or
+    /// predicting.
+    pub fn validate_finite(&self) -> Result<()> {
+        for (flat_idx, &v) in self.data.iter().enumerate() {
+            if !v.is_finite() {
+                let i = flat_idx / self.cols;
+                let j = flat_idx % self.cols;
+                return Err(DatarustError::InvalidInput(format!(
+                    "non-finite value {v} at position ({i}, {j})"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns `Ok(())` if the matrix contains no positive or negative
+    /// infinity. `NaN` values are allowed for missing-value-aware algorithms
+    /// such as imputers.
+    pub fn validate_no_infinite(&self) -> Result<()> {
+        for (flat_idx, &v) in self.data.iter().enumerate() {
+            if v.is_infinite() {
+                let i = flat_idx / self.cols;
+                let j = flat_idx % self.cols;
+                return Err(DatarustError::InvalidInput(format!(
+                    "infinite value {v} at position ({i}, {j})"
                 )));
             }
         }
@@ -254,7 +294,8 @@ impl Matrix {
         let m = self.rows;
         let k = self.cols;
         let n = other.cols;
-        let mut out = vec![0.0; m * n];
+        let element_count = checked_element_count(m, n)?;
+        let mut out = vec![0.0; element_count];
 
         #[cfg(feature = "matrixmultiply")]
         {
@@ -325,7 +366,8 @@ impl Matrix {
             }
         }
         let ncols = cols.len();
-        let mut data = vec![0.0; rows * ncols];
+        let element_count = checked_element_count(rows, ncols)?;
+        let mut data = vec![0.0; element_count];
         for (j, col) in cols.iter().enumerate() {
             for (i, &v) in col.iter().enumerate() {
                 data[i * ncols + j] = v;
@@ -367,7 +409,8 @@ impl Matrix {
             }
         }
         let out_cols = indices.len();
-        let mut out = Vec::with_capacity(self.rows * out_cols);
+        let element_count = checked_element_count(self.rows, out_cols)?;
+        let mut out = Vec::with_capacity(element_count);
         for i in 0..self.rows {
             let base = i * ncols;
             for &c in indices {
@@ -410,7 +453,8 @@ impl Matrix {
                 )));
             }
         }
-        let mut out = Vec::with_capacity(indices.len() * self.cols);
+        let element_count = checked_element_count(indices.len(), self.cols)?;
+        let mut out = Vec::with_capacity(element_count);
         for &r in indices {
             let start = r * self.cols;
             out.extend_from_slice(&self.data[start..start + self.cols]);
@@ -606,7 +650,7 @@ impl TryFrom<Vec<Vec<f64>>> for Matrix {
 /// - `indices`: column index of each non-zero.
 /// - `data`: value of each non-zero.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SparseMatrix {
     nrows: usize,
     ncols: usize,
@@ -617,6 +661,9 @@ pub struct SparseMatrix {
 
 impl SparseMatrix {
     /// Build a CSR matrix from raw CSR arrays.
+    ///
+    /// `indptr` must be non-decreasing and stay within the stored-entry count.
+    /// Column indices must be strictly increasing within every row.
     pub fn new(
         nrows: usize,
         ncols: usize,
@@ -627,9 +674,16 @@ impl SparseMatrix {
         if nrows == 0 || ncols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
         }
-        if indptr.len() != nrows + 1 {
+        let expected_indptr_len =
+            nrows
+                .checked_add(1)
+                .ok_or_else(|| DatarustError::ShapeMismatch {
+                    expected: "nrows + 1 within usize range".into(),
+                    actual: format!("{} rows overflows the CSR indptr length", nrows),
+                })?;
+        if indptr.len() != expected_indptr_len {
             return Err(DatarustError::ShapeMismatch {
-                expected: format!("{} indptr entries", nrows + 1),
+                expected: format!("{} indptr entries", expected_indptr_len),
                 actual: format!("{} indptr entries", indptr.len()),
             });
         }
@@ -645,11 +699,28 @@ impl SparseMatrix {
                 "indptr must start at 0 and end at nnz".into(),
             ));
         }
-        for &c in &indices {
-            if c >= ncols {
+        for row in 0..nrows {
+            let start = indptr[row];
+            let end = indptr[row + 1];
+            if start > end || end > nnz {
                 return Err(DatarustError::InvalidInput(format!(
-                    "column index {} out of range (ncols {})",
-                    c, ncols
+                    "indptr must be non-decreasing and stay within nnz (row {})",
+                    row
+                )));
+            }
+            let row_indices = &indices[start..end];
+            for &c in row_indices {
+                if c >= ncols {
+                    return Err(DatarustError::InvalidInput(format!(
+                        "column index {} out of range (ncols {})",
+                        c, ncols
+                    )));
+                }
+            }
+            if row_indices.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return Err(DatarustError::InvalidInput(format!(
+                    "column indices in row {} must be strictly increasing",
+                    row
                 )));
             }
         }
@@ -663,7 +734,8 @@ impl SparseMatrix {
     }
 
     /// Build from `(row, col, value)` triplets. Zero-valued triplets are
-    /// dropped automatically. Within a row, entries are sorted by column.
+    /// dropped automatically. Within a row, entries are sorted by column and
+    /// duplicate coordinates are summed.
     pub fn from_triplets(
         nrows: usize,
         ncols: usize,
@@ -672,6 +744,12 @@ impl SparseMatrix {
         if nrows == 0 || ncols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
         }
+        let indptr_len = nrows
+            .checked_add(1)
+            .ok_or_else(|| DatarustError::ShapeMismatch {
+                expected: "nrows + 1 within usize range".into(),
+                actual: format!("{} rows overflows the CSR indptr length", nrows),
+            })?;
         let mut per_row: Vec<Vec<(usize, f64)>> = vec![vec![]; nrows];
         for &(r, c, v) in triplets {
             if r >= nrows {
@@ -690,15 +768,24 @@ impl SparseMatrix {
                 per_row[r].push((c, v));
             }
         }
-        let mut indptr = Vec::with_capacity(nrows + 1);
+        let mut indptr = Vec::with_capacity(indptr_len);
         let mut indices = Vec::new();
         let mut data = Vec::new();
         indptr.push(0);
         for row_entries in &mut per_row {
             row_entries.sort_by_key(|(c, _)| *c);
-            for &(c, v) in row_entries.iter() {
-                indices.push(c);
-                data.push(v);
+            let mut position = 0;
+            while position < row_entries.len() {
+                let column = row_entries[position].0;
+                let mut value = 0.0;
+                while position < row_entries.len() && row_entries[position].0 == column {
+                    value += row_entries[position].1;
+                    position += 1;
+                }
+                if value != 0.0 {
+                    indices.push(column);
+                    data.push(value);
+                }
             }
             indptr.push(indices.len());
         }
@@ -716,10 +803,16 @@ impl SparseMatrix {
         if nrows == 0 || ncols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
         }
+        let indptr_len = nrows
+            .checked_add(1)
+            .ok_or_else(|| DatarustError::ShapeMismatch {
+                expected: "nrows + 1 within usize range".into(),
+                actual: format!("{} rows overflows the CSR indptr length", nrows),
+            })?;
         Ok(Self {
             nrows,
             ncols,
-            indptr: vec![0; nrows + 1],
+            indptr: vec![0; indptr_len],
             indices: vec![],
             data: vec![],
         })
@@ -753,7 +846,20 @@ impl SparseMatrix {
     }
 
     /// Get element at `(i, j)`. Returns 0.0 if not stored.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `i >= nrows()` or `j >= ncols()`. Use
+    /// [`checked_get`](Self::checked_get) for bounds-checked access.
     pub fn get(&self, i: usize, j: usize) -> f64 {
+        assert!(
+            i < self.nrows && j < self.ncols,
+            "SparseMatrix::get: index ({}, {}) out of bounds for {}×{}",
+            i,
+            j,
+            self.nrows,
+            self.ncols
+        );
         let start = self.indptr[i];
         let end = self.indptr[i + 1];
         // Binary search within the row's column indices.
@@ -764,9 +870,12 @@ impl SparseMatrix {
         }
     }
 
-    /// Returns `Some(element)` at row `i`, column `j`, or `None` if `i` is
-    /// out of bounds or the value is not stored (equivalent to 0.0).
+    /// Returns `Some(element)` at row `i`, column `j`, including `Some(0.0)`
+    /// when the value is not stored, or `None` if either index is out of bounds.
     pub fn checked_get(&self, i: usize, j: usize) -> Option<f64> {
+        if i >= self.nrows || j >= self.ncols {
+            return None;
+        }
         let start = *self.indptr.get(i)?;
         let end = *self.indptr.get(i + 1)?;
         let slice = self.indices.get(start..end)?;
@@ -777,7 +886,17 @@ impl SparseMatrix {
     }
 
     /// Iterate over `(col, value)` non-zero entries in row `i`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `i >= nrows()`.
     pub fn row_nz(&self, i: usize) -> impl Iterator<Item = (usize, f64)> + '_ {
+        assert!(
+            i < self.nrows,
+            "SparseMatrix::row_nz: row {} out of bounds for {} rows",
+            i,
+            self.nrows
+        );
         let start = self.indptr[i];
         let end = self.indptr[i + 1];
         self.indices[start..end]
@@ -795,6 +914,27 @@ impl SparseMatrix {
             }
         }
         Matrix::new(rows)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for SparseMatrix {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            nrows: usize,
+            ncols: usize,
+            indptr: Vec<usize>,
+            indices: Vec<usize>,
+            data: Vec<f64>,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        SparseMatrix::new(raw.nrows, raw.ncols, raw.indptr, raw.indices, raw.data)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -1107,10 +1247,27 @@ mod tests {
         assert!(Matrix::identity(0).is_err());
         assert!(Matrix::from_flat(0, 1, vec![]).is_err());
         assert!(Matrix::from_flat(usize::MAX, 2, vec![]).is_err());
+        assert!(Matrix::zeros(usize::MAX, 2).is_err());
+        assert!(Matrix::identity(usize::MAX).is_err());
         assert!(Matrix::from_columns(vec![]).is_err());
         assert!(Matrix::from_columns(vec![vec![]]).is_err());
         assert!(Matrix::from_columns(vec![vec![1.0], vec![2.0, 3.0]]).is_err());
         assert!(Matrix::try_from(vec![vec![1.0], vec![]]).is_err());
+    }
+
+    #[test]
+    fn finite_validators_distinguish_nan_from_infinity() {
+        let finite = Matrix::new(vec![vec![1.0, -2.0]]).unwrap();
+        assert!(finite.validate_finite().is_ok());
+        assert!(finite.validate_no_infinite().is_ok());
+
+        let nan = Matrix::new(vec![vec![f64::NAN]]).unwrap();
+        assert!(nan.validate_finite().is_err());
+        assert!(nan.validate_no_infinite().is_ok());
+
+        let infinite = Matrix::new(vec![vec![f64::INFINITY]]).unwrap();
+        assert!(infinite.validate_finite().is_err());
+        assert!(infinite.validate_no_infinite().is_err());
     }
 
     #[test]
@@ -1137,6 +1294,7 @@ mod tests {
         assert_eq!(sparse.checked_get(0, 0), Some(1.0));
         assert_eq!(sparse.checked_get(0, 2), Some(0.0));
         assert_eq!(sparse.checked_get(2, 0), None);
+        assert_eq!(sparse.checked_get(0, 3), None);
         assert_eq!(
             sparse.to_dense().unwrap().rows_ref(),
             vec![vec![1.0, 0.0, 0.0], vec![0.0, 0.0, 3.0]]
@@ -1147,8 +1305,36 @@ mod tests {
         assert!(SparseMatrix::new(1, 2, vec![0, 1], vec![], vec![1.0]).is_err());
         assert!(SparseMatrix::new(1, 2, vec![1, 1], vec![0], vec![1.0]).is_err());
         assert!(SparseMatrix::new(1, 2, vec![0, 1], vec![2], vec![1.0]).is_err());
+        assert!(SparseMatrix::new(2, 2, vec![0, 2, 1], vec![0], vec![1.0]).is_err());
+        assert!(SparseMatrix::new(1, 3, vec![0, 2], vec![2, 1], vec![1.0, 2.0]).is_err());
+        assert!(SparseMatrix::new(1, 3, vec![0, 2], vec![1, 1], vec![1.0, 2.0]).is_err());
         assert!(SparseMatrix::from_triplets(0, 1, &[]).is_err());
         assert!(SparseMatrix::from_triplets(1, 1, &[(1, 0, 1.0)]).is_err());
+    }
+
+    #[test]
+    fn sparse_duplicate_triplets_are_summed_and_zero_sums_are_dropped() {
+        let sparse = SparseMatrix::from_triplets(
+            1,
+            3,
+            &[(0, 1, 2.0), (0, 1, 3.0), (0, 2, 4.0), (0, 2, -4.0)],
+        )
+        .unwrap();
+        assert_eq!(sparse.nnz(), 1);
+        assert_eq!(sparse.get(0, 1), 5.0);
+        assert_eq!(sparse.get(0, 2), 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Matrix::get")]
+    fn dense_get_panics_on_out_of_bounds_access() {
+        Matrix::new(vec![vec![1.0]]).unwrap().get(1, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "SparseMatrix::get")]
+    fn sparse_get_panics_on_out_of_bounds_access() {
+        SparseMatrix::zeros(1, 1).unwrap().get(0, 1);
     }
 
     #[cfg(feature = "serde")]
@@ -1168,5 +1354,16 @@ mod tests {
         assert!(
             serde_json::from_str::<StrMatrix>(r#"{"data":[["north"],["south","east"]]}"#).is_err()
         );
+
+        let sparse = SparseMatrix::from_triplets(1, 2, &[(0, 1, 3.0)]).unwrap();
+        let encoded = serde_json::to_string(&sparse).unwrap();
+        assert_eq!(
+            serde_json::from_str::<SparseMatrix>(&encoded).unwrap(),
+            sparse
+        );
+        assert!(serde_json::from_str::<SparseMatrix>(
+            r#"{"nrows":1,"ncols":3,"indptr":[0,2],"indices":[2,1],"data":[1.0,2.0]}"#
+        )
+        .is_err());
     }
 }

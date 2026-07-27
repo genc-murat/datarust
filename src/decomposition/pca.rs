@@ -8,7 +8,8 @@ use crate::Transformer;
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PCAComponents {
-    /// Keep exactly this many components.
+    /// Request this many components, capped at
+    /// `min(n_samples, n_features)` during fit.
     Count(usize),
     /// Keep the smallest number of components such that the cumulative
     /// explained variance ratio is at least the given value in (0, 1).
@@ -19,16 +20,15 @@ pub enum PCAComponents {
 
 /// Which decomposition backend PCA uses for `fit`.
 ///
-/// Mirrors sklearn's `svd_solver` parameter. `Auto` (the default) selects the
-/// randomized solver when the requested rank is small relative to the feature
-/// count and the dataset is large; otherwise it falls back to the full
-/// covariance + Jacobi eigensolver.
+/// Mirrors sklearn's `svd_solver` parameter. `Auto` currently keeps the exact
+/// eigensolver paths; randomized SVD is opt-in while its oversampling edge case
+/// is being verified.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PCASolver {
-    /// Pick a backend automatically based on data shape and requested rank.
-    /// Uses `Randomized` when `n_components * 10 < min(n_samples, n_features)`
-    /// and `min(n_samples, n_features) >= 200`; otherwise `Full`.
+    /// Use the exact eigensolver paths. This remains separate from `Full` so a
+    /// future release can enable shape-based selection without changing the
+    /// public enum.
     #[default]
     Auto,
     /// Full covariance eigendecomposition (Jacobi). Exact, `O(p³·sweeps)`.
@@ -59,6 +59,29 @@ pub struct PCA {
 }
 
 impl PCA {
+    fn validate_fitted_state(&self) -> Result<()> {
+        let p = self.mean.len();
+        let k = self.n_components_;
+        if p == 0
+            || k == 0
+            || self.n_samples_ == 0
+            || !self.total_variance_.is_finite()
+            || self.components.len() != k
+            || self.explained_variance.len() != k
+            || self.explained_variance_ratio.len() != k
+            || self.components.iter().any(|row| row.len() != p)
+            || self.mean.iter().any(|v| !v.is_finite())
+            || self.components.iter().flatten().any(|v| !v.is_finite())
+            || self.explained_variance.iter().any(|v| !v.is_finite())
+            || self.explained_variance_ratio.iter().any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "PCA has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Creates a new PCA with the given component selection.
     pub fn new(n_components: PCAComponents) -> Self {
         Self {
@@ -84,8 +107,8 @@ impl PCA {
 
     /// Selects the decomposition backend used by `fit`.
     ///
-    /// [`PCASolver::Auto`] (the default) picks `Randomized` for large,
-    /// low-rank problems and `Full` otherwise.
+    /// [`PCASolver::Auto`] (the default) currently uses the exact eigensolver;
+    /// select [`PCASolver::Randomized`] explicitly for the randomized backend.
     pub fn solver(mut self, s: PCASolver) -> Self {
         self.solver = s;
         self
@@ -189,6 +212,7 @@ impl Transformer for PCA {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        x.validate_finite()?;
         let n = x.nrows();
         let p = x.ncols();
         self.n_samples_ = n;
@@ -323,12 +347,14 @@ impl Transformer for PCA {
         if !self.fitted {
             return Err(DatarustError::NotFitted("PCA".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.mean.len() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.mean.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let n = x.nrows();
         let p = x.ncols();
         let k = self.n_components_;
@@ -370,12 +396,14 @@ impl Transformer for PCA {
         if !self.fitted {
             return Err(DatarustError::NotFitted("PCA".into()));
         }
+        self.validate_fitted_state()?;
         if projected.ncols() != self.n_components_ {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} components", self.n_components_),
                 actual: format!("{} columns", projected.ncols()),
             });
         }
+        projected.validate_finite()?;
         let n = projected.nrows();
         let p = self.mean.len();
         let k = self.n_components_;

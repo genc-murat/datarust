@@ -23,7 +23,8 @@ let reconstructed = pca.inverse_transform(&projected)?; // approximate recovery
 
 ### Component selection
 
-- `PCAComponents::Count(k)` — keep exactly `k` components.
+- `PCAComponents::Count(k)` — request `k` components, capped at
+  `min(n_samples, n_features)`.
 - `PCAComponents::Variance(0.95)` — keep enough to explain 95% of variance.
 - `PCAComponents::All` — keep all components.
 

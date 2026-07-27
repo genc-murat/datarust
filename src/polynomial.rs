@@ -115,6 +115,25 @@ impl PolynomialFeatures {
         }
         combos
     }
+
+    fn validate_fitted_state(&self) -> Result<()> {
+        if self.input_n_features == 0 || self.combinations.is_empty() {
+            return Err(DatarustError::InvalidInput(
+                "PolynomialFeatures fitted state is incomplete".into(),
+            ));
+        }
+        if self
+            .combinations
+            .iter()
+            .flatten()
+            .any(|&index| index >= self.input_n_features)
+        {
+            return Err(DatarustError::InvalidInput(
+                "PolynomialFeatures fitted state contains an invalid feature index".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Default for PolynomialFeatures {
@@ -169,6 +188,7 @@ impl Transformer for PolynomialFeatures {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        x.validate_finite()?;
         if self.degree == 0 && !self.include_bias {
             return Err(DatarustError::InvalidConfig(
                 "degree=0 with include_bias=false produces no features".into(),
@@ -194,6 +214,14 @@ impl Transformer for PolynomialFeatures {
         if !self.fitted {
             return Err(DatarustError::NotFitted("PolynomialFeatures".into()));
         }
+        self.validate_fitted_state()?;
+        if x.ncols() != self.input_n_features {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} features", self.input_n_features),
+                actual: format!("{} features", x.ncols()),
+            });
+        }
+        x.validate_finite()?;
         let nrows = x.nrows();
         let n_out = self.combinations.len();
         let mut out = vec![vec![1.0; n_out]; nrows];

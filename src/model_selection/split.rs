@@ -55,16 +55,18 @@ impl TrainTestSplit {
     /// Perform the split, returning `(x_train, x_test, y_train, y_test)`.
     pub fn split(&self, x: &Matrix, y: &[f64]) -> Result<(Matrix, Matrix, Vec<f64>, Vec<f64>)> {
         let n = x.nrows();
-        if n == 0 {
-            return Err(DatarustError::EmptyInput("X has no rows".into()));
-        }
         if y.len() != n {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} targets", n),
                 actual: format!("{} targets", y.len()),
             });
         }
-        if self.test_size <= 0.0 || self.test_size >= 1.0 {
+        if n < 2 {
+            return Err(DatarustError::InvalidInput(
+                "train/test split requires at least 2 samples".into(),
+            ));
+        }
+        if !self.test_size.is_finite() || self.test_size <= 0.0 || self.test_size >= 1.0 {
             return Err(DatarustError::InvalidInput(format!(
                 "test_size must be in (0, 1), got {}",
                 self.test_size
@@ -77,7 +79,9 @@ impl TrainTestSplit {
             Rng::new(seed).shuffle(&mut indices);
         }
 
-        let n_test = (n as f64 * self.test_size).round() as usize;
+        // Match scikit-learn's float test-size behavior: round the requested
+        // test share upward so it is never under-allocated.
+        let n_test = (n as f64 * self.test_size).ceil() as usize;
         let n_test = n_test.clamp(1, n - 1);
         let (test_idx, train_idx) = partition_indices(&indices, n_test);
 
@@ -200,6 +204,13 @@ mod tests {
             .split(&x, &y)
             .unwrap_err();
         assert!(matches!(err, DatarustError::InvalidInput(_)));
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let err = TrainTestSplit::new()
+                .with_test_size(invalid)
+                .split(&x, &y)
+                .unwrap_err();
+            assert!(matches!(err, DatarustError::InvalidInput(_)));
+        }
         let err = TrainTestSplit::new()
             .with_test_size(1.0)
             .split(&x, &y)
@@ -220,5 +231,23 @@ mod tests {
         let (x, y) = make(3);
         let (_, x_te, _, _) = train_test_split(&x, &y).unwrap();
         assert_eq!(x_te.nrows(), 1);
+    }
+
+    #[test]
+    fn one_sample_is_rejected_without_panicking() {
+        let (x, y) = make(1);
+        let err = train_test_split(&x, &y).unwrap_err();
+        assert!(matches!(err, DatarustError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn fractional_test_size_rounds_up() {
+        let (x, y) = make(5);
+        let (_, x_te, _, _) = TrainTestSplit::new()
+            .with_test_size(0.25)
+            .with_shuffle(false)
+            .split(&x, &y)
+            .unwrap();
+        assert_eq!(x_te.nrows(), 2);
     }
 }

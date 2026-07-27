@@ -120,6 +120,27 @@ fn softmax(logits: &[f64], out: &mut [f64]) {
 }
 
 impl LogisticRegression {
+    fn validate_fitted_state(&self) -> Result<()> {
+        let k = self.classes_.len();
+        let expected_rows = k.saturating_sub(1);
+        if k < 2
+            || self.coef_.len() != expected_rows
+            || self.intercept_.len() != expected_rows
+            || self
+                .coef_
+                .iter()
+                .any(|row| row.len() != self.n_features_in_)
+            || self.classes_.iter().any(|v| !v.is_finite())
+            || self.intercept_.iter().any(|v| !v.is_finite())
+            || self.coef_.iter().flatten().any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "LogisticRegression has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Creates a new estimator: `fit_intercept = true`, `solver = Cholesky`,
     /// `max_iter = 100`, `tol = 1e-4`.
     pub fn new() -> Self {
@@ -149,14 +170,16 @@ impl LogisticRegression {
         self
     }
 
-    /// Builder: maximum Newton iterations (default `100`).
+    /// Builder: maximum Newton iterations (default `100`). Must be at least
+    /// `1`.
     pub fn with_max_iter(mut self, max_iter: usize) -> Self {
         self.max_iter = max_iter;
         self
     }
 
     /// Builder: convergence tolerance (default `1e-4`). Stops when the maximum
-    /// coefficient change in an iteration drops below this value.
+    /// coefficient change in an iteration drops below this value. Must be
+    /// finite and `>= 0`.
     pub fn with_tol(mut self, tol: f64) -> Self {
         self.tol = tol;
         self
@@ -258,12 +281,14 @@ impl LogisticRegression {
         if !self.fitted {
             return Err(DatarustError::NotFitted("LogisticRegression".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.n_features_in_ {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.n_features_in_),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let p = self.n_features_in_;
         let beta = &self.coef_[0];
         let intercept = self.intercept_[0];
@@ -286,12 +311,14 @@ impl LogisticRegression {
         if !self.fitted {
             return Err(DatarustError::NotFitted("LogisticRegression".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.n_features_in_ {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.n_features_in_),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let n = x.nrows();
         let p = self.n_features_in_;
         let k = self.classes_.len();
@@ -595,7 +622,15 @@ impl crate::traits::Params for LogisticRegression {
     fn set_params(&mut self, name: &str, value: crate::traits::ParamValue) -> Result<()> {
         use crate::traits::ParamValue;
         match (name, value) {
+            ("max_iter", ParamValue::Int(0)) => {
+                return Err(DatarustError::InvalidConfig("max_iter must be > 0".into()));
+            }
             ("max_iter", ParamValue::Int(v)) => self.max_iter = v,
+            ("tol", ParamValue::Float(v)) if !v.is_finite() || v < 0.0 => {
+                return Err(DatarustError::InvalidConfig(format!(
+                    "tol must be finite and >= 0, got {v}"
+                )));
+            }
             ("tol", ParamValue::Float(v)) => self.tol = v,
             ("fit_intercept", ParamValue::Bool(v)) => self.fit_intercept = v,
             (other, _) => {
@@ -625,8 +660,15 @@ impl Predictor for LogisticRegression {
                 actual: format!("{} targets", y.len()),
             });
         }
+        x.validate_finite()?;
         if self.max_iter == 0 {
             return Err(DatarustError::InvalidConfig("max_iter must be > 0".into()));
+        }
+        if !self.tol.is_finite() || self.tol < 0.0 {
+            return Err(DatarustError::InvalidConfig(format!(
+                "tol must be finite and >= 0, got {}",
+                self.tol
+            )));
         }
 
         // Validate labels once and share the same compact vocabulary used by
@@ -805,6 +847,46 @@ mod tests {
         let mut model = LogisticRegression::new();
         let err = model.fit(&x, &[0.0, 1.0, 2.5]).unwrap_err();
         assert!(matches!(err, DatarustError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn invalid_solver_configuration_is_rejected() {
+        let (x, y) = separable();
+        let mut zero_iterations = LogisticRegression::new().with_max_iter(0);
+        assert!(matches!(
+            zero_iterations.fit(&x, &y),
+            Err(DatarustError::InvalidConfig(_))
+        ));
+        for tol in [-1.0, f64::NAN, f64::INFINITY] {
+            let mut model = LogisticRegression::new().with_tol(tol);
+            assert!(matches!(
+                model.fit(&x, &y),
+                Err(DatarustError::InvalidConfig(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn params_reject_invalid_solver_values_without_mutating_state() {
+        use crate::traits::{ParamValue, Params};
+
+        let mut model = LogisticRegression::new();
+        assert!(matches!(
+            model.set_params("max_iter", ParamValue::Int(0)),
+            Err(DatarustError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            model.set_params("tol", ParamValue::Float(f64::NAN)),
+            Err(DatarustError::InvalidConfig(_))
+        ));
+        assert_eq!(
+            model.get_params(),
+            vec![
+                ("max_iter", ParamValue::Int(100)),
+                ("tol", ParamValue::Float(1e-4)),
+                ("fit_intercept", ParamValue::Bool(true)),
+            ]
+        );
     }
 
     #[test]

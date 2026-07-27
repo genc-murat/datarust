@@ -71,12 +71,13 @@ impl Transformer for MinMaxScaler {
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
         let (lo, hi) = self.feature_range;
-        if lo >= hi {
+        if !lo.is_finite() || !hi.is_finite() || lo >= hi {
             return Err(DatarustError::InvalidConfig(format!(
-                "feature_range lo={} must be < hi={}",
+                "feature_range values must be finite and satisfy lo < hi, got lo={} hi={}",
                 lo, hi
             )));
         }
+        x.validate_finite()?;
         // Single fused min+max pass over flat storage.
         let (min, max) = stats::column_min_max_flat(x.as_slice(), x.nrows(), x.ncols());
         let data_range: Vec<f64> = (0..x.ncols()).map(|j| max[j] - min[j]).collect();
@@ -90,12 +91,27 @@ impl Transformer for MinMaxScaler {
         if !self.fitted {
             return Err(DatarustError::NotFitted("MinMaxScaler".into()));
         }
+        if self.min.len() != self.data_range.len()
+            || !self.feature_range.0.is_finite()
+            || !self.feature_range.1.is_finite()
+            || self.feature_range.0 >= self.feature_range.1
+            || self
+                .min
+                .iter()
+                .chain(&self.data_range)
+                .any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "MinMaxScaler has inconsistent fitted state".into(),
+            ));
+        }
         if self.min.len() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.min.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         // Flat-storage transform with fused NaN check.
         let (lo, hi) = self.feature_range;
         let span = hi - lo;
@@ -157,12 +173,27 @@ impl Transformer for MinMaxScaler {
         if !self.fitted {
             return Err(DatarustError::NotFitted("MinMaxScaler".into()));
         }
+        if self.min.len() != self.data_range.len()
+            || !self.feature_range.0.is_finite()
+            || !self.feature_range.1.is_finite()
+            || self.feature_range.0 >= self.feature_range.1
+            || self
+                .min
+                .iter()
+                .chain(&self.data_range)
+                .any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "MinMaxScaler has inconsistent fitted state".into(),
+            ));
+        }
         if self.min.len() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.min.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let (lo, hi) = self.feature_range;
         let span = hi - lo;
         let nrows = x.nrows();
@@ -281,6 +312,16 @@ mod tests {
         assert!(s.fit(&m1()).is_err());
         let mut s2 = MinMaxScaler::new().feature_range(5.0, 3.0);
         assert!(s2.fit(&m1()).is_err());
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(MinMaxScaler::new()
+                .feature_range(invalid, 1.0)
+                .fit(&m1())
+                .is_err());
+            assert!(MinMaxScaler::new()
+                .feature_range(0.0, invalid)
+                .fit(&m1())
+                .is_err());
+        }
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Clustering evaluation metrics.
 //!
-//! Provides [`silhouette_score`], mirroring `sklearn.metrics.silhouette_score`.
+//! Provides [`silhouette_score`](crate::cluster::metrics::silhouette_score),
+//! mirroring `sklearn.metrics.silhouette_score`.
 //! These metrics assess clustering quality without ground-truth labels, using
 //! only the feature matrix and the predicted cluster assignments.
 
@@ -61,20 +62,38 @@ pub fn silhouette_score(x: &Matrix, labels: &[usize]) -> Result<f64> {
             "silhouette_score requires at least 2 samples".into(),
         ));
     }
-    // Determine the number of clusters and validate that there are at least 2.
-    let k = labels.iter().copied().max().map(|m| m + 1).unwrap_or(0);
+    x.validate_finite()?;
+
+    // Compact arbitrary external labels instead of allocating by the largest
+    // observed value. This keeps gapped IDs such as {10, usize::MAX} safe.
+    let mut classes = labels.to_vec();
+    classes.sort_unstable();
+    classes.dedup();
+    let k = classes.len();
     if k < 2 {
         return Err(DatarustError::InvalidInput(
             "silhouette_score requires at least 2 clusters".into(),
         ));
     }
+    if k >= n {
+        return Err(DatarustError::InvalidInput(format!(
+            "silhouette_score requires fewer clusters than samples, got {k} clusters for {n} samples"
+        )));
+    }
+
+    let compact_labels: Vec<usize> = labels
+        .iter()
+        .map(|label| {
+            classes
+                .binary_search(label)
+                .expect("classes was built from labels")
+        })
+        .collect();
     // Count members per cluster.
     let mut counts = vec![0usize; k];
-    for &c in labels {
+    for &c in &compact_labels {
         counts[c] += 1;
     }
-    // Every cluster must have at least 1 member (already guaranteed by labels),
-    // but a singleton cluster yields a(i)=0 for its sole member.
     // Precompute row slices for speed.
     let p = x.ncols();
     let data = x.as_slice();
@@ -82,7 +101,13 @@ pub fn silhouette_score(x: &Matrix, labels: &[usize]) -> Result<f64> {
     let mut total = 0.0_f64;
     for i in 0..n {
         let row_i = &data[i * p..(i + 1) * p];
-        let ci = labels[i];
+        let ci = compact_labels[i];
+
+        // sklearn defines the silhouette coefficient of a singleton cluster
+        // as zero. Skipping its accumulation preserves that contribution.
+        if counts[ci] == 1 {
+            continue;
+        }
 
         // a(i): mean distance to other points in the same cluster.
         let mut sum_same = 0.0_f64;
@@ -95,7 +120,7 @@ pub fn silhouette_score(x: &Matrix, labels: &[usize]) -> Result<f64> {
                 continue;
             }
             let d = sq_dist(row_i, &data[j * p..(j + 1) * p]).sqrt();
-            let cj = labels[j];
+            let cj = compact_labels[j];
             cluster_sums[cj] += d;
             cluster_counts[cj] += 1;
             if cj == ci {
@@ -103,11 +128,7 @@ pub fn silhouette_score(x: &Matrix, labels: &[usize]) -> Result<f64> {
                 count_same += 1;
             }
         }
-        let a_i = if count_same > 0 {
-            sum_same / count_same as f64
-        } else {
-            0.0 // singleton cluster
-        };
+        let a_i = sum_same / count_same as f64;
         // b(i): nearest other cluster's mean distance.
         let mut b_i = f64::INFINITY;
         for c in 0..k {
@@ -196,5 +217,35 @@ mod tests {
         let s = silhouette_score(&x, &labels).unwrap();
         assert!(s > 0.5, "three well-separated clusters: {s}");
         assert!(approx(s, s, 1e-12)); // tautology, just exercises approx
+    }
+
+    #[test]
+    fn gapped_and_maximum_labels_are_compacted() {
+        let x = Matrix::new(vec![vec![0.0], vec![0.1], vec![10.0], vec![10.1]]).unwrap();
+        let compact = silhouette_score(&x, &[0, 0, 1, 1]).unwrap();
+        let gapped = silhouette_score(&x, &[10, 10, usize::MAX, usize::MAX]).unwrap();
+        assert!(approx(compact, gapped, 1e-12));
+    }
+
+    #[test]
+    fn one_cluster_per_sample_errors() {
+        let x = Matrix::new(vec![vec![0.0], vec![1.0]]).unwrap();
+        assert!(silhouette_score(&x, &[0, usize::MAX]).is_err());
+    }
+
+    #[test]
+    fn singleton_cluster_contributes_zero() {
+        let x = Matrix::new(vec![vec![0.0], vec![10.0], vec![11.0]]).unwrap();
+        let score = silhouette_score(&x, &[0, 1, 1]).unwrap();
+        let expected = (0.0 + 0.9 + 10.0 / 11.0) / 3.0;
+        assert!(approx(score, expected, 1e-12), "score={score}");
+    }
+
+    #[test]
+    fn non_finite_features_error() {
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let x = Matrix::new(vec![vec![0.0], vec![invalid], vec![1.0]]).unwrap();
+            assert!(silhouette_score(&x, &[0, 0, 1]).is_err());
+        }
     }
 }

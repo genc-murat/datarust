@@ -40,7 +40,8 @@ let mut model = Ridge::new()
 model.fit(&x, &y)?;
 ```
 
-Larger `alpha` → more shrinkage (coefficients shrink toward zero).
+Larger `alpha` → more shrinkage (coefficients shrink toward zero). `alpha`
+must be finite and non-negative.
 
 ## Lasso
 
@@ -60,6 +61,10 @@ model.fit(&x, &y)?;
 model.coef();   // some entries may be exactly 0.0 (sparsity)
 model.n_iter(); // iterations actually run
 ```
+
+For iterative solvers, `max_iter` must be positive and `tol` must be finite
+and non-negative. Invalid configurations return `InvalidConfig` before the
+optimization starts.
 
 ## LogisticRegression
 
@@ -81,6 +86,10 @@ let probabilities = model.predict_proba(&x)?;
 let class_five_probability = model.predict_proba_for_class(&x, 5.0)?;
 let acc = model.score(&x, &y)?; // mean accuracy
 ```
+
+`LogisticRegression` applies the same iteration and tolerance validation as
+Lasso. Invalid values supplied through `Params::set_params` are rejected
+without changing the estimator.
 
 ## Choosing a model
 

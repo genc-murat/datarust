@@ -6,7 +6,7 @@
 //!
 //! The L1 penalty drives some coefficients to **exactly zero**, producing a
 //! sparse model that performs implicit feature selection. This is the key
-//! difference from [`Ridge`](super::ridge::Ridge) (L2), which only shrinks.
+//! difference from [`Ridge`](crate::Ridge) (L2), which only shrinks.
 //!
 //! Solved by **coordinate descent** with soft-thresholding: each coefficient is
 //! updated in turn while the others are held fixed, using the precomputed Gram
@@ -77,7 +77,7 @@ impl Lasso {
     }
 
     /// Builder: regularization strength `alpha` (default `1.0`). Larger values
-    /// produce more sparse coefficients. Must be `>= 0`.
+    /// produce more sparse coefficients. Must be finite and `>= 0`.
     pub fn with_alpha(mut self, alpha: f64) -> Self {
         self.alpha = alpha;
         self
@@ -89,14 +89,16 @@ impl Lasso {
         self
     }
 
-    /// Builder: maximum coordinate-descent iterations (default `1000`).
+    /// Builder: maximum coordinate-descent iterations (default `1000`). Must
+    /// be at least `1`.
     pub fn with_max_iter(mut self, max_iter: usize) -> Self {
         self.max_iter = max_iter;
         self
     }
 
     /// Builder: convergence tolerance (default `1e-4`). The solver stops when
-    /// the maximum coefficient change in a sweep drops below this value.
+    /// the maximum coefficient change in a sweep drops below this value. Must
+    /// be finite and `>= 0`.
     pub fn with_tol(mut self, tol: f64) -> Self {
         self.tol = tol;
         self
@@ -162,10 +164,21 @@ impl Predictor for Lasso {
                 actual: format!("{} targets", y.len()),
             });
         }
-        if self.alpha < 0.0 {
+        x.validate_finite()?;
+        super::validate_finite_targets(y)?;
+        if !self.alpha.is_finite() || self.alpha < 0.0 {
             return Err(DatarustError::InvalidConfig(format!(
-                "alpha must be >= 0, got {}",
+                "alpha must be finite and >= 0, got {}",
                 self.alpha
+            )));
+        }
+        if self.max_iter == 0 {
+            return Err(DatarustError::InvalidConfig("max_iter must be > 0".into()));
+        }
+        if !self.tol.is_finite() || self.tol < 0.0 {
+            return Err(DatarustError::InvalidConfig(format!(
+                "tol must be finite and >= 0, got {}",
+                self.tol
             )));
         }
 
@@ -256,12 +269,21 @@ impl Predictor for Lasso {
         if !self.fitted {
             return Err(DatarustError::NotFitted("Lasso".into()));
         }
+        if self.coef_.len() != self.n_features_in_
+            || !self.intercept_.is_finite()
+            || self.coef_.iter().any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "Lasso has inconsistent fitted state".into(),
+            ));
+        }
         if x.ncols() != self.n_features_in_ {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.n_features_in_),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let p = self.n_features_in_;
         let beta = &self.coef_;
         let intercept = self.intercept_;
@@ -377,6 +399,30 @@ mod tests {
         let mut model = Lasso::new().with_alpha(-1.0);
         let err = model.fit(&x, &[1.0, 2.0]).unwrap_err();
         assert!(matches!(err, DatarustError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn invalid_solver_configuration_is_rejected() {
+        let x = Matrix::new(vec![vec![1.0], vec![2.0]]).unwrap();
+        for alpha in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut model = Lasso::new().with_alpha(alpha);
+            assert!(matches!(
+                model.fit(&x, &[1.0, 2.0]),
+                Err(DatarustError::InvalidConfig(_))
+            ));
+        }
+        for tol in [-1.0, f64::NAN, f64::INFINITY] {
+            let mut model = Lasso::new().with_tol(tol);
+            assert!(matches!(
+                model.fit(&x, &[1.0, 2.0]),
+                Err(DatarustError::InvalidConfig(_))
+            ));
+        }
+        let mut model = Lasso::new().with_max_iter(0);
+        assert!(matches!(
+            model.fit(&x, &[1.0, 2.0]),
+            Err(DatarustError::InvalidConfig(_))
+        ));
     }
 
     #[test]

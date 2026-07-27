@@ -2,6 +2,9 @@
 
 Feature scaling and distribution-shaping transformers. All implement [`Transformer`](https://docs.rs/datarust/latest/datarust/trait.Transformer.html) (`Matrix → Matrix`) and live in [`datarust::scaler`](https://docs.rs/datarust/latest/datarust/scaler/index.html).
 
+Scaler inputs and floating-point configuration values must be finite. `NaN`
+and infinity return `DatarustError` before fitted state is changed.
+
 ## StandardScaler
 
 Standardize by removing the mean and scaling to unit variance. **Population** standard deviation (`ddof = 0`), matching sklearn.

@@ -261,7 +261,7 @@ This is why I do not select a rare-event classifier from one aggregate metric.
 
 ## Average precision moved with prevalence
 
-`average_precision_score` summarizes precision as recall increases down the ranked list. In datarust, it uses the standard step-function calculation: each time another positive is encountered, that precision contributes according to the increase in recall.
+`average_precision_score` summarizes precision as recall increases down the ranked list. In datarust, it uses the standard step-function calculation at each distinct score threshold. Equal scores are processed together, so their contribution does not depend on input order; whenever recall increases, the precision at that threshold is weighted by the increase.
 
 Unlike ROC-AUC, the precision values inside that calculation depend on the number of negatives mixed into the ranking.
 

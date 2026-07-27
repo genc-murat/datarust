@@ -1,6 +1,6 @@
 //! Cross-validation scoring driver mirroring `sklearn.model_selection.cross_val_score`.
 
-use crate::error::Result;
+use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
 use crate::model_selection::kfold::KFold;
 use crate::traits::Predictor;
@@ -44,6 +44,12 @@ where
     F: Fn(&[f64], &[f64]) -> Result<f64>,
 {
     let n = x.nrows();
+    if y.len() != n {
+        return Err(DatarustError::ShapeMismatch {
+            expected: format!("{} targets", n),
+            actual: format!("{} targets", y.len()),
+        });
+    }
     let mut scores = Vec::new();
     for (train_idx, test_idx) in cv.split(n)? {
         let x_train = x.select_rows(&train_idx)?;
@@ -135,5 +141,13 @@ mod tests {
         for s in &scores {
             assert!(*s >= 0.0);
         }
+    }
+
+    #[test]
+    fn target_length_mismatch_is_rejected_before_indexing() {
+        let (x, _) = regression_data(10);
+        let cv = KFold::new().with_n_splits(2);
+        let err = cross_val_score(&LinearRegression::new(), &x, &[1.0], &cv, r2_score).unwrap_err();
+        assert!(matches!(err, DatarustError::ShapeMismatch { .. }));
     }
 }

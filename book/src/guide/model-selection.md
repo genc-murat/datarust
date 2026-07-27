@@ -20,6 +20,9 @@ let (x_tr, x_te, y_tr, y_te) = TrainTestSplit::new()
     .split(&x, &y)?;
 ```
 
+The split requires at least two samples. Fractional test sizes round up, so a
+25% test share uses two rows when the dataset contains five rows.
+
 ## KFold
 
 K-fold cross-validation. Each sample serves as the test set exactly once.
@@ -41,7 +44,9 @@ for (train_idx, test_idx) in cv.split(n_samples)? {
 
 ## StratifiedKFold
 
-Preserves class balance across folds. Essential for imbalanced classification.
+Approximately preserves class balance across folds. It accepts two or more
+non-negative integer-valued classes, including gapped labels such as
+`{2, 5, 9}`. Essential for imbalanced classification.
 
 ```rust
 use datarust::model_selection::StratifiedKFold;

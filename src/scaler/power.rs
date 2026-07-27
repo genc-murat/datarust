@@ -191,6 +191,7 @@ impl Transformer for PowerTransformer {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        x.validate_finite()?;
         let ncols = x.ncols();
         if matches!(self.method, PowerMethod::BoxCox) {
             for j in 0..ncols {
@@ -234,13 +235,27 @@ impl Transformer for PowerTransformer {
         if !self.fitted {
             return Err(DatarustError::NotFitted("PowerTransformer".into()));
         }
+        if self.lambdas.len() != self.n_features
+            || self.means.len() != self.n_features
+            || self.stds.len() != self.n_features
+            || self
+                .lambdas
+                .iter()
+                .chain(&self.means)
+                .chain(&self.stds)
+                .any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "PowerTransformer has inconsistent fitted state".into(),
+            ));
+        }
         if x.ncols() != self.n_features {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.n_features),
                 actual: format!("{} features", x.ncols()),
             });
         }
-        x.validate_no_nan()?;
+        x.validate_finite()?;
         // Box-Cox requires strictly positive input; validate on new data
         // since fit-time validation does not cover unseen values.
         if matches!(self.method, PowerMethod::BoxCox) {
@@ -274,12 +289,27 @@ impl Transformer for PowerTransformer {
         if !self.fitted {
             return Err(DatarustError::NotFitted("PowerTransformer".into()));
         }
+        if self.lambdas.len() != self.n_features
+            || self.means.len() != self.n_features
+            || self.stds.len() != self.n_features
+            || self
+                .lambdas
+                .iter()
+                .chain(&self.means)
+                .chain(&self.stds)
+                .any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "PowerTransformer has inconsistent fitted state".into(),
+            ));
+        }
         if x.ncols() != self.n_features {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.n_features),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
         for (i, out_row) in out.iter_mut().enumerate() {
             for (j, cell) in out_row.iter_mut().enumerate() {

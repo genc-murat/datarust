@@ -60,6 +60,28 @@ pub struct TruncatedSVD {
 }
 
 impl TruncatedSVD {
+    fn validate_fitted_state(&self) -> Result<()> {
+        let k = self.n_components_;
+        let p = self.components.first().map_or(0, Vec::len);
+        if k == 0
+            || p == 0
+            || self.components.len() != k
+            || self.singular_values.len() != k
+            || self.explained_variance.len() != k
+            || self.explained_variance_ratio.len() != k
+            || self.components.iter().any(|row| row.len() != p)
+            || self.components.iter().flatten().any(|v| !v.is_finite())
+            || self.singular_values.iter().any(|v| !v.is_finite())
+            || self.explained_variance.iter().any(|v| !v.is_finite())
+            || self.explained_variance_ratio.iter().any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "TruncatedSVD has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Creates a new TruncatedSVD with the given component selection.
     pub fn new<C: Into<SVDComponents>>(components: C) -> Result<Self> {
         let spec = components.into();
@@ -69,7 +91,7 @@ impl TruncatedSVD {
                     "n_components must be > 0".into(),
                 ));
             }
-            SVDComponents::Variance(v) if *v <= 0.0 || *v >= 1.0 => {
+            SVDComponents::Variance(v) if !v.is_finite() || *v <= 0.0 || *v >= 1.0 => {
                 return Err(DatarustError::InvalidConfig(
                     "variance threshold must be in (0, 1)".into(),
                 ));
@@ -229,6 +251,20 @@ impl Transformer for TruncatedSVD {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        x.validate_finite()?;
+        match &self.components_spec {
+            SVDComponents::Count(0) => {
+                return Err(DatarustError::InvalidConfig(
+                    "n_components must be > 0".into(),
+                ));
+            }
+            SVDComponents::Variance(v) if !v.is_finite() || *v <= 0.0 || *v >= 1.0 => {
+                return Err(DatarustError::InvalidConfig(
+                    "variance threshold must be finite and in (0, 1)".into(),
+                ));
+            }
+            _ => {}
+        }
         let n = x.nrows();
         let p = x.ncols();
         self.n_samples_ = n;
@@ -264,12 +300,14 @@ impl Transformer for TruncatedSVD {
         if !self.fitted {
             return Err(DatarustError::NotFitted("TruncatedSVD".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.components[0].len() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.components[0].len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let n = x.nrows();
         let p = x.ncols();
         let k = self.n_components_;
@@ -289,12 +327,14 @@ impl Transformer for TruncatedSVD {
         if !self.fitted {
             return Err(DatarustError::NotFitted("TruncatedSVD".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.n_components_ {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} components", self.n_components_),
                 actual: format!("{} columns", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let n = x.nrows();
         let p = self.components[0].len();
         let k = self.n_components_;
@@ -454,6 +494,7 @@ mod tests {
         assert!(TruncatedSVD::new(SVDComponents::Variance(0.0)).is_err());
         assert!(TruncatedSVD::new(SVDComponents::Variance(1.0)).is_err());
         assert!(TruncatedSVD::new(SVDComponents::Variance(0.5)).is_ok());
+        assert!(TruncatedSVD::new(SVDComponents::Variance(f64::NAN)).is_err());
     }
 
     #[test]

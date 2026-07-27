@@ -6,6 +6,57 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
 
 ## Unreleased
 
+## 0.6.5
+
+- Restored enforceable Rust 1.70 compatibility by pinning MSRV-compatible
+  Rayon and serde_json dependency lines.
+- Hardened deserialized categorical encoder state against mismatched category
+  lists, index maps, and output widths.
+- Rejected fractional ordinal codes during inverse transformation.
+- Completed fitted-state checks for KNN/Simple imputers, MaxAbsScaler, and
+  QuantileTransformer.
+- Aligned PCA solver and component-count documentation with the implemented
+  behavior.
+
+## 0.6.4
+
+- Silhouette scoring compacts arbitrary cluster IDs, handles singleton
+  clusters correctly, and rejects invalid one-cluster-per-sample input.
+- Numerical estimators, decompositions, scalers, selectors, and regression
+  metrics reject non-finite observations; imputers retain `NaN` missing-value
+  support while rejecting infinity.
+- Non-finite scaler, selector, encoder, and SVD configuration values fail
+  before fitting.
+- Inconsistent fitted state loaded from JSON returns a recoverable error instead
+  of panicking during transform or prediction.
+- CI now builds and validates the docs/blog site and denies rustdoc warnings
+  explicitly.
+
+## 0.6.3
+
+- Ridge, Lasso, logistic regression, and KMeans now reject non-finite or
+  otherwise invalid solver hyperparameters before optimization.
+- `Params::set_params` validation no longer mutates KMeans or logistic
+  regression when a candidate is invalid.
+- CI now executes the intended OS × feature matrix, including datasets and an
+  all-features build, and verifies the crates.io package.
+- The published crate excludes the blog, book, website, npm, and Cloudflare
+  deployment sources, reducing the compressed archive from about 3.0 MiB to
+  289 KiB.
+
+## 0.6.2
+
+- Safe dense access now checks bounds in release builds, while dense
+  allocations reject dimension overflow.
+- Raw and deserialized CSR matrices validate pointer ranges and sorted column
+  indices; duplicate triplets are summed.
+- Train/test and cross-validation reject undersized or mismatched inputs, and
+  fractional test sizes now round up consistently.
+- `StratifiedKFold` supports validated, non-contiguous multiclass labels.
+- Binary log loss, ROC-AUC, and average precision validate labels and numeric
+  inputs. New `*_with_positive_label` functions support label spaces such as
+  `{2, 5}`, and average-precision ties are threshold-grouped.
+
 ## 0.6.1
 
 - Classification labels are now compacted safely, so metrics and

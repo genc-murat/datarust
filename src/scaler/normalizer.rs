@@ -98,6 +98,7 @@ impl Transformer for Normalizer {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        x.validate_finite()?;
         self.n_features = x.ncols();
         self.fitted = true;
         Ok(())
@@ -107,7 +108,13 @@ impl Transformer for Normalizer {
         if !self.fitted {
             return Err(DatarustError::NotFitted("Normalizer".into()));
         }
-        x.validate_no_nan()?;
+        if x.ncols() != self.n_features {
+            return Err(DatarustError::ShapeMismatch {
+                expected: format!("{} features", self.n_features),
+                actual: format!("{} features", x.ncols()),
+            });
+        }
+        x.validate_finite()?;
         #[cfg(feature = "rayon")]
         {
             let out: Vec<Vec<f64>> = x.rows_ref().par_iter().map(|r| self.scale_row(r)).collect();

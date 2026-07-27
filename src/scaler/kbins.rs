@@ -179,6 +179,10 @@ impl Transformer for KBinsDiscretizer {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        if self.n_bins < 2 {
+            return Err(DatarustError::InvalidConfig("n_bins must be >= 2".into()));
+        }
+        x.validate_finite()?;
         let ncols = x.ncols();
         let mut edges_all = Vec::with_capacity(ncols);
         let mut actual_bins = Vec::with_capacity(ncols);
@@ -205,6 +209,24 @@ impl Transformer for KBinsDiscretizer {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        if self.bin_edges.len() != self.n_features
+            || self.n_actual_bins.len() != self.n_features
+            || self.bin_edges.iter().any(Vec::is_empty)
+            || self.bin_edges.iter().any(|edges| {
+                edges.iter().any(|v| !v.is_finite())
+                    || edges.windows(2).any(|pair| pair[0] > pair[1])
+            })
+            || self
+                .bin_edges
+                .iter()
+                .zip(&self.n_actual_bins)
+                .any(|(edges, &actual)| actual != edges.len().saturating_sub(1).max(1))
+        {
+            return Err(DatarustError::InvalidInput(
+                "KBinsDiscretizer has inconsistent fitted state".into(),
+            ));
+        }
+        x.validate_finite()?;
         match self.encode {
             KBinsEncode::Ordinal => {
                 let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];

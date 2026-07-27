@@ -7,7 +7,7 @@
 //! `X · Omega` matmul of size `n×p×(k+oversample)`.
 //!
 //! All routines are pure Rust with no external dependencies; the matmul
-//! hot path delegates to [`crate::decomposition::pca::matmul_flat`], which
+//! hot path delegates to the internal `matmul_flat` helper, which
 //! dispatches to `matrixmultiply::dgemm` when that feature is enabled.
 
 use crate::decomposition::jacobi;

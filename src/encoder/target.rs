@@ -39,9 +39,9 @@ pub struct TargetEncoder {
 impl TargetEncoder {
     /// Creates a new target encoder with the given smoothing.
     pub fn new(smoothing: f64) -> Result<Self> {
-        if smoothing < 0.0 {
+        if !smoothing.is_finite() || smoothing < 0.0 {
             return Err(DatarustError::InvalidConfig(format!(
-                "smoothing must be >= 0, got {}",
+                "smoothing must be finite and >= 0, got {}",
                 smoothing
             )));
         }
@@ -65,6 +65,23 @@ impl TargetEncoder {
         self.smoothing
     }
 
+    fn validate_fitted_state(&self) -> Result<()> {
+        if !self.smoothing.is_finite()
+            || self.smoothing < 0.0
+            || self.mappings.is_empty()
+            || self.global_means.len() != self.mappings.len()
+            || self.global_means.iter().any(|value| !value.is_finite())
+            || self.mappings.iter().any(|mapping| {
+                mapping.is_empty() || mapping.values().any(|value| !value.is_finite())
+            })
+        {
+            return Err(DatarustError::InvalidInput(
+                "TargetEncoder has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Learns the smoothed per-category target means.
     pub fn fit(&mut self, x: &StrMatrix, y: &[f64]) -> Result<()> {
         if y.len() != x.nrows() {
@@ -72,6 +89,19 @@ impl TargetEncoder {
                 expected: format!("{} targets", x.nrows()),
                 actual: format!("{} targets", y.len()),
             });
+        }
+        if !self.smoothing.is_finite() || self.smoothing < 0.0 {
+            return Err(DatarustError::InvalidConfig(format!(
+                "smoothing must be finite and >= 0, got {}",
+                self.smoothing
+            )));
+        }
+        for (index, &target) in y.iter().enumerate() {
+            if !target.is_finite() {
+                return Err(DatarustError::InvalidInput(format!(
+                    "target at index {index} must be finite, found {target}"
+                )));
+            }
         }
         let ncols = x.ncols();
         let global_mean: f64 = y.iter().sum::<f64>() / y.len() as f64;
@@ -106,6 +136,7 @@ impl TargetEncoder {
         if !self.fitted {
             return Err(DatarustError::NotFitted("TargetEncoder".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.mappings.len() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} categorical columns", self.mappings.len()),
@@ -297,6 +328,8 @@ mod tests {
     #[test]
     fn negative_smoothing_rejected() {
         assert!(TargetEncoder::new(-1.0).is_err());
+        assert!(TargetEncoder::new(f64::NAN).is_err());
+        assert!(TargetEncoder::new(f64::INFINITY).is_err());
     }
 
     #[test]

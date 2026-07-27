@@ -102,6 +102,7 @@ impl Transformer for StandardScaler {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        x.validate_finite()?;
         let (mean, std) = Self::compute(x, self.with_mean, self.with_std);
         self.mean = mean;
         self.std = std;
@@ -113,12 +114,20 @@ impl Transformer for StandardScaler {
         if !self.fitted {
             return Err(DatarustError::NotFitted("StandardScaler".into()));
         }
+        if self.mean.len() != self.std.len()
+            || self.mean.iter().chain(&self.std).any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "StandardScaler has inconsistent fitted state".into(),
+            ));
+        }
         if self.mean.len() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.mean.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         // Flat-storage transform: write directly into a contiguous output buffer
         // with stride-1 reads from the input. NaN check is fused into the loop.
         let nrows = x.nrows();
@@ -171,12 +180,20 @@ impl Transformer for StandardScaler {
         if !self.fitted {
             return Err(DatarustError::NotFitted("StandardScaler".into()));
         }
+        if self.mean.len() != self.std.len()
+            || self.mean.iter().chain(&self.std).any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "StandardScaler has inconsistent fitted state".into(),
+            ));
+        }
         if self.mean.len() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.mean.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let nrows = x.nrows();
         let ncols = x.ncols();
         let mean = &self.mean;

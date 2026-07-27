@@ -50,6 +50,23 @@ impl LabelEncoder {
         &self.classes
     }
 
+    fn validate_fitted_state(&self) -> Result<()> {
+        if self.classes.is_empty()
+            || self.indices.len() != self.classes.len()
+            || self.classes.windows(2).any(|pair| pair[0] >= pair[1])
+            || self
+                .classes
+                .iter()
+                .enumerate()
+                .any(|(index, class)| self.indices.get(class) != Some(&index))
+        {
+            return Err(DatarustError::InvalidInput(
+                "LabelEncoder has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Learns the sorted class labels from the input.
     pub fn fit<I, S>(&mut self, labels: I) -> Result<()>
     where
@@ -83,6 +100,7 @@ impl LabelEncoder {
         if !self.fitted {
             return Err(DatarustError::NotFitted("LabelEncoder".into()));
         }
+        self.validate_fitted_state()?;
         let mut out = Vec::new();
         for s in labels {
             let key = s.as_ref();
@@ -115,6 +133,7 @@ impl LabelEncoder {
         if !self.fitted {
             return Err(DatarustError::NotFitted("LabelEncoder".into()));
         }
+        self.validate_fitted_state()?;
         let mut out = Vec::with_capacity(indices.len());
         for &i in indices {
             if i == usize::MAX {

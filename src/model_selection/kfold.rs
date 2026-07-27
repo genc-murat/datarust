@@ -4,6 +4,7 @@
 //! produces an iterator of `(train_indices, test_indices)` via `split()`.
 
 use crate::error::{DatarustError, Result};
+use crate::label_space::LabelSpace;
 use crate::model_selection::rng::Rng;
 
 /// K-fold cross-validation splitter.
@@ -101,8 +102,8 @@ impl KFold {
 
 /// Stratified K-fold cross-validation splitter.
 ///
-/// Each fold preserves the class ratio of the full dataset (for binary
-/// classification targets in `{0.0, 1.0}`). Useful when classes are imbalanced.
+/// Each fold approximately preserves the class ratio of the full dataset.
+/// Labels may contain two or more non-negative integer-valued classes.
 #[derive(Debug, Clone)]
 pub struct StratifiedKFold {
     n_splits: usize,
@@ -145,7 +146,7 @@ impl StratifiedKFold {
     }
 
     /// Returns an iterator of `(train_indices, test_indices)` pairs that
-    /// preserve the class balance of `y`. `y` holds binary `{0.0, 1.0}` labels.
+    /// approximately preserve the class balance of `y`.
     pub fn split(&self, y: &[f64]) -> Result<impl Iterator<Item = (Vec<usize>, Vec<usize>)> + '_> {
         let n = y.len();
         if n == 0 {
@@ -164,31 +165,40 @@ impl StratifiedKFold {
             )));
         }
 
-        // Group sample indices by class.
-        let mut class0: Vec<usize> = Vec::new();
-        let mut class1: Vec<usize> = Vec::new();
+        let label_space = LabelSpace::fit(y)?;
+        if label_space.len() < 2 {
+            return Err(DatarustError::InvalidInput(
+                "stratified splitting requires at least 2 classes".into(),
+            ));
+        }
+
+        // Group sample indices by their compact class index.
+        let mut class_indices: Vec<Vec<usize>> = vec![Vec::new(); label_space.len()];
         for (i, &label) in y.iter().enumerate() {
-            if label >= 0.5 {
-                class1.push(i);
-            } else {
-                class0.push(i);
-            }
+            class_indices[label_space.encode(label)?].push(i);
         }
         if self.shuffle {
             let seed = self.random_state.unwrap_or(0x9E3779B97F4A7C15);
             let mut rng = Rng::new(seed);
-            rng.shuffle(&mut class0);
-            rng.shuffle(&mut class1);
+            for indices in &mut class_indices {
+                rng.shuffle(indices);
+            }
         }
 
-        // Assign each class's samples round-robin across the folds.
+        // Assign samples round-robin across folds. Carrying the starting fold
+        // between classes avoids empty folds when every class is smaller than
+        // n_splits while keeping each class's fold counts within one sample.
         let n_splits = self.n_splits;
         let mut folds: Vec<Vec<usize>> = vec![Vec::new(); n_splits];
-        for (f, idx) in class0.iter().enumerate() {
-            folds[f % n_splits].push(*idx);
+        let mut next_fold = 0;
+        for indices in class_indices {
+            for idx in indices {
+                folds[next_fold].push(idx);
+                next_fold = (next_fold + 1) % n_splits;
+            }
         }
-        for (f, idx) in class1.iter().enumerate() {
-            folds[f % n_splits].push(*idx);
+        for fold in &mut folds {
+            fold.sort_unstable();
         }
 
         Ok(folds.into_iter().map(move |test_idx| {
@@ -350,5 +360,39 @@ mod tests {
         let first: Vec<_> = skf.split(&y).unwrap().collect();
         let second: Vec<_> = skf.split(&y).unwrap().collect();
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn stratified_supports_gapped_multiclass_labels() {
+        let y = [2.0, 5.0, 9.0, 2.0, 5.0, 9.0, 2.0, 5.0, 9.0];
+        let folds: Vec<_> = StratifiedKFold::new()
+            .with_n_splits(3)
+            .split(&y)
+            .unwrap()
+            .collect();
+        assert_eq!(folds.len(), 3);
+        for (_, test) in folds {
+            let mut labels: Vec<f64> = test.iter().map(|&i| y[i]).collect();
+            labels.sort_by(f64::total_cmp);
+            assert_eq!(labels, vec![2.0, 5.0, 9.0]);
+        }
+    }
+
+    #[test]
+    fn stratified_never_creates_empty_folds_for_small_classes() {
+        let y = [2.0, 5.0, 9.0];
+        let folds: Vec<_> = StratifiedKFold::new()
+            .with_n_splits(3)
+            .split(&y)
+            .unwrap()
+            .collect();
+        assert!(folds.iter().all(|(_, test)| test.len() == 1));
+    }
+
+    #[test]
+    fn stratified_rejects_invalid_or_single_class_labels() {
+        for y in [vec![0.0, 1.5], vec![0.0, f64::NAN], vec![2.0, 2.0]] {
+            assert!(StratifiedKFold::new().with_n_splits(2).split(&y).is_err());
+        }
     }
 }

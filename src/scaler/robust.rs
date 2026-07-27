@@ -91,12 +91,13 @@ impl Transformer for RobustScaler {
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
         let (q_lo, q_hi) = self.quantile_range;
-        if q_lo <= 0.0 || q_hi >= 1.0 || q_lo >= q_hi {
+        if !q_lo.is_finite() || !q_hi.is_finite() || q_lo <= 0.0 || q_hi >= 1.0 || q_lo >= q_hi {
             return Err(DatarustError::InvalidConfig(format!(
                 "quantile_range ({}, {}) must satisfy 0 < lo < hi < 1",
                 q_lo, q_hi
             )));
         }
+        x.validate_finite()?;
         // Single sort per column over flat storage replaces the previous three
         // separate gather+sort passes. Result rows: [q1_row, q3_row, median_row].
         let qs = stats::column_quantiles_many_flat(
@@ -130,12 +131,24 @@ impl Transformer for RobustScaler {
         if !self.fitted {
             return Err(DatarustError::NotFitted("RobustScaler".into()));
         }
+        if self.center.len() != self.scale.len()
+            || self
+                .center
+                .iter()
+                .chain(&self.scale)
+                .any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "RobustScaler has inconsistent fitted state".into(),
+            ));
+        }
         if self.center.len() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.center.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         // Flat-storage transform with fused NaN check.
         let nrows = x.nrows();
         let ncols = x.ncols();
@@ -195,12 +208,24 @@ impl Transformer for RobustScaler {
         if !self.fitted {
             return Err(DatarustError::NotFitted("RobustScaler".into()));
         }
+        if self.center.len() != self.scale.len()
+            || self
+                .center
+                .iter()
+                .chain(&self.scale)
+                .any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "RobustScaler has inconsistent fitted state".into(),
+            ));
+        }
         if self.center.len() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.center.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let nrows = x.nrows();
         let ncols = x.ncols();
         let center = &self.center;

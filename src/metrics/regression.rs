@@ -15,6 +15,18 @@ fn check_lengths(y_true: &[f64], y_pred: &[f64]) -> Result<()> {
             actual: format!("{} predictions", y_pred.len()),
         });
     }
+    for (index, (&truth, &prediction)) in y_true.iter().zip(y_pred).enumerate() {
+        if !truth.is_finite() {
+            return Err(DatarustError::InvalidInput(format!(
+                "y_true at index {index} must be finite, found {truth}"
+            )));
+        }
+        if !prediction.is_finite() {
+            return Err(DatarustError::InvalidInput(format!(
+                "y_pred at index {index} must be finite, found {prediction}"
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -238,5 +250,16 @@ mod tests {
     fn empty_errors() {
         let err = r2_score(&[], &[]).unwrap_err();
         assert!(matches!(err, DatarustError::EmptyInput(_)));
+    }
+
+    #[test]
+    fn non_finite_values_error_for_every_metric() {
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(mean_squared_error(&[1.0], &[invalid], true).is_err());
+            assert!(mean_absolute_error(&[invalid], &[1.0]).is_err());
+            assert!(r2_score(&[1.0], &[invalid]).is_err());
+            assert!(max_error(&[1.0], &[invalid]).is_err());
+            assert!(explained_variance_score(&[invalid], &[1.0]).is_err());
+        }
     }
 }

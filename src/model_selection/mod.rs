@@ -2,7 +2,8 @@
 //!
 //! Provides train/test splitting, K-fold cross-validation splitters, and a
 //! generic [`cross_val_score`] that works with any [`Predictor`](crate::traits::Predictor)
-//! + `Clone` estimator. A shared private PRNG lives in [`rng`].
+//! + `Clone` estimator. A shared PRNG lives in
+//! [`rng`](crate::model_selection::rng).
 
 /// Cross-validation scoring driver.
 pub mod cross_val;

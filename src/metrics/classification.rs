@@ -400,13 +400,43 @@ pub fn f1_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
     f1_score_with(y_true, y_pred, Average::Macro)
 }
 
+fn binary_targets(y_true: &[f64], positive_label: f64, metric: &str) -> Result<Vec<bool>> {
+    let space = LabelSpace::fit(y_true)?;
+    if space.len() != 2 {
+        return Err(DatarustError::InvalidInput(format!(
+            "{metric} requires exactly 2 observed classes, found {}",
+            space.len()
+        )));
+    }
+    let positive_index = space.encode(positive_label)?;
+    y_true
+        .iter()
+        .map(|&label| Ok(space.encode(label)? == positive_index))
+        .collect()
+}
+
+fn validate_finite_scores(scores: &[f64], metric: &str) -> Result<()> {
+    if let Some((index, score)) = scores
+        .iter()
+        .copied()
+        .enumerate()
+        .find(|(_, score)| !score.is_finite())
+    {
+        return Err(DatarustError::InvalidInput(format!(
+            "{metric} scores must be finite; found {score} at index {index}"
+        )));
+    }
+    Ok(())
+}
+
 /// Cross-entropy (log) loss for binary classification.
 ///
 /// `log_loss = -(1/n) Σ [y_i log(p_i) + (1 − y_i) log(1 − p_i)]`
 ///
-/// Mirrors `sklearn.metrics.log_loss`. `y_proba` holds predicted probabilities
-/// of the positive class (values in `[0, 1]`). Probabilities are clipped to
-/// `[eps, 1 − eps]` to avoid `log(0)`.
+/// `y_true` must contain exactly the labels `{0, 1}`. Use
+/// [`log_loss_with_positive_label`] for another binary label space. `y_proba`
+/// holds predicted probabilities of label `1` (values in `[0, 1]`).
+/// Probabilities are clipped to `[eps, 1 − eps]` to avoid `log(0)`.
 ///
 /// ```rust
 /// use datarust::metrics::classification::log_loss;
@@ -417,16 +447,45 @@ pub fn f1_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
 /// assert!(ll > 0.0);
 /// ```
 pub fn log_loss(y_true: &[f64], y_proba: &[f64], eps: f64) -> Result<f64> {
+    log_loss_with_positive_label(y_true, y_proba, 1.0, eps)
+}
+
+/// Cross-entropy loss for binary labels with an explicit positive class.
+///
+/// `y_proba[i]` is the predicted probability that sample `i` has
+/// `positive_label`. The target must contain exactly two observed,
+/// non-negative integer-valued classes.
+pub fn log_loss_with_positive_label(
+    y_true: &[f64],
+    y_proba: &[f64],
+    positive_label: f64,
+    eps: f64,
+) -> Result<f64> {
     check_lengths(y_true, y_proba)?;
-    let n = y_true.len() as f64;
-    let eps = eps.max(f64::MIN_POSITIVE);
-    let mut sum = 0.0;
-    for (&t, &p) in y_true.iter().zip(y_proba.iter()) {
-        let pc = p.clamp(eps, 1.0 - eps);
-        let ti = if t >= 0.5 { 1.0 } else { 0.0 };
-        sum += ti * pc.ln() + (1.0 - ti) * (1.0 - pc).ln();
+    if !eps.is_finite() || eps <= 0.0 || eps >= 0.5 {
+        return Err(DatarustError::InvalidInput(format!(
+            "eps must be finite and in (0, 0.5), got {eps}"
+        )));
     }
-    Ok(-sum / n)
+    if let Some((index, probability)) = y_proba
+        .iter()
+        .copied()
+        .enumerate()
+        .find(|(_, probability)| !probability.is_finite() || !(0.0..=1.0).contains(probability))
+    {
+        return Err(DatarustError::InvalidInput(format!(
+            "probabilities must be finite and in [0, 1]; found {probability} at index {index}"
+        )));
+    }
+    let targets = binary_targets(y_true, positive_label, "log_loss")?;
+    let n = y_true.len() as f64;
+    let eps = eps.max(f64::EPSILON);
+    let mut sum = 0.0;
+    for (&positive, &p) in targets.iter().zip(y_proba.iter()) {
+        let pc = p.clamp(eps, 1.0 - eps);
+        sum -= if positive { pc.ln() } else { (1.0 - pc).ln() };
+    }
+    Ok(sum / n)
 }
 
 /// Area under the ROC curve (binary classifier discrimination).
@@ -436,28 +495,35 @@ pub fn log_loss(y_true: &[f64], y_proba: &[f64], eps: f64) -> Result<f64> {
 /// `(Σ rank_positive − m(m+1)/2) / (m·n)` where `m` is the number of positives,
 /// `n` the number of negatives, and ties are handled by averaging ranks.
 ///
-/// Mirrors `sklearn.metrics.roc_auc_score` for binary `{0, 1}` targets. `y_score`
-/// is the predicted probability (or any monotonic score) of the positive class.
+/// `y_true` must contain exactly the labels `{0, 1}`. `y_score` is the predicted
+/// probability (or any monotonic finite score) of label `1`. Use
+/// [`roc_auc_score_with_positive_label`] for another binary label space.
 ///
 /// Returns 0.5 for a random classifier, 1.0 for perfect separation. Errors if
 /// fewer than two classes are present or inputs have mismatched length.
 pub fn roc_auc_score(y_true: &[f64], y_score: &[f64]) -> Result<f64> {
+    roc_auc_score_with_positive_label(y_true, y_score, 1.0)
+}
+
+/// ROC-AUC for binary labels with an explicit positive class.
+pub fn roc_auc_score_with_positive_label(
+    y_true: &[f64],
+    y_score: &[f64],
+    positive_label: f64,
+) -> Result<f64> {
     check_lengths(y_true, y_score)?;
+    validate_finite_scores(y_score, "roc_auc_score")?;
+    let targets = binary_targets(y_true, positive_label, "roc_auc_score")?;
     // Collect (score, label) pairs; label = 1 for positive class.
-    let mut pairs: Vec<(f64, f64)> = y_true
+    let mut pairs: Vec<(f64, bool)> = targets
         .iter()
         .zip(y_score.iter())
-        .map(|(&t, &s)| (s, if t >= 0.5 { 1.0 } else { 0.0 }))
+        .map(|(&positive, &score)| (score, positive))
         .collect();
-    let m = pairs.iter().filter(|(_, l)| *l == 1.0).count();
+    let m = pairs.iter().filter(|(_, positive)| *positive).count();
     let n = pairs.len() - m;
-    if m == 0 || n == 0 {
-        return Err(DatarustError::InvalidInput(
-            "roc_auc_score requires at least one sample of each class".into(),
-        ));
-    }
     // Sort by score ascending; ties get average rank.
-    pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
     // Assign average ranks for ties.
     let len = pairs.len();
     let mut ranks = vec![0.0_f64; len];
@@ -477,7 +543,7 @@ pub fn roc_auc_score(y_true: &[f64], y_score: &[f64]) -> Result<f64> {
     let rank_sum_pos: f64 = pairs
         .iter()
         .zip(ranks.iter())
-        .filter(|((_, l), _)| *l == 1.0)
+        .filter(|((_, positive), _)| *positive)
         .map(|(_, r)| *r)
         .sum();
     let auc = (rank_sum_pos - m as f64 * (m as f64 + 1.0) / 2.0) / (m as f64 * n as f64);
@@ -488,44 +554,54 @@ pub fn roc_auc_score(y_true: &[f64], y_score: &[f64]) -> Result<f64> {
 /// classification.
 ///
 /// Computes a step-function approximation of the PR curve, mirroring
-/// `sklearn.metrics.average_precision_score`. `y_score` is the predicted
-/// probability (or any monotonic score) of the positive class.
+/// `y_true` must contain exactly the labels `{0, 1}`. `y_score` is the predicted
+/// probability (or any monotonic finite score) of label `1`. Use
+/// [`average_precision_score_with_positive_label`] for another binary label
+/// space.
 ///
 /// Returns 1.0 for a perfect classifier, and the base rate (positive
 /// prevalence) for a random one. Errors if fewer than two classes are present.
 pub fn average_precision_score(y_true: &[f64], y_score: &[f64]) -> Result<f64> {
+    average_precision_score_with_positive_label(y_true, y_score, 1.0)
+}
+
+/// Average precision for binary labels with an explicit positive class.
+pub fn average_precision_score_with_positive_label(
+    y_true: &[f64],
+    y_score: &[f64],
+    positive_label: f64,
+) -> Result<f64> {
     check_lengths(y_true, y_score)?;
+    validate_finite_scores(y_score, "average_precision_score")?;
+    let targets = binary_targets(y_true, positive_label, "average_precision_score")?;
     // Sort by descending score.
     let mut idx: Vec<usize> = (0..y_true.len()).collect();
-    idx.sort_by(|&a, &b| {
-        y_score[b]
-            .partial_cmp(&y_score[a])
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    let total_pos = y_true.iter().filter(|&&t| t >= 0.5).count();
-    if total_pos == 0 || total_pos == y_true.len() {
-        return Err(DatarustError::InvalidInput(
-            "average_precision_score requires at least one sample of each class".into(),
-        ));
-    }
-    // Walk down the ranked list accumulating TP; at each positive, precision
-    // is tp/(tp+fp) and recall increases. AP = Σ (R_n − R_{n−1}) · P_n.
+    idx.sort_by(|&a, &b| y_score[b].total_cmp(&y_score[a]));
+    let total_pos = targets.iter().filter(|&&positive| positive).count();
+    // Process tied scores as one threshold so AP is independent of input order.
+    // AP = Σ (R_n − R_{n−1}) · P_n.
     let mut tp = 0usize;
     let mut fp = 0usize;
     let mut ap = 0.0_f64;
     let mut prev_recall = 0.0_f64;
-    for &i in &idx {
-        if y_true[i] >= 0.5 {
-            tp += 1;
-        } else {
-            fp += 1;
+    let mut start = 0;
+    while start < idx.len() {
+        let mut end = start + 1;
+        while end < idx.len() && y_score[idx[end]] == y_score[idx[start]] {
+            end += 1;
+        }
+        for &index in &idx[start..end] {
+            if targets[index] {
+                tp += 1;
+            } else {
+                fp += 1;
+            }
         }
         let precision = tp as f64 / (tp + fp) as f64;
         let recall = tp as f64 / total_pos as f64;
-        if recall > prev_recall {
-            ap += (recall - prev_recall) * precision;
-            prev_recall = recall;
-        }
+        ap += (recall - prev_recall) * precision;
+        prev_recall = recall;
+        start = end;
     }
     Ok(ap)
 }
@@ -699,6 +775,32 @@ mod tests {
         // -(1/4) * [log(0.9) + log(0.8) + log(0.8) + log(0.9)]
         let expected = -(0.9_f64.ln() + 0.8_f64.ln() + 0.8_f64.ln() + 0.9_f64.ln()) / 4.0;
         assert!((ll - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn binary_probability_metrics_support_an_explicit_positive_label() {
+        let y = vec![2.0, 2.0, 5.0, 5.0];
+        let scores = vec![0.1, 0.2, 0.8, 0.9];
+        assert!(log_loss_with_positive_label(&y, &scores, 5.0, 1e-15).unwrap() < 0.2);
+        assert_eq!(
+            roc_auc_score_with_positive_label(&y, &scores, 5.0).unwrap(),
+            1.0
+        );
+        assert_eq!(
+            average_precision_score_with_positive_label(&y, &scores, 5.0).unwrap(),
+            1.0
+        );
+    }
+
+    #[test]
+    fn log_loss_rejects_invalid_probabilities_and_epsilon() {
+        let y = [0.0, 1.0];
+        for probabilities in [vec![-0.1, 0.8], vec![0.1, 1.1], vec![0.1, f64::NAN]] {
+            assert!(log_loss(&y, &probabilities, 1e-15).is_err());
+        }
+        for eps in [0.0, 0.5, f64::NAN, f64::INFINITY] {
+            assert!(log_loss(&y, &[0.1, 0.9], eps).is_err());
+        }
     }
 
     #[test]
@@ -1013,6 +1115,34 @@ mod tests {
         let s = vec![0.9, 0.8, 0.4, 0.3];
         let ap = average_precision_score(&y, &s).unwrap();
         assert!((ap - (0.5 + 0.5 * 2.0 / 3.0)).abs() < 1e-12, "ap={ap}");
+    }
+
+    #[test]
+    fn average_precision_ties_equal_positive_prevalence() {
+        let y = vec![1.0, 0.0, 0.0, 1.0];
+        let scores = vec![0.5; 4];
+        assert!((average_precision_score(&y, &scores).unwrap() - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn ranking_metrics_reject_non_finite_scores() {
+        let y = [0.0, 1.0];
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(roc_auc_score(&y, &[0.1, invalid]).is_err());
+            assert!(average_precision_score(&y, &[0.1, invalid]).is_err());
+        }
+    }
+
+    #[test]
+    fn binary_probability_metrics_reject_ambiguous_labels() {
+        let scores = [0.1, 0.5, 0.9];
+        for labels in [vec![0.0, 1.0, 2.0], vec![2.0, 2.0, 2.0]] {
+            assert!(log_loss_with_positive_label(&labels, &scores, 2.0, 1e-15).is_err());
+            assert!(roc_auc_score_with_positive_label(&labels, &scores, 2.0).is_err());
+            assert!(average_precision_score_with_positive_label(&labels, &scores, 2.0).is_err());
+        }
+        let labels = [2.0, 5.0];
+        assert!(roc_auc_score_with_positive_label(&labels, &[0.1, 0.9], 9.0).is_err());
     }
 
     // ── Cohen's kappa / Matthews correlation tests ─────────────────────

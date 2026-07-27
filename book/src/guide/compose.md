@@ -20,6 +20,8 @@ let out = pipe.fit_transform(&x)?;
 ```
 
 Pipelines are **serializable** under the `serde` feature — fit, save to JSON, load and `transform` in a different process.
+Before use, leaf transformers validate the dimensions and required fields of
+loaded fitted state, so inconsistent JSON returns an error instead of panicking.
 
 ## Supervised pipeline
 

@@ -83,6 +83,10 @@ datarust = { version = "0.6", features = ["serde", "rayon"] }
 - **`serde`** — enables JSON serialization/deserialization of fitted transformers via `datarust::serialize::{save_json, load_json, to_json, from_json}`.
 - **`rayon`** — enables parallel column statistics and transforms for large datasets.
 - **`matrixmultiply`** — enables a tuned pure-Rust GEMM (no system BLAS) for matrix products and covariance computation, speeding up PCA and TruncatedSVD on large dense inputs. The default build remains zero-external-dependency.
+
+Numerical estimators and transformers reject `NaN` and infinite observations
+before computation. `SimpleImputer` and `KnnImputer` keep accepting `NaN` as
+the missing-value marker, but reject positive and negative infinity.
 - **`datasets`** — embeds classic toy datasets (Iris, Breast Cancer, Wine, Diabetes) as `const` arrays for examples, tests, and onboarding. No file I/O or network access.
 
 ## Core Concepts
@@ -612,6 +616,8 @@ model.fit(&x, &y)?;
 let pred = model.predict(&new_x)?;
 ```
 
+`alpha` must be finite and non-negative.
+
 #### Lasso
 
 L1-regularized regression. Minimises `(1/(2n))‖Xβ − y‖² + α‖β‖₁`. Mirrors `sklearn.linear_model.Lasso`.
@@ -633,6 +639,10 @@ let pred = model.predict(&new_x)?;
 model.coef();   // some entries may be exactly 0.0 (sparsity)
 model.n_iter(); // iterations actually run
 ```
+
+For Lasso and logistic regression, `max_iter` must be positive and `tol` must
+be finite and non-negative. Invalid solver configurations return
+`InvalidConfig` before optimization begins.
 
 #### LogisticRegression
 
@@ -704,6 +714,9 @@ let new_labels = km.predict(&x)?;           // assign new points to nearest cent
 
 Builder methods: `with_n_clusters` (default 8), `with_init` (default `KMeansPlusPlus`), `with_max_iter` (300), `with_tol` (1e-4), `with_n_init` (10), `with_random_state` (deterministic seed). Serde-serializable under the `serde` feature.
 
+Solver configuration is validated before fitting: cluster, iteration, and
+restart counts must be positive, while `tol` must be finite and non-negative.
+
 ### Metrics
 
 Regression metrics mirroring `sklearn.metrics`. Each takes `y_true` and `y_pred` as `&[f64]`.
@@ -734,11 +747,18 @@ let cm   = confusion_matrix(&y_true, &y_pred)?;    // compact Vec<Vec<usize>>, n
 let labeled = confusion_matrix_labeled(&y_true, &y_pred)?; // includes labels
 let weighted_f1 = f1_score_with(&y_true, &y_pred, Average::Weighted)?;
 let per_class = classification_report(&y_true, &y_pred)?;
-let ll   = log_loss(&y_true, &y_proba, 1e-15)?;     // binary cross-entropy
+let ll   = log_loss(&y_true, &y_proba, 1e-15)?;     // {0, 1}; P(label = 1)
 
-// Ranking & correlation metrics (binary):
+// Ranking metrics for {0, 1}; scores refer to label 1:
 let auc  = roc_auc_score(&y_true, &y_score)?;        // ROC-AUC (Mann–Whitney U)
-let ap   = average_precision_score(&y_true, &y_score)?; // PR-AUC
+let ap   = average_precision_score(&y_true, &y_score)?; // average precision
+
+// For another binary label space, name the positive class explicitly:
+let ll_custom = log_loss_with_positive_label(&y_true, &y_proba, 5.0, 1e-15)?;
+let auc_custom = roc_auc_score_with_positive_label(&y_true, &y_score, 5.0)?;
+let ap_custom = average_precision_score_with_positive_label(&y_true, &y_score, 5.0)?;
+
+// Agreement & correlation metrics:
 let kap  = cohen_kappa_score(&y_true, &y_pred)?;     // chance-corrected agreement
 let mcc  = matthews_corrcoef(&y_true, &y_pred)?;     // MCC (binary + multiclass)
 ```
@@ -750,6 +770,11 @@ use datarust::cluster::metrics::silhouette_score;
 
 let s = silhouette_score(&x, &labels)?;  // f64 in [-1, 1], higher is better
 ```
+
+Cluster IDs are compacted internally, so gapped values—including
+`usize::MAX`—do not determine allocation size. The metric requires at least two
+clusters and fewer clusters than samples; singleton-cluster samples contribute
+zero, matching scikit-learn.
 
 ### Model Selection
 
@@ -771,6 +796,9 @@ let (x_tr, x_te, y_tr, y_te) = TrainTestSplit::new()
     .split(&x, &y)?;
 ```
 
+At least two samples are required. A fractional `test_size` is rounded up, so
+`test_size = 0.25` selects two test rows from a five-row dataset.
+
 #### KFold and StratifiedKFold
 
 ```rust
@@ -782,7 +810,8 @@ for (train_idx, test_idx) in cv.split(n_samples)? {
     // ...
 }
 
-// Stratified: preserves class balance in each fold (pass y).
+// Stratified: approximately preserves class balance in each fold (pass y).
+// Labels may be binary or multiclass non-negative integers, e.g. {2, 5, 9}.
 let scv = StratifiedKFold::new().with_n_splits(5);
 for (train_idx, test_idx) in scv.split(&y)? {
     // ...
@@ -1093,6 +1122,9 @@ let reloaded: StandardScaler = load_json("scaler.json")?;
 ```
 
 All leaf transformers, `Pipeline` (via `TransformerKind`), and `ColumnTransformer` are serializable.
+Loaded fitted state is checked before transform or prediction. A syntactically
+valid but internally inconsistent JSON document returns `DatarustError` rather
+than causing an indexing panic.
 
 ## Parallelism
 
@@ -1761,7 +1793,7 @@ let predicted = km.predict(&test)?;        // e.g. [0, 2]
 
 datarust is working toward a complete scikit-learn-style ML toolkit for Rust,
 with every algorithm implemented in pure Rust and zero external dependencies
-by default. The path from the current **preprocessing-first** v0.6.1 to a
+by default. The path from the current **preprocessing-first** v0.6.5 to a
 **v1.0 stability** release is tracked in [`ROADMAP.md`](ROADMAP.md) and the
 [book's roadmap page](https://genc-murat.github.io/datarust/roadmap.html).
 

@@ -2,12 +2,16 @@
 //! Round-trip serialization tests for fitted transformers (serde feature).
 
 use datarust::decomposition::{PCAComponents, TruncatedSVD, PCA};
-use datarust::encoder::{DropStrategy, HandleUnknown, OneHotEncoder};
-use datarust::imputer::{ImputeStrategy, SimpleImputer};
+use datarust::encoder::{
+    DropStrategy, FrequencyEncoder, HandleUnknown, LabelEncoder, OneHotEncoder, OrdinalEncoder,
+    TargetEncoder,
+};
+use datarust::imputer::{ImputeStrategy, KnnImputer, SimpleImputer};
+use datarust::polynomial::PolynomialFeatures;
 use datarust::scaler::{
-    BinStrategy, Binarizer, KBinsDiscretizer, KBinsEncode, MinMaxScaler, Norm, Normalizer,
-    OutputDistribution, PowerMethod, PowerTransformer, QuantileTransformer, RobustScaler,
-    StandardScaler,
+    BinStrategy, Binarizer, KBinsDiscretizer, KBinsEncode, MaxAbsScaler, MinMaxScaler, Norm,
+    Normalizer, OutputDistribution, PowerMethod, PowerTransformer, QuantileTransformer,
+    RobustScaler, StandardScaler,
 };
 use datarust::serialize::{from_json, load_json, save_json, to_json};
 use datarust::CategoricalTransformerKind;
@@ -570,4 +574,115 @@ fn supervised_pipeline_round_trip() {
     let restored: SupervisedPipeline<LogisticRegression> = from_json(&json).unwrap();
     assert!(restored.is_fitted());
     assert_eq!(restored.predict(&x).unwrap(), original);
+}
+
+#[test]
+fn inconsistent_serialized_fitted_states_return_errors() {
+    let x = datarust::Matrix::new(vec![vec![0.0], vec![1.0]]).unwrap();
+    let strings = datarust::StrMatrix::from_column(["a", "b"]).unwrap();
+
+    let knn_json = r#"{"n_neighbors":5,"weights":"Uniform","reference":null,"fitted":true}"#;
+    let knn: KnnImputer = from_json(knn_json).unwrap();
+    assert!(knn.transform(&x).is_err());
+
+    let scaler_json = r#"{"with_mean":true,"with_std":true,"mean":[0.0],"std":[],"fitted":true}"#;
+    let scaler: StandardScaler = from_json(scaler_json).unwrap();
+    assert!(scaler.transform(&x).is_err());
+
+    let svd_json = r#"{
+        "components_spec":{"Count":1},
+        "components":[],
+        "singular_values":[],
+        "explained_variance":[],
+        "explained_variance_ratio":[],
+        "n_components_":1,
+        "n_samples_":2,
+        "fitted":true
+    }"#;
+    let svd: TruncatedSVD = from_json(svd_json).unwrap();
+    assert!(svd.transform(&x).is_err());
+
+    let polynomial_json = r#"{
+        "degree":2,
+        "include_bias":true,
+        "interaction_only":false,
+        "combinations":[[1]],
+        "input_n_features":1,
+        "fitted":true
+    }"#;
+    let polynomial: PolynomialFeatures = from_json(polynomial_json).unwrap();
+    assert!(polynomial.transform(&x).is_err());
+
+    let one_hot_json = r#"{
+        "drop":"None",
+        "handle_unknown":"Error",
+        "sparse_output":false,
+        "categories":[["a","b"]],
+        "category_index":[],
+        "n_output_cols":2,
+        "fitted":true
+    }"#;
+    let one_hot: OneHotEncoder = from_json(one_hot_json).unwrap();
+    assert!(one_hot.transform(&strings).is_err());
+
+    let ordinal_json = r#"{
+        "categories":"Auto",
+        "handle_unknown":"Error",
+        "category_lists":[["a","b"]],
+        "category_indices":[],
+        "fitted":true
+    }"#;
+    let ordinal: OrdinalEncoder = from_json(ordinal_json).unwrap();
+    assert!(ordinal.transform(&strings).is_err());
+
+    let frequency_json = r#"{
+        "normalized":true,
+        "handle_unknown":"Zero",
+        "mappings":[{}],
+        "fitted":true
+    }"#;
+    let frequency: FrequencyEncoder = from_json(frequency_json).unwrap();
+    assert!(frequency.transform(&strings).is_err());
+
+    let label_json = r#"{
+        "classes":["a","b"],
+        "indices":{"a":0},
+        "handle_unknown":"Error",
+        "fitted":true
+    }"#;
+    let label: LabelEncoder = from_json(label_json).unwrap();
+    assert!(label.transform(["a"]).is_err());
+
+    let target_json = r#"{
+        "smoothing":1.0,
+        "unknown":"GlobalMean",
+        "mappings":[{}],
+        "global_means":[0.5],
+        "fitted":true
+    }"#;
+    let target: TargetEncoder = from_json(target_json).unwrap();
+    assert!(target.transform(&strings).is_err());
+
+    let zero_neighbor_json = r#"{
+        "n_neighbors":0,
+        "weights":"Uniform",
+        "reference":{"data":[[0.0],[1.0]]},
+        "fitted":true
+    }"#;
+    let zero_neighbor_knn: KnnImputer = from_json(zero_neighbor_json).unwrap();
+    assert!(zero_neighbor_knn.transform(&x).is_err());
+
+    let max_abs_json = r#"{"max_abs":[-1.0],"fitted":true}"#;
+    let max_abs: MaxAbsScaler = from_json(max_abs_json).unwrap();
+    assert!(max_abs.transform(&x).is_err());
+
+    let quantile_json = r#"{
+        "n_quantiles":2,
+        "output_distribution":"Uniform",
+        "references":[[1.0,0.0]],
+        "n_features":1,
+        "fitted":true
+    }"#;
+    let quantile: QuantileTransformer = from_json(quantile_json).unwrap();
+    assert!(quantile.transform(&x).is_err());
 }

@@ -68,6 +68,34 @@ impl OrdinalEncoder {
         &self.category_lists
     }
 
+    fn validate_fitted_state(&self) -> Result<()> {
+        if self.category_lists.is_empty()
+            || self.category_lists.len() != self.category_indices.len()
+            || self.category_lists.iter().zip(&self.category_indices).any(
+                |(categories, indices)| {
+                    categories.is_empty()
+                        || indices.len() != categories.len()
+                        || categories
+                            .iter()
+                            .enumerate()
+                            .any(|(index, category)| indices.get(category) != Some(&index))
+                },
+            )
+        {
+            return Err(DatarustError::InvalidInput(
+                "OrdinalEncoder has inconsistent fitted state".into(),
+            ));
+        }
+        if let OrdinalCategories::Manual(configured) = &self.categories {
+            if configured != &self.category_lists {
+                return Err(DatarustError::InvalidInput(
+                    "OrdinalEncoder has inconsistent fitted state".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Learns the category-to-index mapping per column.
     pub fn fit(&mut self, x: &StrMatrix) -> Result<()> {
         let ncols = x.ncols();
@@ -103,6 +131,12 @@ impl OrdinalEncoder {
                 }
                 let mut cat_indices = Vec::with_capacity(ncols);
                 for (j, list) in lists.iter().enumerate() {
+                    if list.is_empty() {
+                        return Err(DatarustError::InvalidConfig(format!(
+                            "category list for column {} must not be empty",
+                            j
+                        )));
+                    }
                     let idx: HashMap<String, usize> = list
                         .iter()
                         .enumerate()
@@ -130,6 +164,7 @@ impl OrdinalEncoder {
         if !self.fitted {
             return Err(DatarustError::NotFitted("OrdinalEncoder".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.category_lists.len() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} columns", self.category_lists.len()),
@@ -199,6 +234,7 @@ impl OrdinalEncoder {
         if !self.fitted {
             return Err(DatarustError::NotFitted("OrdinalEncoder".into()));
         }
+        self.validate_fitted_state()?;
         if y.ncols() != self.category_lists.len() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} columns", self.category_lists.len()),
@@ -210,23 +246,22 @@ impl OrdinalEncoder {
             let mut row = Vec::with_capacity(y.ncols());
             for j in 0..y.ncols() {
                 let v = y.get(i, j);
-                if v.is_nan() {
+                if !v.is_finite() || (v != -1.0 && (v < 0.0 || v.fract() != 0.0)) {
                     return Err(DatarustError::InvalidInput(format!(
-                        "NaN value at row {}, column {} in inverse_transform input",
-                        i, j
+                        "ordinal code at row {}, column {} must be -1 or a non-negative integer, found {}",
+                        i, j, v
                     )));
                 }
-                let idx = v as isize;
-                if idx == -1 {
+                if v == -1.0 {
                     // Sentinel for unknown categories (UseNegOne)
                     row.push(String::new());
-                } else if idx < 0 || idx as usize >= self.category_lists[j].len() {
+                } else if v as usize >= self.category_lists[j].len() {
                     return Err(DatarustError::UnknownLabel(format!(
                         "index {} out of range for column {}",
-                        idx, j
+                        v, j
                     )));
                 } else {
-                    row.push(self.category_lists[j][idx as usize].clone());
+                    row.push(self.category_lists[j][v as usize].clone());
                 }
             }
             out.push(row);
@@ -328,6 +363,17 @@ mod tests {
     }
 
     #[test]
+    fn inverse_rejects_fractional_and_non_finite_codes() {
+        let s = StrMatrix::from_column(["a", "b"]).unwrap();
+        let mut enc = OrdinalEncoder::new(OrdinalCategories::Auto);
+        enc.fit(&s).unwrap();
+        for invalid in [0.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let bad = Matrix::new(vec![vec![invalid]]).unwrap();
+            assert!(enc.inverse_transform(&bad).is_err());
+        }
+    }
+
+    #[test]
     fn multi_column() {
         let s =
             StrMatrix::from_strings(vec![vec!["a", "x"], vec!["b", "y"], vec!["a", "y"]]).unwrap();
@@ -381,6 +427,13 @@ mod tests {
             "a".into(),
             "a".into(),
         ]]));
+        assert!(enc.fit(&s).is_err());
+    }
+
+    #[test]
+    fn manual_empty_category_list_errors() {
+        let s = StrMatrix::from_column(["a", "b"]).unwrap();
+        let mut enc = OrdinalEncoder::new(OrdinalCategories::Manual(vec![vec![]]));
         assert!(enc.fit(&s).is_err());
     }
 

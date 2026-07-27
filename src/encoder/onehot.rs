@@ -110,12 +110,52 @@ impl OneHotEncoder {
         }
     }
 
+    fn validate_fitted_state(&self) -> Result<()> {
+        if self.categories.is_empty() || self.categories.len() != self.category_index.len() {
+            return Err(DatarustError::InvalidInput(
+                "OneHotEncoder has inconsistent fitted state".into(),
+            ));
+        }
+
+        let mut expected_output_cols = 0usize;
+        for (categories, indices) in self.categories.iter().zip(&self.category_index) {
+            if categories.is_empty()
+                || indices.len() != categories.len()
+                || categories
+                    .iter()
+                    .enumerate()
+                    .any(|(index, category)| indices.get(category) != Some(&index))
+            {
+                return Err(DatarustError::InvalidInput(
+                    "OneHotEncoder has inconsistent fitted state".into(),
+                ));
+            }
+            let kept = match self.drop {
+                DropStrategy::None => categories.len(),
+                DropStrategy::First => categories.len() - 1,
+            };
+            expected_output_cols = expected_output_cols.checked_add(kept).ok_or_else(|| {
+                DatarustError::InvalidInput(
+                    "OneHotEncoder fitted output width overflows usize".into(),
+                )
+            })?;
+        }
+
+        if self.n_output_cols != expected_output_cols {
+            return Err(DatarustError::InvalidInput(
+                "OneHotEncoder has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Validates that the encoder is fitted and the input has the correct
     /// number of columns.
     fn validate_input(&self, x: &StrMatrix) -> Result<()> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("OneHotEncoder".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.categories.len() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} categorical columns", self.categories.len()),
@@ -297,6 +337,7 @@ impl OneHotEncoder {
         if !self.fitted {
             return Err(DatarustError::NotFitted("OneHotEncoder".into()));
         }
+        self.validate_fitted_state()?;
         let expected_cols = self.n_output_cols;
         if x.ncols() != expected_cols {
             return Err(DatarustError::ShapeMismatch {

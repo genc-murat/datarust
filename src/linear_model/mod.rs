@@ -21,3 +21,14 @@ pub use lasso::Lasso;
 pub use linear_regression::{LinearRegression, LinearSolver};
 pub use logistic_regression::{LogisticRegression, LogisticSolver};
 pub use ridge::{Ridge, RidgeSolver};
+
+pub(crate) fn validate_finite_targets(y: &[f64]) -> crate::error::Result<()> {
+    for (index, &value) in y.iter().enumerate() {
+        if !value.is_finite() {
+            return Err(crate::error::DatarustError::InvalidInput(format!(
+                "target at index {index} must be finite, found {value}"
+            )));
+        }
+    }
+    Ok(())
+}

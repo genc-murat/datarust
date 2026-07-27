@@ -60,6 +60,21 @@ impl KnnImputer {
         self.weights
     }
 
+    fn validate_fitted_state(&self) -> Result<&Matrix> {
+        if self.n_neighbors == 0 {
+            return Err(DatarustError::InvalidInput(
+                "KnnImputer has inconsistent fitted state".into(),
+            ));
+        }
+        let reference = self.reference.as_ref().ok_or_else(|| {
+            DatarustError::InvalidInput("KnnImputer has inconsistent fitted state".into())
+        })?;
+        reference.validate_no_infinite().map_err(|_| {
+            DatarustError::InvalidInput("KnnImputer has inconsistent fitted state".into())
+        })?;
+        Ok(reference)
+    }
+
     /// Squared Euclidean distance between two rows, considering only features
     /// where both are not NaN.  Returns the distance scaled by
     /// `n_features / n_observed` and the number of co-observed features.
@@ -83,7 +98,7 @@ impl KnnImputer {
     }
 
     fn find_neighbors(&self, row: &[f64]) -> Result<Vec<(f64, usize)>> {
-        let ref_matrix = self.reference.as_ref().unwrap();
+        let ref_matrix = self.validate_fitted_state()?;
         let ref_rows = ref_matrix.rows_ref();
         #[cfg(feature = "rayon")]
         let mut distances: Vec<(f64, usize)> = ref_rows
@@ -112,7 +127,7 @@ impl KnnImputer {
     }
 
     fn impute_row(&self, row: &[f64], neighbors: &[(f64, usize)]) -> Result<Vec<f64>> {
-        let ref_matrix = self.reference.as_ref().unwrap();
+        let ref_matrix = self.validate_fitted_state()?;
         let ref_rows = ref_matrix.rows_ref();
         let mut out = row.to_vec();
 
@@ -188,6 +203,7 @@ impl Transformer for KnnImputer {
                 "KNN imputer needs at least one sample".into(),
             ));
         }
+        x.validate_no_infinite()?;
         self.reference = Some(x.clone());
         self.fitted = true;
         Ok(())
@@ -197,13 +213,14 @@ impl Transformer for KnnImputer {
         if !self.fitted {
             return Err(DatarustError::NotFitted("KnnImputer".into()));
         }
-        let ref_matrix = self.reference.as_ref().unwrap();
+        let ref_matrix = self.validate_fitted_state()?;
         if ref_matrix.ncols() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", ref_matrix.ncols()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_no_infinite()?;
         let mut out = Vec::with_capacity(x.nrows());
         for row in x.iter_rows() {
             if row.iter().any(|v| v.is_nan()) {

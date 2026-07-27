@@ -52,7 +52,7 @@ Embeds four classic toy datasets (Iris, Breast Cancer, Wine, Diabetes) as `const
 
 ## Rust version
 
-datarust targets **Rust 1.70+** (the `rust-version` field in `Cargo.toml`). It is tested against stable, beta, and the MSRV in CI.
+datarust targets **Rust 1.70+** (the `rust-version` field in `Cargo.toml`). It is tested against stable and the MSRV in CI.
 
 ## Platform support
 

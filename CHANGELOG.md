@@ -7,6 +7,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-07-27
+
+This patch completes the pre-v0.7 persistence hardening and makes the declared
+Rust 1.70 minimum version enforceable again.
+
+### Changed
+
+- MSRV-sensitive runtime and development dependencies are pinned to Rust
+  1.70-compatible releases; CI now tests the locked all-feature graph with
+  Rust 1.70.
+- PCA rustdoc now matches the implemented behavior: `Auto` currently uses the
+  exact eigensolver, `Randomized` is opt-in, and an oversized component count
+  is capped at the matrix's minimum dimension.
+
+### Fixed
+
+- `OneHotEncoder`, `OrdinalEncoder`, `FrequencyEncoder`, `LabelEncoder`, and
+  `TargetEncoder` validate deserialized category vocabularies and mappings
+  before indexing them. Malformed fitted state now returns `DatarustError`
+  consistently with and without Rayon.
+- `OrdinalEncoder::inverse_transform` rejects fractional and non-finite codes
+  instead of truncating them into a different category.
+- `KnnImputer`, `SimpleImputer`, `MaxAbsScaler`, and `QuantileTransformer`
+  validate remaining fitted-state invariants before transforming data.
+
+## [0.6.4] - 2026-07-27
+
+This patch closes the remaining pre-v0.7 panic and non-finite-number paths in
+clustering, metrics, preprocessing, decomposition, and persisted fitted state.
+
+### Added
+
+- `Matrix::validate_finite` rejects both `NaN` and infinity, while
+  `Matrix::validate_no_infinite` lets missing-value-aware imputers accept `NaN`
+  without accepting infinite observations.
+- CI now builds and validates the generated docs/blog site with Node 22, and
+  rustdoc warnings are explicitly denied through `RUSTDOCFLAGS`.
+
+### Changed
+
+- Numerical estimators, decompositions, scalers, selectors, and regression
+  metrics fail early on non-finite data instead of returning misleading scores
+  or fitted models containing `NaN`. Imputers continue to accept `NaN` as the
+  missing-value marker but reject infinity.
+- Affected numeric fitted-state consumers validate persisted vector dimensions,
+  feature indices, and required fields before indexing them, so inconsistent
+  JSON produces a recoverable `DatarustError` rather than a panic.
+
+### Fixed
+
+- `silhouette_score` compacts arbitrary `usize` cluster IDs, preventing integer
+  overflow and label-sized allocations for gapped IDs. It now rejects one
+  cluster per sample and assigns singleton-cluster samples the sklearn-compatible
+  coefficient of zero.
+- `KMeans` rejects non-finite training and prediction features instead of
+  succeeding with `NaN` inertia.
+- Regression metrics reject non-finite truth or prediction values; notably,
+  `max_error` no longer reports `0.0` for a `NaN` prediction.
+- `MinMaxScaler`, `Binarizer`, `VarianceThreshold`, `TargetEncoder`, and
+  `TruncatedSVD` reject non-finite configuration values. Constructor rules are
+  repeated at fit time where serde can otherwise bypass them.
+- `KnnImputer` returns an error when a deserialized fitted state has no
+  reference matrix instead of unwrapping `None`.
+
+## [0.6.3] - 2026-07-27
+
+This maintenance release closes the remaining pre-v0.7 validation and release
+engineering gaps: solver hyperparameters fail early, every intended CI feature
+combination actually runs, and the published crate contains only Rust-facing
+artifacts.
+
+### Changed
+
+- The crates.io package is limited to library sources, tests, examples,
+  benchmarks, and core project documentation. Blog, book, website, npm, and
+  Cloudflare deployment files are no longer included; the compressed package
+  drops from roughly 3.0 MiB to 289 KiB.
+- CI now uses a real operating-system × feature-configuration test matrix.
+  Default, individual optional features, interoperability combinations,
+  `datasets`, and all features run as distinct jobs on Linux and macOS; Clippy
+  covers the same configurations on Linux.
+- CI now verifies `cargo package --locked`, preventing broken or incomplete
+  crates.io archives from reaching a release.
+- The stale second `Unreleased` heading was removed from the historical
+  changelog and its entries were restored to the v0.3.0 section.
+
+### Fixed
+
+- `Ridge` and `Lasso` reject non-finite regularization strengths instead of
+  letting `NaN` or infinity enter their linear systems.
+- `Lasso`, `LogisticRegression`, and `KMeans` reject zero iteration counts and
+  non-finite or negative convergence tolerances before optimization begins.
+- `KMeans::set_params` and `LogisticRegression::set_params` validate candidate
+  values before mutation, preserving the estimator when a search candidate is
+  invalid.
+
+## [0.6.2] - 2026-07-27
+
+This patch release hardens matrix access, cross-validation, and binary
+probability metrics around malformed or ambiguous input. It also extends
+stratified folds to validated multiclass labels.
+
+### Added
+
+- **Explicit positive-label probability metrics**:
+  `log_loss_with_positive_label`, `roc_auc_score_with_positive_label`, and
+  `average_precision_score_with_positive_label` support binary label spaces
+  such as `{2, 5}` without guessing which class is positive.
+- **Validated sparse deserialization**: serde input for `SparseMatrix` now
+  passes through the same CSR invariant checks as `SparseMatrix::new`.
+
+### Changed
+
+- `StratifiedKFold` now supports any two-or-more-class set of non-negative
+  integer labels, including non-contiguous values such as `{2, 5, 9}`.
+- Fractional `test_size` values use ceiling semantics, matching scikit-learn;
+  for example, 25% of five samples produces a two-sample test set.
+- Duplicate sparse triplets at the same coordinate are summed, and entries
+  whose sum is zero are omitted.
+
+### Fixed
+
+- `Matrix::get` performs a release-mode bounds check before indexing, removing
+  undefined behavior from out-of-range calls to the safe public API. Dense
+  matrix allocations now reject dimension multiplication overflow.
+- Raw CSR construction rejects non-monotonic or out-of-range `indptr` values
+  and unsorted or duplicate column indices. Sparse accessors now validate both
+  row and column bounds consistently.
+- Train/test splitting rejects datasets with fewer than two samples and
+  non-finite `test_size` values instead of panicking or accepting `NaN`.
+- `cross_val_score` reports a target-length `ShapeMismatch` before indexing.
+- Binary log loss, ROC-AUC, and average precision validate class labels and
+  reject non-finite scores; log loss also rejects out-of-range probabilities
+  and invalid epsilon values.
+- Average precision processes equal-score samples as a single threshold, so
+  ties are independent of input order and an all-tied score equals prevalence.
+
 ## [0.6.1] - 2026-07-26
 
 This patch release makes classification labels safe and explicit throughout
@@ -227,6 +364,9 @@ The PCA gap vs scikit-learn narrowed from ~85× (0.2.0) to ~8× (0.3.1 +matrixmu
 - `stats::column_mean_var` — Welford single-pass mean+variance (replaces the 3-pass `column_mean` + `column_variance` pair in scaler `fit`).
 - `stats::column_min_max` — fused single-pass min+max (replaces the 2-pass separate calls).
 - `stats::column_quantiles_many` — multiple quantiles from a single sort per column (replaces the 3× redundant sort in `RobustScaler`).
+- `ImputeStrategy` now derives `Default` (default variant `Mean`), for consistency with the other config enums (`BinStrategy`, `Norm`, `HandleUnknown`, `OrdinalCategories`).
+- `examples/bench_compare_rust.rs` and `benches/compare_sklearn.py` — mirrored Rust/Python harnesses for the README performance comparison.
+- README "Performance: datarust vs scikit-learn" section with measured median `fit_transform` times across Standard/MinMax/Robust scalers, PCA, Pipeline, OneHotEncoder and ColumnTransformer at three dataset sizes, plus methodology notes and a non-throughput advantages summary.
 
 ### Changed
 - **BREAKING:** `Matrix` internal storage switched from `Vec<Vec<f64>>` (one heap allocation per row) to a single contiguous `Vec<f64>` + `(rows, cols)`. This is the dominant performance win for large dense inputs: ~13× on `RobustScaler`, ~5× on `StandardScaler`, ~8× on `Pipeline` at 50 000 × 200 (with `rayon`).
@@ -238,6 +378,7 @@ The PCA gap vs scikit-learn narrowed from ~85× (0.2.0) to ~8× (0.3.1 +matrixmu
 - `Matrix::from_flat` now stores the flat buffer directly instead of re-chunking into rows.
 - `Matrix::get` uses `get_unchecked` after a `debug_assert!` on the hot path.
 - `Matrix::matmul` and centered-covariance dispatch to `matrixmultiply::dgemm` when the feature is enabled.
+- README installation/feature examples now reference `0.2` instead of the stale `0.1`.
 
 ### Performance
 Measured on Apple M5 Pro (18 cores, arm64), Rust 1.96 release, median of 15 runs after one warmup, `fit_transform` on deterministic synthetic data (seed 42):
@@ -256,16 +397,6 @@ For the full sklearn comparison table and methodology, see the "Performance: dat
 ### Fixed
 - `validate_no_nan` correctly reports the flat buffer index → (row, col) position.
 - `transform_to_table` no longer constructs an invalid zero-column `Matrix` when only categorical columns are present (builds a dummy `nrows × 1` matrix to satisfy the `Table` row-count invariant).
-
-## [Unreleased]
-
-### Added
-- `ImputeStrategy` now derives `Default` (default variant `Mean`), for consistency with the other config enums (`BinStrategy`, `Norm`, `HandleUnknown`, `OrdinalCategories`).
-- `examples/bench_compare_rust.rs` and `benches/compare_sklearn.py` — mirrored Rust/Python harnesses for the README performance comparison.
-- README "Performance: datarust vs scikit-learn" section with measured median `fit_transform` times across Standard/MinMax/Robust scalers, PCA, Pipeline, OneHotEncoder and ColumnTransformer at three dataset sizes, plus methodology notes and a non-throughput advantages summary.
-
-### Changed
-- README installation/feature examples now reference `0.2` instead of the stale `0.1`.
 
 ## [0.2.0] - 2026-07-03
 

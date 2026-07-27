@@ -50,6 +50,22 @@ impl FrequencyEncoder {
         self
     }
 
+    fn validate_fitted_state(&self) -> Result<()> {
+        if self.mappings.is_empty()
+            || self.mappings.iter().any(|mapping| {
+                mapping.is_empty()
+                    || mapping.values().any(|&value| {
+                        !value.is_finite() || value <= 0.0 || (self.normalized && value > 1.0)
+                    })
+            })
+        {
+            return Err(DatarustError::InvalidInput(
+                "FrequencyEncoder has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Learns the per-column frequency of each category.
     pub fn fit(&mut self, x: &StrMatrix) -> Result<()> {
         let ncols = x.ncols();
@@ -79,6 +95,7 @@ impl FrequencyEncoder {
         if !self.fitted {
             return Err(DatarustError::NotFitted("FrequencyEncoder".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.mappings.len() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} categorical columns", self.mappings.len()),

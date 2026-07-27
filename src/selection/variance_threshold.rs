@@ -20,9 +20,9 @@ pub struct VarianceThreshold {
 impl VarianceThreshold {
     /// Creates a new selector that drops features with variance at or below `threshold`.
     pub fn new(threshold: f64) -> Result<Self> {
-        if threshold < 0.0 {
+        if !threshold.is_finite() || threshold < 0.0 {
             return Err(DatarustError::InvalidConfig(format!(
-                "threshold must be >= 0, got {}",
+                "threshold must be finite and >= 0, got {}",
                 threshold
             )));
         }
@@ -77,6 +77,13 @@ impl Transformer for VarianceThreshold {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        if !self.threshold.is_finite() || self.threshold < 0.0 {
+            return Err(DatarustError::InvalidConfig(format!(
+                "threshold must be finite and >= 0, got {}",
+                self.threshold
+            )));
+        }
+        x.validate_finite()?;
         // sklearn uses population variance (ddof=0); single fused Welford pass.
         let (_, variances) = stats::column_mean_var_flat(x.as_slice(), x.nrows(), x.ncols(), 0);
         self.variances = variances;
@@ -101,6 +108,7 @@ impl Transformer for VarianceThreshold {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let kept: Vec<usize> = self
             .support_mask
             .iter()
@@ -189,6 +197,8 @@ mod tests {
     #[test]
     fn negative_threshold_rejected() {
         assert!(VarianceThreshold::new(-1.0).is_err());
+        assert!(VarianceThreshold::new(f64::NAN).is_err());
+        assert!(VarianceThreshold::new(f64::INFINITY).is_err());
     }
 
     #[test]

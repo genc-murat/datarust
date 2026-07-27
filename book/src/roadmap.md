@@ -24,7 +24,7 @@ The principles that shape every decision:
 [candle]: https://crates.io/crates/candle-core
 [burn]: https://crates.io/crates/burn
 
-## Where we are (v0.6.1)
+## Where we are (v0.6.5)
 
 The preprocessing, linear-model, and clustering foundations are solid:
 

@@ -192,6 +192,8 @@ impl Predictor for LinearRegression {
                 actual: format!("{} targets", y.len()),
             });
         }
+        x.validate_finite()?;
+        super::validate_finite_targets(y)?;
 
         // Build the design matrix used in the normal equations. When
         // fit_intercept is set, center X and y (equivalent to adding a bias
@@ -249,12 +251,21 @@ impl Predictor for LinearRegression {
         if !self.fitted {
             return Err(DatarustError::NotFitted("LinearRegression".into()));
         }
+        if self.coef_.len() != self.n_features_in_
+            || !self.intercept_.is_finite()
+            || self.coef_.iter().any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "LinearRegression has inconsistent fitted state".into(),
+            ));
+        }
         if x.ncols() != self.n_features_in_ {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.n_features_in_),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let p = self.n_features_in_;
         let beta = &self.coef_;
         let intercept = self.intercept_;

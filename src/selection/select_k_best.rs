@@ -67,6 +67,7 @@ impl SelectKBest {
                 actual: format!("{} labels", y.len()),
             });
         }
+        x.validate_finite()?;
         let labels: Vec<&str> = y.iter().map(|s| s.as_ref()).collect();
         self.scores = match self.score_func {
             ScoreFunc::FClassif => f_classif(x, &labels)?,
@@ -158,6 +159,7 @@ impl Transformer for SelectKBest {
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let kept: Vec<usize> = self
             .support_mask
             .iter()

@@ -53,6 +53,24 @@ impl QuantileTransformer {
         self
     }
 
+    fn validate_fitted_state(&self) -> Result<()> {
+        if self.n_quantiles == 0
+            || self.n_features == 0
+            || self.references.len() != self.n_features
+            || self.references.iter().any(|references| {
+                references.is_empty()
+                    || references.len() > self.n_quantiles
+                    || references.iter().any(|value| !value.is_finite())
+                    || references.windows(2).any(|pair| pair[0] > pair[1])
+            })
+        {
+            return Err(DatarustError::InvalidInput(
+                "QuantileTransformer has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Compute reference quantiles for a sorted column.
     fn compute_references(sorted_col: &[f64], n_quantiles: usize) -> Vec<f64> {
         let n = sorted_col.len();
@@ -140,6 +158,12 @@ impl Transformer for QuantileTransformer {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        if self.n_quantiles == 0 {
+            return Err(DatarustError::InvalidConfig(
+                "n_quantiles must be >= 1".into(),
+            ));
+        }
+        x.validate_finite()?;
         let ncols = x.ncols();
         let mut refs_all = Vec::with_capacity(ncols);
         let n_q = self.n_quantiles.min(x.nrows());
@@ -158,12 +182,14 @@ impl Transformer for QuantileTransformer {
         if !self.fitted {
             return Err(DatarustError::NotFitted("QuantileTransformer".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.n_features {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.n_features),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
         for (i, out_row) in out.iter_mut().enumerate() {
             for (j, cell) in out_row.iter_mut().enumerate() {

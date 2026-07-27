@@ -39,6 +39,20 @@ impl MaxAbsScaler {
     pub fn max_abs(&self) -> &[f64] {
         &self.max_abs
     }
+
+    fn validate_fitted_state(&self) -> Result<()> {
+        if self.max_abs.is_empty()
+            || self
+                .max_abs
+                .iter()
+                .any(|&value| !value.is_finite() || value < 0.0)
+        {
+            return Err(DatarustError::InvalidInput(
+                "MaxAbsScaler has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Default for MaxAbsScaler {
@@ -62,6 +76,7 @@ impl Transformer for MaxAbsScaler {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        x.validate_finite()?;
         let ncols = x.ncols();
         let mut max_abs = vec![0.0f64; ncols];
         for row in x.rows_ref() {
@@ -81,13 +96,14 @@ impl Transformer for MaxAbsScaler {
         if !self.fitted {
             return Err(DatarustError::NotFitted("MaxAbsScaler".into()));
         }
+        self.validate_fitted_state()?;
         if self.max_abs.len() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.max_abs.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
-        x.validate_no_nan()?;
+        x.validate_finite()?;
         #[cfg(feature = "rayon")]
         {
             let max_abs = &self.max_abs;
@@ -129,12 +145,14 @@ impl Transformer for MaxAbsScaler {
         if !self.fitted {
             return Err(DatarustError::NotFitted("MaxAbsScaler".into()));
         }
+        self.validate_fitted_state()?;
         if self.max_abs.len() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.max_abs.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         #[cfg(feature = "rayon")]
         {
             let max_abs = &self.max_abs;

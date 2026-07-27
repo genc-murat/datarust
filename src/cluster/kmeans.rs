@@ -86,6 +86,27 @@ impl Default for KMeans {
 }
 
 impl KMeans {
+    fn validate_fitted_state(&self) -> Result<()> {
+        if self.cluster_centers_.len() != self.n_clusters
+            || self.n_features_in_ == 0
+            || !self.inertia_.is_finite()
+            || self
+                .cluster_centers_
+                .iter()
+                .any(|center| center.len() != self.n_features_in_)
+            || self
+                .cluster_centers_
+                .iter()
+                .flatten()
+                .any(|v| !v.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "KMeans has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Creates a new `KMeans` with scikit-learn defaults:
     /// `n_clusters = 8`, `init = KMeansPlusPlus`, `max_iter = 300`,
     /// `tol = 1e-4`, `n_init = 10`, `random_state = None`.
@@ -119,6 +140,7 @@ impl KMeans {
     }
 
     /// Builder: maximum number of Lloyd's iterations per run (default `300`).
+    /// Must be at least `1`.
     pub fn with_max_iter(mut self, max_iter: usize) -> Self {
         self.max_iter = max_iter;
         self
@@ -126,7 +148,7 @@ impl KMeans {
 
     /// Builder: relative convergence tolerance on centroid movement
     /// (default `1e-4`). A run stops when the squared Frobenius norm of the
-    /// centroid shift drops below this value.
+    /// centroid shift drops below this value. Must be finite and `>= 0`.
     pub fn with_tol(mut self, tol: f64) -> Self {
         self.tol = tol;
         self
@@ -192,6 +214,7 @@ impl KMeans {
                 "n_clusters must be >= 1".into(),
             ));
         }
+        x.validate_finite()?;
         if self.n_clusters > n {
             return Err(DatarustError::InvalidConfig(format!(
                 "n_clusters ({}) cannot be greater than n_samples ({})",
@@ -203,6 +226,12 @@ impl KMeans {
         }
         if self.n_init == 0 {
             return Err(DatarustError::InvalidConfig("n_init must be > 0".into()));
+        }
+        if !self.tol.is_finite() || self.tol < 0.0 {
+            return Err(DatarustError::InvalidConfig(format!(
+                "tol must be finite and >= 0, got {}",
+                self.tol
+            )));
         }
         Ok((n, p))
     }
@@ -354,9 +383,25 @@ impl Params for KMeans {
 
     fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
         match (name, value) {
+            ("n_clusters", ParamValue::Int(0)) => {
+                return Err(DatarustError::InvalidConfig(
+                    "n_clusters must be >= 1".into(),
+                ));
+            }
             ("n_clusters", ParamValue::Int(v)) => self.n_clusters = v,
+            ("max_iter", ParamValue::Int(0)) => {
+                return Err(DatarustError::InvalidConfig("max_iter must be > 0".into()));
+            }
             ("max_iter", ParamValue::Int(v)) => self.max_iter = v,
+            ("tol", ParamValue::Float(v)) if !v.is_finite() || v < 0.0 => {
+                return Err(DatarustError::InvalidConfig(format!(
+                    "tol must be finite and >= 0, got {v}"
+                )));
+            }
             ("tol", ParamValue::Float(v)) => self.tol = v,
+            ("n_init", ParamValue::Int(0)) => {
+                return Err(DatarustError::InvalidConfig("n_init must be > 0".into()));
+            }
             ("n_init", ParamValue::Int(v)) => self.n_init = v,
             (other, _) => {
                 return Err(DatarustError::InvalidInput(format!(
@@ -409,12 +454,14 @@ impl Clusterer for KMeans {
         if !self.fitted {
             return Err(DatarustError::NotFitted("KMeans".into()));
         }
+        self.validate_fitted_state()?;
         if x.ncols() != self.n_features_in_ {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.n_features_in_),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_finite()?;
         let n = x.nrows();
         let mut out = vec![0usize; n];
         for (i, slot) in out.iter_mut().enumerate() {
@@ -564,6 +611,66 @@ mod tests {
         let x = Matrix::new(vec![vec![1.0], vec![2.0]]).unwrap();
         let mut km = KMeans::new().with_n_clusters(5);
         assert!(km.fit(&x).is_err());
+    }
+
+    #[test]
+    fn invalid_iteration_and_tolerance_configuration_errors() {
+        let x = Matrix::new(vec![vec![1.0], vec![2.0]]).unwrap();
+        assert!(KMeans::new()
+            .with_n_clusters(2)
+            .with_max_iter(0)
+            .fit(&x)
+            .is_err());
+        assert!(KMeans::new()
+            .with_n_clusters(2)
+            .with_n_init(0)
+            .fit(&x)
+            .is_err());
+        for tol in [-1.0, f64::NAN, f64::INFINITY] {
+            assert!(KMeans::new()
+                .with_n_clusters(2)
+                .with_tol(tol)
+                .fit(&x)
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn non_finite_features_error_during_fit_and_predict() {
+        let train = Matrix::new(vec![vec![0.0], vec![1.0]]).unwrap();
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let bad = Matrix::new(vec![vec![0.0], vec![invalid]]).unwrap();
+            assert!(KMeans::new().with_n_clusters(1).fit(&bad).is_err());
+
+            let mut fitted = KMeans::new().with_n_clusters(1);
+            fitted.fit(&train).unwrap();
+            assert!(fitted.predict(&bad).is_err());
+        }
+    }
+
+    #[test]
+    fn params_reject_invalid_values_without_mutating_state() {
+        let mut model = KMeans::new();
+        for (name, value) in [
+            ("n_clusters", ParamValue::Int(0)),
+            ("max_iter", ParamValue::Int(0)),
+            ("tol", ParamValue::Float(f64::NAN)),
+            ("n_init", ParamValue::Int(0)),
+        ] {
+            assert!(matches!(
+                model.set_params(name, value),
+                Err(DatarustError::InvalidConfig(_))
+            ));
+        }
+        assert_eq!(
+            model.get_params(),
+            vec![
+                ("n_clusters", ParamValue::Int(8)),
+                ("max_iter", ParamValue::Int(300)),
+                ("tol", ParamValue::Float(1e-4)),
+                ("n_init", ParamValue::Int(10)),
+            ]
+        );
     }
 
     #[test]

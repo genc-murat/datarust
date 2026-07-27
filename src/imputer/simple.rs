@@ -50,6 +50,20 @@ impl SimpleImputer {
         &self.fill_values
     }
 
+    fn validate_fitted_state(&self) -> Result<()> {
+        let invalid_constant =
+            matches!(&self.strategy, ImputeStrategy::Constant(value) if !value.is_finite());
+        if invalid_constant
+            || self.fill_values.is_empty()
+            || self.fill_values.iter().any(|value| !value.is_finite())
+        {
+            return Err(DatarustError::InvalidInput(
+                "SimpleImputer has inconsistent fitted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
     #[allow(clippy::needless_range_loop)]
     fn compute_fill(x: &Matrix, strategy: &ImputeStrategy) -> Result<Vec<f64>> {
         let data = x.rows_ref();
@@ -120,6 +134,14 @@ impl Transformer for SimpleImputer {
     }
 
     fn fit(&mut self, x: &Matrix) -> Result<()> {
+        x.validate_no_infinite()?;
+        if let ImputeStrategy::Constant(value) = &self.strategy {
+            if !value.is_finite() {
+                return Err(DatarustError::InvalidConfig(format!(
+                    "constant fill value must be finite, got {value}"
+                )));
+            }
+        }
         self.fill_values = Self::compute_fill(x, &self.strategy)?;
         self.fitted = true;
         Ok(())
@@ -129,12 +151,14 @@ impl Transformer for SimpleImputer {
         if !self.fitted {
             return Err(DatarustError::NotFitted("SimpleImputer".into()));
         }
+        self.validate_fitted_state()?;
         if self.fill_values.len() != x.ncols() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} features", self.fill_values.len()),
                 actual: format!("{} features", x.ncols()),
             });
         }
+        x.validate_no_infinite()?;
         let mut out = x.clone();
         for i in 0..out.nrows() {
             for j in 0..out.ncols() {

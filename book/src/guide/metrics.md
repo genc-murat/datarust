@@ -49,11 +49,16 @@ let positive_f1 = f1_score_with(
     Average::Binary { positive_label: 5.0 },
 )?;
 let per_class = classification_report(&y_true, &y_pred)?;
-let ll   = log_loss(&y_true, &y_proba, 1e-15)?;     // binary cross-entropy
+let ll   = log_loss(&y_true, &y_proba, 1e-15)?;     // {0, 1}; P(label = 1)
 
-// Ranking metrics (binary, consume predict_proba output):
+// Ranking metrics for {0, 1}; scores refer to label 1:
 let auc  = roc_auc_score(&y_true, &y_score)?;        // ROC-AUC (Mann–Whitney U)
-let ap   = average_precision_score(&y_true, &y_score)?; // PR-AUC
+let ap   = average_precision_score(&y_true, &y_score)?; // average precision
+
+// For another binary label space, name the positive class explicitly:
+let ll_custom = log_loss_with_positive_label(&y_true, &y_proba, 5.0, 1e-15)?;
+let auc_custom = roc_auc_score_with_positive_label(&y_true, &y_score, 5.0)?;
+let ap_custom = average_precision_score_with_positive_label(&y_true, &y_score, 5.0)?;
 
 // Agreement & correlation (binary + multiclass):
 let kap  = cohen_kappa_score(&y_true, &y_pred)?;     // chance-corrected agreement
@@ -67,9 +72,9 @@ let mcc  = matthews_corrcoef(&y_true, &y_pred)?;     // Matthews correlation
 | recall | `[0, 1]` | 1 | ✓ | ✓ | Binary, macro, weighted, or micro averaging |
 | F1 | `[0, 1]` | 1 | ✓ | ✓ | Binary, macro, weighted, or micro averaging |
 | confusion_matrix | `n×n` | diagonal | ✓ (2×2) | ✓ (n×n) | Compact counts; labeled variant retains row/column labels |
-| log_loss | `[0, ∞)` | 0 | ✓ | — | Cross-entropy; needs probabilities |
-| roc_auc_score | `[0, 1]` | 1 | ✓ | — | Ranking quality; needs scores |
-| average_precision_score | `[0, 1]` | 1 | ✓ | — | PR-curve area; needs scores |
+| log_loss | `[0, ∞)` | 0 | ✓ | — | Validated probabilities; explicit positive-label variant available |
+| roc_auc_score | `[0, 1]` | 1 | ✓ | — | Finite ranking scores; explicit positive-label variant available |
+| average_precision_score | `[0, 1]` | 1 | ✓ | — | Ties grouped by threshold; explicit positive-label variant available |
 | cohen_kappa_score | `[-1, 1]` | 1 | ✓ | ✓ | Chance-corrected agreement |
 | matthews_corrcoef | `[-1, 1]` | 1 | ✓ | ✓ | Balanced; robust to imbalance |
 
@@ -87,9 +92,13 @@ use datarust::cluster::metrics::silhouette_score;
 let s = silhouette_score(&x, &labels)?;  // [-1, 1], higher is better
 ```
 
+Cluster IDs are compacted internally rather than used as vector indices. At
+least two clusters and fewer clusters than samples are required, and a sample
+in a singleton cluster receives coefficient zero.
+
 | Metric | Range | Best | Notes |
 |---|---|---|---|
-| silhouette_score | `[-1, 1]` | 1 | `(b−a)/max(a,b)` averaged over samples |
+| silhouette_score | `[-1, 1]` | 1 | Compact labels; singleton coefficient 0; `(b−a)/max(a,b)` averaged over samples |
 
 ## Estimator `.score()` shorthand
 
