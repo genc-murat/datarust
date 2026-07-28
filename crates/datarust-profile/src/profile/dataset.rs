@@ -1,8 +1,8 @@
 //! Whole-dataset profile: shape, memory, duplicate rows, and per-column profiles.
 
-use datarust::{Matrix, StrMatrix};
+use datarust::{stats, Matrix, StrMatrix};
 
-use super::column::ColumnProfile;
+use super::column::{ColumnProfile, FiveNumber, PrecomputedStats};
 use crate::error::{ProfileError, Result};
 use crate::infer;
 
@@ -39,6 +39,15 @@ impl DatasetProfile {
     ///
     /// Column names default to `x0..x{n-1}` when `names` is `None` or shorter
     /// than the column count.
+    ///
+    /// The mean, variance, and five-number summary of every column are computed
+    /// in bulk over the flat row-major buffer (`Matrix::as_slice`) via
+    /// `datarust::stats`'s fused Welford and quantile helpers — one fused pass
+    /// for mean/variance and one sort per column for the quantiles, instead of
+    /// the per-column `Vec` gathering the older path used. The remaining
+    /// distributional statistics (skewness, kurtosis, histogram, outliers)
+    /// still gather each column once, since `datarust` does not provide flat
+    /// versions of those.
     pub fn from_matrix(m: &Matrix, names: Option<&[String]>) -> Result<Self> {
         let (rows, cols) = (m.nrows(), m.ncols());
         if rows == 0 || cols == 0 {
@@ -54,11 +63,46 @@ impl DatasetProfile {
             _ => default_names,
         };
 
+        // --- _flat fast path: mean/variance + quantiles in bulk -------------
+        let data = m.as_slice();
+        let (means, vars) = stats::column_mean_var_flat(data, rows, cols, 1);
+        // Shape: [qs.len()][cols] → rows of [min, q1, median, q3, max] per col.
+        let qs = &[0.0, 0.25, 0.5, 0.75, 1.0];
+        let quantiles = stats::column_quantiles_many_flat(data, rows, cols, qs)?;
+
         let mut columns = Vec::with_capacity(cols);
         let mut memory_bytes = 0usize;
         for (j, name) in resolved.iter().enumerate().take(cols) {
+            // The flat helpers are not NaN-aware: if a column contains any
+            // non-finite value, its bulk mean/variance/quantile are polluted
+            // by NaN propagation. In that case fall back to the per-column
+            // path, which filters missing values first. The fast path still
+            // wins on the common (fully-finite) case.
+            let col_has_nan = (0..rows).any(|i| !data[i * cols + j].is_finite());
+            let precomputed = if col_has_nan {
+                None
+            } else {
+                (|| {
+                    let mean = *means.get(j)?;
+                    let std = (*vars.get(j)?).sqrt();
+                    let qrow = quantiles.get(0..qs.len())?;
+                    let five = FiveNumber {
+                        min: *qrow.first()?.get(j).unwrap_or(&f64::NAN),
+                        q1: *qrow.get(1)?.get(j).unwrap_or(&f64::NAN),
+                        median: *qrow.get(2)?.get(j).unwrap_or(&f64::NAN),
+                        q3: *qrow.get(3)?.get(j).unwrap_or(&f64::NAN),
+                        max: *qrow.get(4)?.get(j).unwrap_or(&f64::NAN),
+                    };
+                    Some(PrecomputedStats { mean, std, five })
+                })()
+            };
+            // Skew/kurtosis/histogram/outliers still need the raw column.
             let col = m.col(j);
-            columns.push(ColumnProfile::from_numeric(name.clone(), &col));
+            columns.push(ColumnProfile::from_numeric_with_stats(
+                name.clone(),
+                &col,
+                precomputed,
+            ));
             memory_bytes += column_bytes(crate::types::ColumnType::Numeric, rows);
         }
 

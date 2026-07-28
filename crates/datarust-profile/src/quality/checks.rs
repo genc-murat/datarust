@@ -20,6 +20,10 @@ pub enum QualityKind {
     NearUnique,
     /// The dataset contains exact-duplicate rows.
     DuplicateRows,
+    /// A numeric column has values outside the Tukey IQR fences.
+    Outliers,
+    /// A categorical column is dominated by a single value.
+    Imbalance,
 }
 
 /// A single data-quality finding.
@@ -49,6 +53,11 @@ pub struct Thresholds {
     pub near_zero_variance: f64,
     /// `unique / n_rows` at or above which [`QualityKind::NearUnique`] fires.
     pub near_unique_ratio: f64,
+    /// Outlier fraction at or above which [`QualityKind::Outliers`] fires.
+    pub outlier_fraction: f64,
+    /// Imbalance ratio (`freq / present`) at or above which
+    /// [`QualityKind::Imbalance`] fires.
+    pub imbalance_ratio: f64,
 }
 
 impl Default for Thresholds {
@@ -57,6 +66,8 @@ impl Default for Thresholds {
             missing_fraction: 0.5,
             near_zero_variance: 1e-12,
             near_unique_ratio: 0.98,
+            outlier_fraction: 0.05,
+            imbalance_ratio: 0.95,
         }
     }
 }
@@ -98,6 +109,23 @@ pub fn run_checks(profile: &DatasetProfile, thresholds: &Thresholds) -> Vec<Qual
                             ),
                         });
                     }
+                    if n.outlier_count > 0 && n.outlier_fraction >= thresholds.outlier_fraction {
+                        issues.push(QualityIssue {
+                            kind: QualityKind::Outliers,
+                            severity: if n.outlier_fraction >= 0.2 {
+                                Severity::Warning
+                            } else {
+                                Severity::Info
+                            },
+                            column: Some(col.name.clone()),
+                            message: format!(
+                                "{}: {} outliers ({:.1}%) beyond IQR fences",
+                                col.name,
+                                n.outlier_count,
+                                n.outlier_fraction * 100.0
+                            ),
+                        });
+                    }
                 }
             }
             ColumnType::Categorical => {
@@ -112,6 +140,19 @@ pub fn run_checks(profile: &DatasetProfile, thresholds: &Thresholds) -> Vec<Qual
                                 message: format!(
                                     "{}: {} unique values across {} rows (ratio {:.2}); likely an identifier",
                                     col.name, c.unique, col.count, ratio
+                                ),
+                            });
+                        }
+                        if c.imbalance_ratio >= thresholds.imbalance_ratio {
+                            issues.push(QualityIssue {
+                                kind: QualityKind::Imbalance,
+                                severity: Severity::Critical,
+                                column: Some(col.name.clone()),
+                                message: format!(
+                                    "{}: top value '{}' covers {:.1}% of rows",
+                                    col.name,
+                                    c.top,
+                                    c.imbalance_ratio * 100.0
                                 ),
                             });
                         }

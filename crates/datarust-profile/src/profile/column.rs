@@ -23,6 +23,34 @@ pub struct FiveNumber {
     pub max: f64,
 }
 
+/// An equal-width histogram over the non-missing values of a numeric column.
+///
+/// The bin count follows Sturges' rule (`ceil(log2(n) + 1)`, floored at 1).
+/// `edges.len() == counts.len() + 1`; the final bin is inclusive of its upper
+/// edge so the maximum value is never dropped.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct Histogram {
+    /// Bin edges, ascending. Length is `counts.len() + 1` (empty for an empty
+    /// column).
+    pub edges: Vec<f64>,
+    /// Number of values falling into each bin. Length is one less than
+    /// `edges`.
+    pub counts: Vec<usize>,
+}
+
+impl Histogram {
+    /// Returns the number of bins (== `counts.len()`).
+    pub fn nbins(&self) -> usize {
+        self.counts.len()
+    }
+
+    /// Returns the count in the tallest bin, or `0` for an empty histogram.
+    pub fn max_count(&self) -> usize {
+        self.counts.iter().copied().max().unwrap_or(0)
+    }
+}
+
 /// The descriptive statistics computed for a numeric column.
 ///
 /// Missing values (`NaN`) are excluded from every statistic and counted
@@ -36,6 +64,19 @@ pub struct NumericStats {
     pub std: f64,
     /// Min/Q1/median/Q3/max of the non-missing values.
     pub five: FiveNumber,
+    /// Fisher–Pearson sample skewness of the non-missing values (`0.0` when
+    /// undefined, i.e. fewer than three values or zero variance).
+    pub skewness: f64,
+    /// Excess (Fisher) kurtosis of the non-missing values (`0.0` when
+    /// undefined, i.e. fewer than four values or zero variance).
+    pub kurtosis: f64,
+    /// Equal-width histogram (Sturges bins) of the non-missing values.
+    pub histogram: Histogram,
+    /// Number of values outside the Tukey IQR fences (`Q1 − 1.5·IQR`,
+    /// `Q3 + 1.5·IQR`).
+    pub outlier_count: usize,
+    /// Fraction of values outside the IQR fences, in `[0.0, 1.0]`.
+    pub outlier_fraction: f64,
 }
 
 /// The descriptive statistics computed for a categorical column.
@@ -48,6 +89,12 @@ pub struct CategoricalStats {
     pub top: String,
     /// Frequency of [`CategoricalStats::top`].
     pub freq: usize,
+    /// `freq` divided by the number of non-missing cells, in `[0.0, 1.0]`.
+    /// `1.0` means a single value dominates the whole column.
+    pub imbalance_ratio: f64,
+    /// The most frequent values and their counts, descending, capped at a
+    /// small number for display. Useful for frequency bar charts.
+    pub top_values: Vec<(String, usize)>,
 }
 
 /// A full profile for a single column of the dataset.
@@ -70,9 +117,39 @@ pub struct ColumnProfile {
     pub categorical: Option<CategoricalStats>,
 }
 
+/// Cap on the length of [`CategoricalStats::top_values`].
+const TOP_VALUES_CAP: usize = 8;
+
+/// Pre-computed mean/std/five-number summary, used by the `_flat` fast path in
+/// [`crate::profile::DatasetProfile::from_matrix`] to avoid recomputing the
+/// most expensive statistics per column.
+///
+/// When `Some`, [`ColumnProfile::from_numeric_with_stats`] trusts these values
+/// instead of re-deriving them; the distributional stats (skewness, kurtosis,
+/// histogram, outliers) are still computed from the raw values.
+pub(crate) struct PrecomputedStats {
+    pub(crate) mean: f64,
+    pub(crate) std: f64,
+    pub(crate) five: FiveNumber,
+}
+
 impl ColumnProfile {
     /// Builds a profile from a numeric slice, treating `NaN` as missing.
     pub(crate) fn from_numeric(name: String, values: &[f64]) -> Self {
+        Self::from_numeric_with_stats(name, values, None)
+    }
+
+    /// Builds a profile from a numeric slice, optionally reusing pre-computed
+    /// mean/std/five-number summary.
+    ///
+    /// When `precomputed` is `Some`, the caller (the `_flat` fast path)
+    /// asserts responsibility for matching the values; when `None`, the stats
+    /// are derived here exactly as in [`Self::from_numeric`].
+    pub(crate) fn from_numeric_with_stats(
+        name: String,
+        values: &[f64],
+        precomputed: Option<PrecomputedStats>,
+    ) -> Self {
         let count = values.len();
         let present: Vec<f64> = values.iter().copied().filter(|v| v.is_finite()).collect();
         let missing_count = count - present.len();
@@ -89,16 +166,38 @@ impl ColumnProfile {
             let mut sorted = present.clone();
             sorted.sort_by(|a, b| a.total_cmp(b));
 
-            let mean = datarust::stats::mean(&present);
-            let std = datarust::stats::std(&present, 1);
-            let five = FiveNumber {
-                min: datarust::stats::quantile(&sorted, 0.0).unwrap_or(f64::NAN),
-                q1: datarust::stats::quantile(&sorted, 0.25).unwrap_or(f64::NAN),
-                median: datarust::stats::median_sorted(&sorted).unwrap_or(f64::NAN),
-                q3: datarust::stats::quantile(&sorted, 0.75).unwrap_or(f64::NAN),
-                max: datarust::stats::quantile(&sorted, 1.0).unwrap_or(f64::NAN),
+            let (mean, std, five) = match precomputed {
+                Some(p) => (p.mean, p.std, p.five),
+                None => {
+                    let m = datarust::stats::mean(&present);
+                    let s = datarust::stats::std(&present, 1);
+                    let f = FiveNumber {
+                        min: datarust::stats::quantile(&sorted, 0.0).unwrap_or(f64::NAN),
+                        q1: datarust::stats::quantile(&sorted, 0.25).unwrap_or(f64::NAN),
+                        median: datarust::stats::median_sorted(&sorted).unwrap_or(f64::NAN),
+                        q3: datarust::stats::quantile(&sorted, 0.75).unwrap_or(f64::NAN),
+                        max: datarust::stats::quantile(&sorted, 1.0).unwrap_or(f64::NAN),
+                    };
+                    (m, s, f)
+                }
             };
-            Some(NumericStats { mean, std, five })
+
+            let skew = super::distribution::skewness(&present, mean, std);
+            let kurt = super::distribution::kurtosis_excess(&present, mean, std);
+            let histogram = super::distribution::histogram(&sorted, five.min, five.max);
+            let (outlier_count, outlier_fraction) =
+                super::distribution::outlier_count(&sorted, five.q1, five.q3);
+
+            Some(NumericStats {
+                mean,
+                std,
+                five,
+                skewness: skew,
+                kurtosis: kurt,
+                histogram,
+                outlier_count,
+                outlier_fraction,
+            })
         };
 
         ColumnProfile {
@@ -170,14 +269,32 @@ fn compute_categorical(cells: &[String]) -> Option<CategoricalStats> {
     if order.is_empty() {
         return None;
     }
-    let (top, freq) = order
-        .iter()
-        .map(|k| (*k, counts[*k]))
-        .max_by_key(|&(_, c)| c)
-        .unwrap();
+    let present_total: usize = order.iter().map(|k| counts[*k]).sum();
+
+    // Top values: sort by count descending, tie-break by first-seen order.
+    let mut entries: Vec<(&str, usize)> = order.iter().map(|k| (*k, counts[*k])).collect();
+    entries.sort_by_key(|&(_, c)| std::cmp::Reverse(c));
+    let top_values: Vec<(String, usize)> = entries
+        .into_iter()
+        .take(TOP_VALUES_CAP)
+        .map(|(k, c)| (k.to_string(), c))
+        .collect();
+
+    let (top, freq) = {
+        let first = top_values.first().expect("non-empty");
+        (first.0.clone(), first.1)
+    };
+    let imbalance_ratio = if present_total == 0 {
+        0.0
+    } else {
+        freq as f64 / present_total as f64
+    };
+
     Some(CategoricalStats {
         unique: order.len(),
-        top: top.to_string(),
+        top,
         freq,
+        imbalance_ratio,
+        top_values,
     })
 }

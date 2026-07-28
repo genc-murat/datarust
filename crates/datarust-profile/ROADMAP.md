@@ -5,14 +5,17 @@ This document tracks the path from the initial release (v0.1.0) toward a
 ecosystem (v1.0). It is a living document — priorities may shift, but the
 principles and the destination stay fixed.
 
-> **Where we are today (v0.1.0):** one-call profiling of numeric `Matrix`,
+> **Where we are today (v0.2.0):** one-call profiling of numeric `Matrix`,
 > categorical `StrMatrix`, and mixed tables; per-column descriptive
-> statistics (count, missing, mean, std, five-number summary, cardinality,
-> top value); type inference; duplicate-row detection; four data-quality
-> checks (HighMissing, ConstantColumn, NearUnique, DuplicateRows) with
-> configurable thresholds; a self-contained HTML report (no dependencies) and
-> a JSON report behind the `serde` feature. Built entirely on `datarust::stats`
-> primitives, zero external dependencies by default.
+> statistics (count, missing, mean, std, five-number summary, skewness,
+> kurtosis, equal-width histogram, cardinality, top value, imbalance ratio);
+> type inference; duplicate-row detection; six data-quality checks
+> (HighMissing, ConstantColumn, NearUnique, DuplicateRows, Outliers,
+> Imbalance) with configurable thresholds; a self-contained HTML report with
+> per-column card layout and CSS bar charts (no dependencies) and a JSON
+> report behind the `serde` feature; a `_flat` fast path for
+> `profile_matrix`. Built on `datarust::stats` primitives plus local
+> distributional helpers, zero external dependencies by default.
 
 ## Guiding principles
 
@@ -44,10 +47,31 @@ These are non-negotiable. Every item on the roadmap respects them.
 
 ---
 
-## Recently shipped (v0.1.0)
+## Recently shipped
 
-The initial release establishes the data model and the rendering pipeline.
-Everything below is part of the stable v0.1 API:
+### v0.2.0 — Distributional depth
+
+Added the shape-of-distribution statistics that turn the five-number summary
+into a real picture, plus outlier and imbalance detection and a faster
+profiling path for numeric matrices:
+
+- ✅ `skewness` and excess `kurtosis` on `NumericStats` (Fisher–Pearson,
+      NaN-safe).
+- ✅ `Histogram` (equal-width, Sturges bins) on `NumericStats`, rendered as a
+      CSS-div mini bar chart in the HTML report.
+- ✅ IQR outlier detection — `outlier_count` / `outlier_fraction` on
+      `NumericStats`, surfaced as `QualityKind::Outliers`.
+- ✅ Categorical `imbalance_ratio` on `CategoricalStats` (top-value dominance),
+      surfaced as `QualityKind::Imbalance`.
+- ✅ `_flat` fast path in `from_matrix` via `column_mean_var_flat` /
+      `column_quantiles_many_flat` (NaN columns fall back to per-column).
+- ✅ HTML report rebuilt as a responsive per-column card grid (replaces the
+      fragile wide table), with CSS histogram and categorical frequency bars.
+
+### v0.1.0 — Initial release
+
+Established the data model and the rendering pipeline. Everything below is
+part of the stable v0.1 API:
 
 - ✅ `DatasetProfile` / `ColumnProfile` data model (numeric + categorical).
 - ✅ `profile_matrix` / `profile_str_matrix` / `profile_table` entry points.
@@ -85,22 +109,23 @@ detection.
 
 **Deliverables:**
 
-- [ ] Higher moments: `skewness` and `kurtosis` (excess) on `NumericStats`,
+- [x] Higher moments: `skewness` and `kurtosis` (excess) on `NumericStats`,
       NaN-safe (computed on non-missing values).
-- [ ] Histogram / equi-width binning: a `Histogram { edges: Vec<f64>, counts:
-      Vec<usize> }` with a configurable bin count (Sturges + Freedman–Diaconis
-      rules as defaults). Exposed on `NumericStats` and rendered inline in the
-      HTML report as a CSS bar chart (no JS).
-- [ ] Outlier flagging: IQR rule (`< Q1 − 1.5·IQR` or `> Q3 + 1.5·IQR`) as a new
+- [x] Histogram / equi-width binning: a `Histogram { edges: Vec<f64>, counts:
+      Vec<usize> }` with Sturges' rule as the default bin count. Exposed on
+      `NumericStats` and rendered inline in the HTML report as a CSS bar chart
+      (no JS).
+- [x] Outlier flagging: IQR rule (`< Q1 − 1.5·IQR` or `> Q3 + 1.5·IQR`) as a new
       `QualityKind::Outliers` finding, with the count and fraction of flagged
       cells in the message.
-- [ ] `Imbalance` / low-cardinality flag for categorical columns whose top
+- [x] `Imbalance` / low-cardinality flag for categorical columns whose top
       value dominates (e.g. ≥ 95% of rows) — a data-quality analogue of
       `ConstantColumn` for categoricals.
-- [ ] The `_flat` fast path: route numeric column stats through
+- [x] The `_flat` fast path: route numeric column stats through
       `Matrix::as_slice()` + `column_quantiles_many_flat` /
       `column_mean_var_flat` instead of per-column `Vec` gathering, to cut
-      allocation on wide tables.
+      allocation on wide tables. (Columns containing NaN fall back to the
+      per-column path, since `datarust`'s flat helpers are not NaN-aware.)
 
 ### v0.3 — Relationships & interaction
 

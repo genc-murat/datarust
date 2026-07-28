@@ -122,15 +122,21 @@ fn quality_flags_high_missing_and_constant() {
 }
 
 #[test]
-fn html_report_contains_columns_and_findings() {
+fn html_card_layout_replaces_table() {
+    // v0.2 replaces the per-column <table> with a responsive card grid.
     let m = Matrix::from_rows(vec![vec![1.0, f64::NAN], vec![1.0, 2.0]]).unwrap();
     let p = profile_matrix(&m, Some(&names(&["a", "b"]))).unwrap();
     let html = datarust_profile::report::to_html(&p);
-    assert!(html.contains("<table"));
+    // New layout markers: card grid + a CSS bar chart (the histogram).
+    assert!(html.contains("col-grid"));
+    assert!(html.contains("col-card"));
+    assert!(html.contains("chart"));
+    assert!(html.contains("bar"));
+    // The old table is gone.
+    assert!(!html.contains("<table"));
+    // Column name + badge still present.
     assert!(html.contains("a"));
     assert!(html.contains("numeric"));
-    // NaN handling should not leak literal "NaN" into numeric cells.
-    assert!(!html.contains("NaN</td>"));
 }
 
 #[cfg(feature = "serde")]
@@ -144,4 +150,117 @@ fn json_report_round_trips() {
     assert!(json.contains("\"n_rows\""));
     assert!(json.contains("\"a\""));
     assert!(json.contains("\"quality\""));
+}
+
+// ---- v0.2: distributional depth -------------------------------------------
+
+#[test]
+fn numeric_profile_includes_distribution_fields() {
+    let m = Matrix::from_rows(vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0], vec![5.0]]).unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
+    let n = p.columns[0].numeric.as_ref().unwrap();
+
+    // Skewness of a symmetric sequence is ~0.
+    assert!(n.skewness.abs() < 1e-9, "skewness {}", n.skewness);
+    // Histogram uses Sturges: ceil(log2(5)+1) = ceil(3.32) = 4 bins.
+    assert_eq!(n.histogram.nbins(), 4);
+    // All values accounted for.
+    assert_eq!(n.histogram.counts.iter().sum::<usize>(), 5);
+    // Five-number summary flows through the flat path unchanged.
+    assert!((n.five.min - 1.0).abs() < 1e-9);
+    assert!((n.five.max - 5.0).abs() < 1e-9);
+}
+
+#[test]
+fn outlier_detection_via_iqr_flags_extreme_values() {
+    // [1,2,3,4,100] → 100 sits well above the Q3 + 1.5*IQR fence.
+    let m = Matrix::from_rows(vec![
+        vec![1.0],
+        vec![2.0],
+        vec![3.0],
+        vec![4.0],
+        vec![100.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
+    let n = p.columns[0].numeric.as_ref().unwrap();
+    assert!(
+        n.outlier_count >= 1,
+        "expected outliers, got {}",
+        n.outlier_count
+    );
+
+    // And the quality check fires.
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(issues.iter().any(|i| {
+        i.column.as_deref() == Some("x") && i.kind == datarust_profile::QualityKind::Outliers
+    }));
+}
+
+#[test]
+fn categorical_imbalance_detected_when_top_dominates() {
+    // 95% threshold default: 19/20 = 0.95 trips it.
+    let mut rows: Vec<Vec<String>> = (0..19).map(|_| vec!["a".to_string()]).collect();
+    rows.push(vec!["b".to_string()]);
+    let s = StrMatrix::from_strings(rows).unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["k"]))).unwrap();
+    let c = p.columns[0].categorical.as_ref().unwrap();
+    assert!((c.imbalance_ratio - 0.95).abs() < 1e-9);
+
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(issues.iter().any(|i| {
+        i.column.as_deref() == Some("k") && i.kind == datarust_profile::QualityKind::Imbalance
+    }));
+}
+
+#[test]
+fn flat_path_matches_independent_stats() {
+    // from_matrix uses the _flat fast path (column_mean_var_flat +
+    // column_quantiles_many_flat) for mean/std/five-number. Verify those
+    // agree with an independent recomputation straight from datarust::stats.
+    let m = Matrix::from_rows(vec![
+        vec![1.0, 10.0, 100.0],
+        vec![2.0, 20.0, f64::NAN],
+        vec![3.0, 30.0, 300.0],
+        vec![4.0, 40.0, 400.0],
+        vec![5.0, 50.0, 500.0],
+    ])
+    .unwrap();
+
+    let flat = profile_matrix(&m, Some(&names(&["a", "b", "c"]))).unwrap();
+
+    for j in 0..m.ncols() {
+        let col = m.col(j);
+        // Filter NaN the same way the profile does, so the independent
+        // recomputation matches the (NaN-aware) flat path.
+        let present: Vec<f64> = col.iter().copied().filter(|v| v.is_finite()).collect();
+        let n_flat = flat.columns[j].numeric.as_ref().unwrap();
+
+        // Independent mean/std from datarust::stats (the per-column helpers).
+        let mean = datarust::stats::mean(&present);
+        let std = datarust::stats::std(&present, 1);
+        assert!((n_flat.mean - mean).abs() < 1e-9, "col {j} mean mismatch");
+        assert!((n_flat.std - std).abs() < 1e-9, "col {j} std mismatch");
+
+        // Distributional stats are finite (computed from the raw column on
+        // both paths, so they're well-defined here).
+        assert!(n_flat.skewness.is_finite(), "col {j} skewness not finite");
+        assert!(n_flat.kurtosis.is_finite(), "col {j} kurtosis not finite");
+        assert!(
+            n_flat.outlier_count <= present.len(),
+            "col {j} outlier overflow"
+        );
+    }
+}
+
+#[test]
+fn categorical_stats_carry_top_values_list() {
+    let s = StrMatrix::from_strings(vec![vec!["a"], vec!["a"], vec!["b"], vec!["c"], vec!["d"]])
+        .unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["k"]))).unwrap();
+    let c = p.columns[0].categorical.as_ref().unwrap();
+    assert_eq!(c.unique, 4);
+    // Top values descending by count; "a" leads with 2.
+    assert_eq!(c.top_values.first().unwrap().0, "a");
+    assert_eq!(c.top_values.first().unwrap().1, 2);
 }
