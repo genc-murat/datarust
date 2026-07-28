@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/genc-murat/datarust"
 homepage = "https://datarust.dev"
 readme = "README.md"
-keywords = ["data-profiling", "eda", "data-quality", "exploratory-data-analysis", "datarust"]
+keywords = ["data-profiling", "eda", "data-quality", "data-exploration", "datarust"]
 categories = ["science", "mathematics"]
 include = [
     "/src/**",
