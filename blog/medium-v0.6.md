@@ -267,4 +267,4 @@ cargo add datarust
 
 ---
 
-*datarust is MIT-licensed and available on [crates.io](https://crates.io/crates/datarust), with full documentation at [genc-murat.github.io/datarust](https://genc-murat.github.io/datarust/). The roadmap lives at [github.com/genc-murat/datarust](https://github.com/genc-murat/datarust/blob/main/ROADMAP.md) — if you want to contribute a `DecisionTree` or a `CountVectorizer`, now's a good time.*
+*datarust is MIT-licensed and available on [crates.io](https://crates.io/crates/datarust), with full documentation at [genc-murat.github.io/datarust](https://genc-murat.github.io/datarust/). The roadmap lives at [github.com/genc-murat/datarust](https://github.com/genc-murat/datarust/blob/main/crates/datarust/ROADMAP.md) — if you want to contribute a `DecisionTree` or a `CountVectorizer`, now's a good time.*

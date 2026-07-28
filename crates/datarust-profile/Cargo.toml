@@ -1,0 +1,41 @@
+[package]
+name = "datarust-profile"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "One-call data profiling and quality reports for the datarust ecosystem"
+license = "MIT"
+repository = "https://github.com/genc-murat/datarust"
+homepage = "https://datarust.dev"
+readme = "README.md"
+keywords = ["data-profiling", "eda", "data-quality", "exploratory-data-analysis", "datarust"]
+categories = ["science", "mathematics"]
+include = [
+    "/src/**",
+    "/tests/**",
+    "/examples/**",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE",
+]
+
+[lib]
+name = "datarust_profile"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Enable JSON serialization of profile reports (and `to_json`).
+serde = ["dep:serde", "dep:serde_json", "datarust/serde"]
+
+[dependencies]
+datarust = "0.6"
+# Optional, gated behind the `serde` feature. Pinned to the same lines datarust
+# uses in order to preserve the shared Rust 1.70 MSRV across the workspace.
+serde = { version = "=1.0.228", features = ["derive"], optional = true }
+serde_json = { version = "=1.0.145", optional = true }
+
+[[example]]
+name = "profile_table"
+path = "examples/profile_table.rs"
+required-features = ["serde"]

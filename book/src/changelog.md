@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to datarust are documented in the project's [`CHANGELOG.md`](https://github.com/genc-murat/datarust/blob/main/CHANGELOG.md) on GitHub.
+All notable changes to datarust are documented in the project's [`CHANGELOG.md`](https://github.com/genc-murat/datarust/blob/main/crates/datarust/CHANGELOG.md) on GitHub.
 
-> This page provides a summary. For the full, detailed changelog (including internal refactors and performance tables), see the [canonical source](https://github.com/genc-murat/datarust/blob/main/CHANGELOG.md).
+> This page provides a summary. For the full, detailed changelog (including internal refactors and performance tables), see the [canonical source](https://github.com/genc-murat/datarust/blob/main/crates/datarust/CHANGELOG.md).
 
 ## Unreleased
 
@@ -113,4 +113,4 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
 
 ## Earlier versions
 
-See the [full changelog on GitHub](https://github.com/genc-murat/datarust/blob/main/CHANGELOG.md) for 0.1.x and 0.2.x history.
+See the [full changelog on GitHub](https://github.com/genc-murat/datarust/blob/main/crates/datarust/CHANGELOG.md) for 0.1.x and 0.2.x history.

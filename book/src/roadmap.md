@@ -1,10 +1,10 @@
 # Roadmap
 
-The canonical, detailed roadmap lives in [`ROADMAP.md`][repo] at the repository
-root. This page gives a higher-level tour of *why* each phase is ordered the way
-it is, and what it unlocks for users.
+The canonical, detailed roadmap lives in [`ROADMAP.md`][repo] inside the
+`datarust` crate. This page gives a higher-level tour of *why* each phase is
+ordered the way it is, and what it unlocks for users.
 
-[repo]: https://github.com/genc-murat/datarust/blob/main/ROADMAP.md
+[repo]: https://github.com/genc-murat/datarust/blob/main/crates/datarust/ROADMAP.md
 
 ## The destination
 
