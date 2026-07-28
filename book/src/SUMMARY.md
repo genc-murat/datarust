@@ -23,6 +23,13 @@
 - [Compose: Pipeline & ColumnTransformer](./guide/compose.md)
 - [Datasets](./guide/datasets.md)
 
+# datarust-profile
+
+- [Overview](./profile/README.md)
+- [Quick Start](./profile/quickstart.md)
+- [Profiling Guide](./profile/guide.md)
+- [Roadmap](./profile/roadmap.md)
+
 # Reference
 
 - [Performance vs scikit-learn](./performance.md)

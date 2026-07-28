@@ -60,7 +60,9 @@ pub mod report;
 pub mod types;
 
 pub use error::{ProfileError, Result};
-pub use profile::{CategoricalStats, ColumnProfile, DatasetProfile, FiveNumber, NumericStats};
+pub use profile::{
+    CategoricalStats, ColumnProfile, DatasetProfile, FiveNumber, Histogram, NumericStats,
+};
 pub use quality::{QualityIssue, QualityKind, Thresholds};
 pub use types::{ColumnType, Severity};
 
