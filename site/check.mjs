@@ -85,10 +85,10 @@ async function check() {
     }
   }
 
-  const numberedSources = (await readdir(path.join(ROOT, 'blog'))).filter((name) => /^\d+-.*\.md$/.test(name));
-  const numberedPages = htmlFiles.filter((file) => /\/blog\/[^/]+\/index\.html$/.test(file)).length - 1;
-  if (numberedPages !== numberedSources.length) {
-    errors.push(`blog count mismatch: ${numberedSources.length} numbered sources, ${numberedPages} generated pages`);
+  const blogSources = (await readdir(path.join(ROOT, 'blog'))).filter((name) => name.endsWith('.md'));
+  const blogPages = htmlFiles.filter((file) => /\/blog\/[^/]+\/index\.html$/.test(file)).length;
+  if (blogPages !== blogSources.length) {
+    errors.push(`blog count mismatch: ${blogSources.length} sources, ${blogPages} generated pages`);
   }
 
   if (errors.length) {
