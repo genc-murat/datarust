@@ -34,11 +34,15 @@
 //!
 //! ## JSON output (feature `serde`)
 //!
-//! ```no_run
-//! # use datarust::Matrix;
-//! # use datarust_profile::{profile_matrix, report};
-//! # let m = Matrix::from_rows(vec![vec![1.0]]).unwrap();
-//! # let profile = profile_matrix(&m, None).unwrap();
+//! Requires the `serde` feature. The example below is marked `ignore` so that
+//! it is not compiled by `cargo test --doc` when `serde` is disabled.
+//!
+//! ```rust,ignore
+//! use datarust::Matrix;
+//! use datarust_profile::{profile_matrix, report};
+//!
+//! let m = Matrix::from_rows(vec![vec![1.0]]).unwrap();
+//! let profile = profile_matrix(&m, None).unwrap();
 //! let json = report::to_json(
 //!     &report::JsonReport::from_profile(&profile),
 //! ).unwrap();
