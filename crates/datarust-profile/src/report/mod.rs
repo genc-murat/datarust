@@ -7,6 +7,6 @@ pub mod html;
 #[cfg(feature = "serde")]
 pub mod json;
 
-pub use html::to_html;
+pub use html::{to_html, to_html_with};
 #[cfg(feature = "serde")]
 pub use json::{to_json, to_json_file, JsonReport};

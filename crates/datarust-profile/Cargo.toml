@@ -40,3 +40,37 @@ serde_json = { version = "=1.0.145", optional = true }
 name = "profile_table"
 path = "examples/profile_table.rs"
 required-features = ["serde"]
+
+[[example]]
+name = "numeric_distribution"
+path = "examples/numeric_distribution.rs"
+
+[[example]]
+name = "quality_checks"
+path = "examples/quality_checks.rs"
+
+[[example]]
+name = "categorical_inspection"
+path = "examples/categorical_inspection.rs"
+
+[[example]]
+name = "missing_values"
+path = "examples/missing_values.rs"
+
+[[example]]
+name = "duplicate_detection"
+path = "examples/duplicate_detection.rs"
+
+[[example]]
+name = "type_inference"
+path = "examples/type_inference.rs"
+
+[[example]]
+name = "real_world_csv"
+path = "examples/real_world_csv.rs"
+required-features = ["serde"]
+
+[[example]]
+name = "custom_report"
+path = "examples/custom_report.rs"
+required-features = ["serde"]
