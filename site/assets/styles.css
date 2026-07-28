@@ -437,6 +437,11 @@ img { max-width: 100%; height: auto; }
   .path-grid, .article-grid { grid-template-columns: 1fr; }
   .path-grid a, .path-grid a:first-child { min-height: 210px; border: 0; border-top: 1px solid var(--line); }
   .path-grid a:first-child { border-top: 0; }
+  .crate-grid { grid-template-columns: 1fr; }
+  .nav-dropdown { width: 100%; }
+  .nav-dropdown-trigger { width: 100%; justify-content: space-between; padding: 10px 12px; }
+  .nav-dropdown-menu { position: static; margin-top: 0; box-shadow: none; border: 0; padding: 0; display: block; }
+  .nav-dropdown-menu a { padding: 10px 24px; }
   .article-card { min-height: 310px; }
   .page-hero.narrow-left { grid-template-columns: 1fr; gap: 26px; }
   .blog-controls { grid-template-columns: 1fr; gap: 10px; }
@@ -486,3 +491,45 @@ img { max-width: 100%; height: auto; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+
+/* ── Workspace crate cards (homepage) ──────────────────────────────────── */
+
+.crate-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+.crate-card { position: relative; display: flex; flex-direction: column; padding: 32px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--surface) 52%, transparent); transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; text-decoration: none; }
+.crate-card:hover { z-index: 1; border-color: var(--faint); box-shadow: var(--shadow); transform: translateY(-4px); }
+.crate-card > * { position: relative; }
+.crate-card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.crate-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.crate-version { font: 12px var(--mono); color: var(--faint); }
+.crate-tagline { margin: 0 0 10px; font-family: var(--serif); font-size: 22px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; color: var(--ink); }
+.crate-blurb { margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.crate-install { margin-bottom: 18px; }
+.crate-install code { display: inline-block; padding: 6px 10px; border-radius: 6px; background: var(--code); color: var(--code-ink); font: 13px var(--mono); }
+.crate-highlights { list-style: none; margin: 0 0 22px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.crate-highlights li { position: relative; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.crate-highlights li::before { content: ""; position: absolute; left: 0; top: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.crate-card-cta { margin-top: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 13px; font-weight: 600; }
+.crate-card-cta svg { width: 14px; height: 14px; }
+
+/* Crate badge — used on homepage cards and docs page eyebrows */
+.crate-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 4px; font: 600 12px var(--mono); letter-spacing: -.01em; }
+.crate-badge.datarust { background: var(--accent-wash); color: var(--accent); }
+.crate-badge.profile { background: #e8f0fe; color: #1a56c4; }
+:root[data-theme="dark"] .crate-badge.profile,
+:root:not([data-theme="light"]) .crate-badge.profile { background: #1a2a4a; color: #8ab4f8; }
+.crate-eyebrow { margin: 0 0 12px; }
+
+/* ── Nav API dropdown ──────────────────────────────────────────────────── */
+
+.nav-dropdown { position: relative; display: flex; align-items: center; }
+.nav-dropdown-trigger { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--muted); font: inherit; cursor: pointer; padding: 0; }
+.nav-dropdown-trigger:hover { color: var(--ink); }
+.nav-dropdown-trigger svg { width: 12px; height: 12px; transition: transform .2s ease; }
+.nav-dropdown:hover .nav-dropdown-trigger svg,
+.nav-dropdown:focus-within .nav-dropdown-trigger svg { transform: rotate(180deg); }
+.nav-dropdown-menu { position: absolute; top: 100%; right: 0; min-width: 220px; margin-top: 10px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); display: none; z-index: 20; }
+.nav-dropdown:hover .nav-dropdown-menu,
+.nav-dropdown:focus-within .nav-dropdown-menu { display: block; }
+.nav-dropdown-menu a { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 5px; color: var(--ink); font-size: 14px; text-decoration: none; }
+.nav-dropdown-menu a:hover { background: var(--paper-deep); }
+.nav-dropdown-menu svg { width: 12px; height: 12px; color: var(--faint); }

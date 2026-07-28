@@ -11,7 +11,33 @@ const BLOG_ROOT = path.join(ROOT, 'blog');
 const STATIC_ROOT = path.join(ROOT, 'site', 'static');
 const SITE_URL = normalizeOrigin(process.env.SITE_URL || 'https://datarust.dev');
 const GITHUB_URL = 'https://github.com/genc-murat/datarust';
-const CRATES_URL = 'https://crates.io/crates/datarust';
+
+// The workspace publishes two crates. Each carries its own identity (install
+// line, docs.rs / crates.io URLs, tagline) so the homepage and nav can present
+// them side by side rather than as a single crate. Versions are resolved in
+// `build()` from each crate's Cargo.toml.
+const DATARUST_CRATE = {
+  name: 'datarust',
+  version: 'latest',
+  install: 'cargo add datarust',
+  cratesUrl: 'https://crates.io/crates/datarust',
+  docsUrl: 'https://docs.rs/datarust',
+  docsRoute: '/docs/',
+  tagline: 'Scikit-learn-style preprocessing and classical ML',
+  blurb: 'Preprocessing, feature selection, models, metrics, and persistence — zero dependencies by default.',
+  highlights: ['Scalers, encoders, imputers', 'PCA, linear models, clustering', 'Pipelines &amp; ColumnTransformer'],
+};
+const PROFILE_CRATE = {
+  name: 'datarust-profile',
+  version: 'latest',
+  install: 'cargo add datarust-profile',
+  cratesUrl: 'https://crates.io/crates/datarust-profile',
+  docsUrl: 'https://docs.rs/datarust-profile',
+  docsRoute: '/docs/profile/README/',
+  tagline: 'One-call data profiling and quality reports',
+  blurb: 'Column statistics, type inference, outlier/imbalance detection, and HTML/JSON reports — built on datarust.',
+  highlights: ['Column statistics &amp; histograms', 'Type inference &amp; quality checks', 'HTML &amp; JSON reports'],
+};
 
 marked.setOptions({ gfm: true });
 
@@ -221,8 +247,10 @@ async function loadDocs() {
     const markdown = await readFile(path.join(DOCS_ROOT, item.source), 'utf8');
     const lead = splitLead(markdown);
     const rendered = renderMarkdown(lead.body, { kind: 'docs', source: item.source });
+    const crate = item.source.startsWith('profile/') ? 'datarust-profile' : 'datarust';
     pages.push({
       ...item,
+      crate,
       title: lead.title,
       description: excerpt(lead.body),
       markdown,
@@ -269,12 +297,19 @@ function navLink(label, href, currentPath) {
   return `<a href="${href}"${active ? ' aria-current="page"' : ''}>${label}</a>`;
 }
 
+function apiDropdown() {
+  // CSS-only dropdown (hover + focus-within). Lists each crate's docs.rs page.
+  return `<div class="nav-dropdown"><button class="nav-dropdown-trigger" type="button" aria-haspopup="true" aria-expanded="false">API ${icon('chevron')}</button><div class="nav-dropdown-menu" role="menu"><a href="${DATARUST_CRATE.docsUrl}" target="_blank" rel="noreferrer" role="menuitem">datarust ${icon('external')}</a><a href="${PROFILE_CRATE.docsUrl}" target="_blank" rel="noreferrer" role="menuitem">datarust-profile ${icon('external')}</a></div></div>`;
+}
+
 function icon(name) {
   const paths = {
     search: '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>',
     sun: '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"></path>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"></path>',
     arrow: '<path d="M5 12h14M14 7l5 5-5 5"></path>',
+    chevron: '<path d="M6 9l6 6 6-6"></path>',
+    external: '<path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"></path>',
   };
   return `<svg aria-hidden="true" viewBox="0 0 24 24">${paths[name]}</svg>`;
 }
@@ -317,7 +352,7 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
       <nav class="site-nav" aria-label="Primary navigation" data-menu>
         ${navLink('Docs', '/docs/', pathname)}
         ${navLink('Field notes', '/blog/', pathname)}
-        <a href="https://docs.rs/datarust" target="_blank" rel="noreferrer">API</a>
+        ${apiDropdown()}
         <a href="${GITHUB_URL}" target="_blank" rel="noreferrer">GitHub</a>
       </nav>
       <div class="header-actions">
@@ -328,8 +363,8 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
   </header>
   <main id="main-content">${body}</main>
   <footer class="site-footer">
-    <div><a class="brand footer-brand" href="/"><span class="brand-mark">dr</span><span>datarust</span></a><p>Scikit-learn-style preprocessing and classical ML, built for Rust.</p></div>
-    <div class="footer-links"><a href="/docs/quickstart/">Quick start</a><a href="/blog/">Field notes</a><a href="${CRATES_URL}">crates.io</a><a href="${GITHUB_URL}">Source</a></div>
+    <div><a class="brand footer-brand" href="/"><span class="brand-mark">dr</span><span>datarust</span></a><p>A workspace of ML and data-profiling crates for Rust.</p></div>
+    <div class="footer-links"><a href="/docs/quickstart/">Quick start</a><a href="/blog/">Field notes</a><a href="${DATARUST_CRATE.cratesUrl}">datarust on crates.io</a><a href="${PROFILE_CRATE.cratesUrl}">profile on crates.io</a><a href="${GITHUB_URL}">Source</a></div>
     <p class="footer-meta">MIT licensed · Built from the Markdown in this repository.</p>
   </footer>
   <dialog class="search-dialog" data-search-dialog>
@@ -354,6 +389,22 @@ function articleCard(post, { compact = false } = {}) {
   </article>`;
 }
 
+function crateCard(crate) {
+  // One card per workspace crate, linking into its docs entry point.
+  const variant = crate.name === 'datarust-profile' ? 'profile' : 'datarust';
+  return `<a class="crate-card" href="${crate.docsRoute}">
+    <div class="crate-card-head">
+      <span class="crate-badge ${variant}">${escapeHtml(crate.name)}</span>
+      <code class="crate-version">v${escapeHtml(crate.version)}</code>
+    </div>
+    <p class="crate-tagline">${escapeHtml(crate.tagline)}</p>
+    <p class="crate-blurb">${crate.blurb}</p>
+    <div class="crate-install"><code>${escapeHtml(crate.install)}</code></div>
+    <ul class="crate-highlights">${crate.highlights.map((h) => `<li>${h}</li>`).join('')}</ul>
+    <span class="crate-card-cta">Read the docs ${icon('arrow')}</span>
+  </a>`;
+}
+
 function homePage(posts, docs) {
   const numbered = posts.filter((post) => post.number).sort((a, b) => b.number - a.number);
   const latest = numbered.slice(0, 3);
@@ -369,7 +420,7 @@ function homePage(posts, docs) {
         <div class="hero-copy">
           <p class="eyebrow">Classical ML, native to Rust</p>
           <h1>Ship the pipeline.<br><span>Skip the runtime baggage.</span></h1>
-          <p class="hero-lede">datarust brings the familiar scikit-learn workflow to a small, transparent Rust library—from preprocessing and feature selection to models, metrics, and persistence.</p>
+          <p class="hero-lede">datarust is a workspace of two crates: a scikit-learn-style ML toolkit, and a one-call data-profiling companion. Both pure Rust, zero dependencies by default.</p>
           <div class="hero-actions"><a class="button primary" href="/docs/quickstart/">Start building ${icon('arrow')}</a><a class="button secondary" href="/blog/">Read the field notes</a></div>
           <div class="install-line"><code>cargo add datarust</code><button type="button" data-copy-text="cargo add datarust">Copy</button></div>
         </div>
@@ -384,7 +435,14 @@ model.fit(&amp;x_train, &amp;y_train)?;
           <div class="pipeline-steps"><span>raw rows</span><b>→</b><span>transform</span><b>→</b><span>predict</span></div>
         </div>
       </section>
-      <section class="stats-band"><div class="shell stats"><div><strong>0</strong><span>default dependencies</span></div><div><strong>${docsCount}</strong><span>documentation pages</span></div><div><strong>${notesCount}</strong><span>practical field notes</span></div><div><strong>1.70+</strong><span>supported Rust</span></div></div></section>
+      <section class="stats-band"><div class="shell stats"><div><strong>2</strong><span>crates in the workspace</span></div><div><strong>${docsCount}</strong><span>documentation pages</span></div><div><strong>${notesCount}</strong><span>practical field notes</span></div><div><strong>1.70+</strong><span>supported Rust</span></div></div></section>
+      <section class="section shell">
+        <div class="section-heading"><div><p class="eyebrow">The workspace</p><h2>Two crates, one workflow</h2></div></div>
+        <div class="crate-grid">
+          ${crateCard(DATARUST_CRATE)}
+          ${crateCard(PROFILE_CRATE)}
+        </div>
+      </section>
       <section class="section shell">
         <div class="section-heading"><div><p class="eyebrow">Learn the shape of the library</p><h2>From first matrix to fitted pipeline</h2></div><a class="text-link" href="/docs/">All documentation ${icon('arrow')}</a></div>
         <div class="path-grid">
@@ -448,7 +506,7 @@ function docsPage(page, index, docs) {
     bodyClass: 'content-page docs-page',
     body: `<div class="docs-layout shell-wide">
       ${docSidebar(docs.sections, page.route)}
-      <article class="prose-wrap"><header class="article-header"><p class="eyebrow">Documentation</p><h1>${escapeHtml(page.title)}</h1>${updated ? `<p class="article-meta">Updated ${escapeHtml(updated)}</p>` : ''}</header><div class="prose">${page.html}</div><div class="edit-note"><span>Something unclear?</span><a href="${GITHUB_URL}/edit/main/book/src/${page.source}">Edit this page on GitHub →</a></div>${pageNeighbors(docs.pages, index, 'Documentation')}</article>
+      <article class="prose-wrap"><header class="article-header"><p class="eyebrow crate-eyebrow"><span class="crate-badge ${page.crate === 'datarust-profile' ? 'profile' : 'datarust'}">${escapeHtml(page.crate)}</span></p><h1>${escapeHtml(page.title)}</h1>${updated ? `<p class="article-meta">Updated ${escapeHtml(updated)}</p>` : ''}</header><div class="prose">${page.html}</div><div class="edit-note"><span>Something unclear?</span><a href="${GITHUB_URL}/edit/main/book/src/${page.source}">Edit this page on GitHub →</a></div>${pageNeighbors(docs.pages, index, 'Documentation')}</article>
       ${tocMarkup(page.toc)}
     </div>`,
   });
@@ -512,12 +570,14 @@ ${entries.map(({ route, date }) => `  <url><loc>${escapeXml(`${SITE_URL}${route}
 }
 
 async function build() {
-  const [docs, posts, cargoToml] = await Promise.all([
+  const [docs, posts, datarustToml, profileToml] = await Promise.all([
     loadDocs(),
     loadBlog(),
     readFile(path.join(ROOT, 'crates', 'datarust', 'Cargo.toml'), 'utf8'),
+    readFile(path.join(ROOT, 'crates', 'datarust-profile', 'Cargo.toml'), 'utf8'),
   ]);
-  const crateVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || 'latest';
+  DATARUST_CRATE.version = datarustToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || 'latest';
+  PROFILE_CRATE.version = profileToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || 'latest';
 
   await rm(DIST, { recursive: true, force: true });
   await mkdir(DIST, { recursive: true });
@@ -562,7 +622,7 @@ async function build() {
     icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
   }, null, 2));
 
-  console.log(`Built datarust v${crateVersion}: ${docs.pages.length} docs pages and ${posts.length} blog posts → dist/`);
+  console.log(`Built workspace (datarust v${DATARUST_CRATE.version}, datarust-profile v${PROFILE_CRATE.version}): ${docs.pages.length} docs pages and ${posts.length} blog posts → dist/`);
 }
 
 await build();
