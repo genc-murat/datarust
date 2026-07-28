@@ -54,7 +54,7 @@ jobs:
             target
           key: ${{ runner.os }}-clippy-${{ matrix.config.cache_key }}-${{ hashFiles('Cargo.lock') }}
       - name: Run clippy
-        run: cargo clippy --all-targets --no-default-features --features "${{ matrix.config.features }}" -- -D warnings
+        run: cargo clippy -p datarust --all-targets --no-default-features --features "${{ matrix.config.features }}" -- -D warnings
 
   test:
     name: Test (${{ matrix.os }}, ${{ matrix.config.cache_key }})
@@ -86,9 +86,9 @@ jobs:
             target
           key: ${{ matrix.os }}-test-${{ matrix.config.cache_key }}-${{ hashFiles('Cargo.lock') }}
       - name: Run unit + integration tests
-        run: cargo test --no-default-features --features "${{ matrix.config.features }}" --verbose
+        run: cargo test -p datarust --no-default-features --features "${{ matrix.config.features }}" --verbose
       - name: Run doctests
-        run: cargo test --no-default-features --features "${{ matrix.config.features }}" --doc
+        run: cargo test -p datarust --no-default-features --features "${{ matrix.config.features }}" --doc
 
   msrv:
     name: MSRV (1.70)
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.70.0
       - name: Test with MSRV
-        run: cargo test --all-features --locked
+        run: cargo test -p datarust --all-features --locked
 
   package:
     name: Package
@@ -106,7 +106,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Verify the crates.io package
-        run: cargo package --locked
+        run: cargo package -p datarust --locked
 
   doc:
     name: Docs
@@ -117,7 +117,56 @@ jobs:
       - name: Build documentation
         env:
           RUSTDOCFLAGS: "-D warnings"
-        run: cargo doc --all-features --no-deps
+        run: cargo doc -p datarust -p datarust-profile --all-features --no-deps
+
+  profile-clippy:
+    name: Clippy (datarust-profile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-profile-clippy-${{ hashFiles('Cargo.lock') }}
+      - name: Run clippy (default features)
+        run: cargo clippy -p datarust-profile --all-targets -- -D warnings
+      - name: Run clippy (serde feature)
+        run: cargo clippy -p datarust-profile --all-targets --features serde -- -D warnings
+
+  profile-test:
+    name: Test (datarust-profile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-profile-test-${{ hashFiles('Cargo.lock') }}
+      - name: Run tests (default features)
+        run: cargo test -p datarust-profile --verbose
+      - name: Run tests (serde feature)
+        run: cargo test -p datarust-profile --features serde --verbose
+
+  profile-package:
+    name: Package (datarust-profile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify the crates.io package
+        run: cargo package -p datarust-profile --locked
 
   site:
     name: Docs and blog site

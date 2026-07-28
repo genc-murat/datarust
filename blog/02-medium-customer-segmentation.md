@@ -374,4 +374,4 @@ cargo add datarust
 
 ---
 
-*datarust is MIT-licensed and available on [crates.io](https://crates.io/crates/datarust). Documentation lives at [genc-murat.github.io/datarust](https://genc-murat.github.io/datarust/), and the repository includes a [runnable KMeans example](https://github.com/genc-murat/datarust/blob/main/examples/kmeans_clustering.rs).*
+*datarust is MIT-licensed and available on [crates.io](https://crates.io/crates/datarust). Documentation lives at [genc-murat.github.io/datarust](https://genc-murat.github.io/datarust/), and the repository includes a [runnable KMeans example](https://github.com/genc-murat/datarust/blob/main/crates/datarust/examples/kmeans_clustering.rs).*

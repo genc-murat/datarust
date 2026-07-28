@@ -476,4 +476,4 @@ cargo add datarust
 
 ---
 
-*datarust is MIT-licensed and available on [crates.io](https://crates.io/crates/datarust). Documentation lives at [genc-murat.github.io/datarust](https://genc-murat.github.io/datarust/), and the repository includes a [runnable Ridge-vs-Lasso example](https://github.com/genc-murat/datarust/blob/main/examples/regularization_comparison.rs).*
+*datarust is MIT-licensed and available on [crates.io](https://crates.io/crates/datarust). Documentation lives at [genc-murat.github.io/datarust](https://genc-murat.github.io/datarust/), and the repository includes a [runnable Ridge-vs-Lasso example](https://github.com/genc-murat/datarust/blob/main/crates/datarust/examples/regularization_comparison.rs).*

@@ -515,7 +515,7 @@ async function build() {
   const [docs, posts, cargoToml] = await Promise.all([
     loadDocs(),
     loadBlog(),
-    readFile(path.join(ROOT, 'Cargo.toml'), 'utf8'),
+    readFile(path.join(ROOT, 'crates', 'datarust', 'Cargo.toml'), 'utf8'),
   ]);
   const crateVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || 'latest';
 

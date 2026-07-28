@@ -315,4 +315,4 @@ cargo add datarust --features datasets,serde
 
 ---
 
-*datarust is MIT-licensed and available on [crates.io](https://crates.io/crates/datarust). The full guide is at [genc-murat.github.io/datarust](https://genc-murat.github.io/datarust/), and runnable examples live in the [GitHub repository](https://github.com/genc-murat/datarust/tree/main/examples).*
+*datarust is MIT-licensed and available on [crates.io](https://crates.io/crates/datarust). The full guide is at [genc-murat.github.io/datarust](https://genc-murat.github.io/datarust/), and runnable examples live in the [GitHub repository](https://github.com/genc-murat/datarust/tree/main/crates/datarust/examples).*

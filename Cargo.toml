@@ -1,124 +1,20 @@
-[package]
-name = "datarust"
-version = "0.6.5"
-edition = "2021"
-rust-version = "1.70"
-description = "Scikit-learn-style preprocessing and classical ML in Rust"
-license = "MIT"
-repository = "https://github.com/genc-murat/datarust"
-homepage = "https://datarust.dev"
-readme = "README.md"
-keywords = ["machine-learning", "scikit-learn", "preprocessing", "regression", "linear-model"]
-categories = ["science", "mathematics", "algorithms"]
-include = [
-    "/src/**",
-    "/tests/**",
-    "/examples/**",
-    "/benches/**",
-    "/Cargo.toml",
-    "/Cargo.lock",
-    "/README.md",
-    "/CHANGELOG.md",
-    "/LICENSE",
-    "/ROADMAP.md",
-    "/ARCHITECTURE.md",
+# datarust — Cargo workspace root
+#
+# This repository is a Cargo workspace hosting the datarust ecosystem crates.
+# Each member under `crates/` is published independently to crates.io with its
+# own version, changelog, and feature set.
+#
+# The `[patch.crates-io]` entry below points workspace members at the *local*
+# source tree of `datarust` during development and CI. It is automatically
+# ignored by `cargo publish` (path patches are never published), so published
+# crates continue to depend on the crates.io release of `datarust`.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/datarust",
+    "crates/datarust-profile",
 ]
 
-[lib]
-name = "datarust"
-path = "src/lib.rs"
-
-[features]
-default = []
-# Enable JSON serialization / save-load support for fitted transformers.
-serde = [
-    "dep:serde",
-    "dep:serde_json",
-    "dep:proc-macro2",
-    "dep:quote",
-    "dep:ryu",
-    "dep:syn",
-    "dep:unicode-ident",
-]
-# Enable parallelism via rayon for large datasets.
-rayon = ["dep:rayon", "dep:rayon-core"]
-# Enable a tuned pure-Rust GEMM (via the `matrixmultiply` crate) for matrix
-# products and covariance computation. Significantly speeds up PCA,
-# TruncatedSVD and `Matrix::matmul` on large dense inputs. The default build
-# remains zero-external-dependency; opt in with this feature.
-matrixmultiply = ["dep:matrixmultiply"]
-# Embed small classic datasets (Iris, Breast Cancer, Wine, Diabetes) for
-# examples, tests, and onboarding. The data is compiled into the binary as
-# `const` arrays, adding no runtime or external-file dependency.
-datasets = []
-
-[dependencies]
-serde = { version = "=1.0.228", features = ["derive"], optional = true }
-serde_json = { version = "=1.0.145", optional = true }
-# Cargo 1.70 does not filter newer, MSRV-incompatible transitive releases while
-# resolving a library for downstream users. These optional constraints keep the
-# Serde derive/JSON graph compatible even when this crate's lockfile is ignored.
-proc-macro2 = { version = "=1.0.106", optional = true }
-quote = { version = "=1.0.44", optional = true }
-ryu = { version = "=1.0.22", optional = true }
-syn = { version = "=2.0.114", optional = true }
-unicode-ident = { version = "=1.0.22", optional = true }
-# Exact Rayon pins keep the advertised Rust 1.70 MSRV. Rayon 1.11+ and
-# rayon-core 1.13+ require Rust 1.80.
-rayon = { version = "=1.10.0", optional = true }
-rayon-core = { version = "=1.12.1", optional = true }
-matrixmultiply = { version = "=0.3.10", optional = true }
-
-[dev-dependencies]
-criterion = "=0.5.1"
-proptest = "=1.5.0"
-# Criterion accepts any Clap 4 release; keep its test/bench graph on the crate's
-# Rust 1.70 MSRV as well.
-clap = "=4.4.18"
-# Proptest accepts newer tempfile releases whose manifests require Edition
-# 2024; pin the last verified Rust 1.70-compatible line.
-tempfile = "=3.15.0"
-# Criterion's Ciborium dependency permits newer half releases with a higher
-# MSRV; constrain the shared test graph to Rust 1.70.
-half = "=2.4.1"
-
-[[bench]]
-name = "benchmarks"
-harness = false
-
-[[example]]
-name = "basic_preprocessing"
-path = "examples/basic_preprocessing.rs"
-
-[[example]]
-name = "pipeline_workflow"
-path = "examples/pipeline_workflow.rs"
-
-[[example]]
-name = "target_encoding"
-path = "examples/target_encoding.rs"
-
-[[example]]
-name = "regression_workflow"
-path = "examples/regression_workflow.rs"
-
-[[example]]
-name = "classification_workflow"
-path = "examples/classification_workflow.rs"
-
-[[example]]
-name = "regularization_comparison"
-path = "examples/regularization_comparison.rs"
-
-[[example]]
-name = "model_persistence"
-path = "examples/model_persistence.rs"
-required-features = ["serde"]
-
-[[example]]
-name = "kmeans_clustering"
-path = "examples/kmeans_clustering.rs"
-
-[package.metadata.docs.rs]
-features = ["serde", "rayon", "matrixmultiply", "datasets"]
-rustdoc-args = ["--cfg", "docsrs"]
+[patch.crates-io]
+datarust = { path = "crates/datarust" }
