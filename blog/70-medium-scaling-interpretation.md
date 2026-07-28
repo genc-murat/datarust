@@ -1,10 +1,7 @@
----
-title: "All Scalers Gave the Same R². But the Coefficients Were Completely Different."
-subtitle: "How feature scaling affects model interpretation"
-author: "Murat Genc"
-date: "2026-07-28"
-tags: ["machine-learning", "rust", "datarust", "scaling", "interpretation", "coefficients"]
-series: "datarust-v06"
+# All Scalers Gave the Same R². But the Coefficients Were Completely Different.
+
+*How feature scaling affects model interpretation*
+
 ---
 
 Five scalers. Same R²=0.9977. But the coefficients are wildly different. Scaling doesn't change predictions — it changes interpretation. And if you misinterpret scaled coefficients, your conclusions are wrong.

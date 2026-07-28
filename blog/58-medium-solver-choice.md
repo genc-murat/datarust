@@ -1,10 +1,7 @@
----
-title: "Cholesky Was 30x Faster Than SVD. Both Gave Identical R²."
-subtitle: "When solver choice matters (and when it doesn't)"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "solver", "ridge", "linear-algebra"]
-series: "datarust-v06"
+# Cholesky Was 30x Faster Than SVD. Both Gave Identical R².
+
+*When solver choice matters (and when it doesn't)*
+
 ---
 
 datarust offers two solvers for Ridge and LogisticRegression: Cholesky (default) and SVD. Both solve the same problem, but they compute the solution differently. The choice matters for speed and numerical stability, not for accuracy.

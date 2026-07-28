@@ -1,10 +1,7 @@
----
-title: "CV Accuracy Varied from 0.705 to 0.740 Across Seeds. The Mean Was Always 0.720."
-subtitle: "Understanding random state sensitivity in datarust models"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "reproducibility", "random-state", "cross-validation"]
-series: "datarust-v06"
+# CV Accuracy Varied from 0.705 to 0.740 Across Seeds. The Mean Was Always 0.720.
+
+*Understanding random state sensitivity in datarust models*
+
 ---
 
 Every stochastic component in datarust accepts a `random_state` parameter. Some models are sensitive to it, others aren't. Understanding which is which prevents false confidence in your results.

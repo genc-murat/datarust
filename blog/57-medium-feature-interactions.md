@@ -1,10 +1,7 @@
----
-title: "Linear Model Got R²=0.07. Polynomial Features Got R²=0.99. The Data Had Interactions."
-subtitle: "When and how to detect feature interactions"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "feature-engineering", "polynomial", "interactions"]
-series: "datarust-v06"
+# Linear Model Got R²=0.07. Polynomial Features Got R²=0.99. The Data Had Interactions.
+
+*When and how to detect feature interactions*
+
 ---
 
 A linear model scores R²=0.07 on your data. You check the features, the target, the preprocessing — everything looks correct. The problem isn't the model or the data. It's that the relationship has interactions, and linear models can't see them.

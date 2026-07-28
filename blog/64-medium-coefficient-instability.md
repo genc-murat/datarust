@@ -1,10 +1,7 @@
----
-title: "Coefs Swung from 2.7 to 3.1 Across Folds. Predictions Stayed at 5.0."
-subtitle: "Multicollinearity, coefficient instability, and how Ridge fixes it"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "multicollinearity", "ridge", "coefficient-stability"]
-series: "datarust-v06"
+# Coefs Swung from 2.7 to 3.1 Across Folds. Predictions Stayed at 5.0.
+
+*Multicollinearity, coefficient instability, and how Ridge fixes it*
+
 ---
 
 Two features are 95% correlated. LinearRegression fits the data perfectly (R²=0.995). But the coefficient for `x₁` swings from 2.7 to 3.1 across folds — a 15% variation. The prediction for the same point stays at 5.0. The model works, but the coefficients lie.

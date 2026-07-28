@@ -1,10 +1,7 @@
----
-title: "Train R² Was 0.99. Test R² Was 0.06. More Data Fixed It."
-subtitle: "Diagnosing bias, variance, and data hunger with learning curves"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "learning-curves", "diagnostics"]
-series: "datarust-v06"
+# Train R² Was 0.99. Test R² Was 0.06. More Data Fixed It.
+
+*Diagnosing bias, variance, and data hunger with learning curves*
+
 ---
 
 Your model scores 99% on training data. You feel good. Then you deploy it and it fails. The problem isn't the model — it's the relationship between model complexity, data size, and generalization. Learning curves reveal this relationship by plotting performance against training set size.

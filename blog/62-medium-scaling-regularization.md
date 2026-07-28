@@ -1,10 +1,7 @@
----
-title: "Lasso Killed the Feature with coef=300. It Was the Most Important One."
-subtitle: "Why scaling matters for regularization"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "scaling", "regularization", "ridge", "lasso"]
-series: "datarust-v06"
+# Lasso Killed the Feature with coef=300. It Was the Most Important One.
+
+*Why scaling matters for regularization*
+
 ---
 
 Ridge penalizes the sum of squared coefficients. Lasso penalizes the sum of absolute coefficients. Both assume all features are on the same scale. When they're not, the penalty is unequal — and the model learns the wrong thing.

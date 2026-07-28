@@ -1,10 +1,7 @@
----
-title: "KFold Crashed on Fold 4. StratifiedKFold Worked on All 5."
-subtitle: "The cross-validation strategy that silently lies about your model"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "cross-validation", "model-selection"]
-series: "datarust-v06"
+# KFold Crashed on Fold 4. StratifiedKFold Worked on All 5.
+
+*The cross-validation strategy that silently lies about your model*
+
 ---
 
 You split your data, train a model, get 95% accuracy, and ship it. Then it fails in production. The problem wasn't the model — it was the split. KFold assumes your data is randomly ordered. When it isn't, you get training sets with a single class, and your model learns nothing.

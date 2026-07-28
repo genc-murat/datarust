@@ -1,10 +1,7 @@
----
-title: "LogisticRegression Converged in 6 Iterations. You Gave It 100."
-subtitle: "Understanding convergence, max_iter, and tol in datarust models"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "convergence", "optimization"]
-series: "datarust-v06"
+# LogisticRegression Converged in 6 Iterations. You Gave It 100.
+
+*Understanding convergence, max_iter, and tol in datarust models*
+
 ---
 
 Every iterative model in datarust has `max_iter` and `tol` parameters. The defaults work for most problems, but understanding what they do helps you diagnose when they don't.

@@ -1,10 +1,7 @@
----
-title: "Train R² Stayed at 0.97. CV R² Dropped to -4.53. The Degree Was Too High."
-subtitle: "The overfitting trap in polynomial features"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "polynomial", "overfitting", "feature-engineering"]
-series: "datarust-v06"
+# Train R² Stayed at 0.97. CV R² Dropped to -4.53. The Degree Was Too High.
+
+*The overfitting trap in polynomial features*
+
 ---
 
 PolynomialFeatures is seductive: add more features, get better training performance. But the training performance is a lie. The real story is in the gap between training and cross-validation R².

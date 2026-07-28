@@ -1,10 +1,7 @@
----
-title: "Lasso Won at n=20. LinearRegression Won at n=100. The Sample Size Changed the Winner."
-subtitle: "How sample size affects model selection"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "sample-size", "model-selection", "overfitting"]
-series: "datarust-v06"
+# Lasso Won at n=20. LinearRegression Won at n=100. The Sample Size Changed the Winner.
+
+*How sample size affects model selection*
+
 ---
 
 Which model is best depends on how much data you have. With 20 samples, Lasso wins. With 100 samples, LinearRegression wins. The "best" model isn't a property of the model — it's a property of the data.

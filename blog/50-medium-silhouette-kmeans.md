@@ -1,10 +1,7 @@
----
-title: "KMeans Picked k=4 Because Inertia Kept Dropping. Silhouette Said k=3."
-subtitle: "A clustering metric that actually measures cluster quality"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "clustering", "unsupervised"]
-series: "datarust-v06"
+# KMeans Picked k=4 Because Inertia Kept Dropping. Silhouette Said k=3.
+
+*A clustering metric that actually measures cluster quality*
+
 ---
 
 Every KMeans tutorial ends with "plot the elbow and pick where the curve bends." The problem: the elbow is almost never sharp. Inertia drops monotonically with k, so you're squinting at a curve trying to find a拐点 that might not exist. Silhouette score replaces that ambiguity with a number that actually measures cluster quality.

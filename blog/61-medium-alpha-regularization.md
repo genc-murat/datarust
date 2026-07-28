@@ -1,10 +1,7 @@
----
-title: "Ridge Kept All 5 Features at Every Alpha. Lasso Killed 3 at alpha=0.05."
-subtitle: "How regularization controls model complexity"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "regularization", "ridge", "lasso", "alpha"]
-series: "datarust-v06"
+# Ridge Kept All 5 Features at Every Alpha. Lasso Killed 3 at alpha=0.05.
+
+*How regularization controls model complexity*
+
 ---
 
 Regularization is a dial, not a switch. Turning it too low gives you overfitting. Turning it too high gives you underfitting. The art is finding the sweet spot — and understanding what the dial actually does.

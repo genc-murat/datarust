@@ -1,10 +1,7 @@
----
-title: "Ridge Spread Credit to All Four Features. Lasso Gave It to Two."
-subtitle: "Extracting and interpreting feature importance from linear models"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "feature-importance", "linear-models"]
-series: "datarust-v06"
+# Ridge Spread Credit to All Four Features. Lasso Gave It to Two.
+
+*Extracting and interpreting feature importance from linear models*
+
 ---
 
 Feature importance is the most requested explanation from stakeholders. "Which features matter?" is a simple question with a nuanced answer. Linear models give you coefficients — but how you interpret them depends entirely on regularization.

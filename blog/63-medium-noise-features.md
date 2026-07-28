@@ -1,10 +1,7 @@
----
-title: "LinearRegression CV Dropped to 0.786 with 98 Noise Features. Lasso Stayed at 0.994."
-subtitle: "How noise features degrade models — and how to fight back"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "feature-selection", "noise", "dimensionality"]
-series: "datarust-v06"
+# LinearRegression CV Dropped to 0.786 with 98 Noise Features. Lasso Stayed at 0.994.
+
+*How noise features degrade models — and how to fight back*
+
 ---
 
 You have 2 useful features and 98 noise features. LinearRegression tries to fit all 100. Ridge tries to shrink all 100. Lasso zeros 98 of them. The result: Lasso's CV R² is 0.994 while LinearRegression's is 0.786.

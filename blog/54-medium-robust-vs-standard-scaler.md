@@ -1,10 +1,7 @@
----
-title: "One Outlier Pushed StandardScaler's Coefficients to 21.3. RobustScaler Stayed at 3.6."
-subtitle: "When median beats mean for feature scaling"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "preprocessing", "outliers", "scaling"]
-series: "datarust-v06"
+# One Outlier Pushed StandardScaler's Coefficients to 21.3. RobustScaler Stayed at 3.6.
+
+*When median beats mean for feature scaling*
+
 ---
 
 You have 200 data points and one is a measurement error. StandardScaler uses the mean and standard deviation — both are sensitive to outliers. The outlier inflates the standard deviation, compressing all other points toward zero. RobustScaler uses the median and IQR, which are resistant to outliers. The result: coefficients that actually reflect the data, not the error.

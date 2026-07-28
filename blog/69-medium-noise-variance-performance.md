@@ -1,10 +1,7 @@
----
-title: "SNR=13: R²=0.91. SNR=0.5: R²=0.33. The Signal-to-Noise Ratio Decides Everything."
-subtitle: "How noise variance affects model performance"
-author: "Murat Genc"
-date: "2026-07-28"
-tags: ["machine-learning", "rust", "datarust", "noise", "signal-to-noise", "r2", "variance"]
-series: "datarust-v06"
+# SNR=13: R²=0.91. SNR=0.5: R²=0.33. The Signal-to-Noise Ratio Decides Everything.
+
+*How noise variance affects model performance*
+
 ---
 
 Signal variance is 13. Noise variance is 1. R²=0.93. Now increase noise variance to 100. R²=0.14. The signal-to-noise ratio (SNR) is the single most important factor in model performance.

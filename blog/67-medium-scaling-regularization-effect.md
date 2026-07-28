@@ -1,10 +1,7 @@
----
-title: "Lasso Killed the Small-Scale Feature. Scaling Changed the Winner."
-subtitle: "How feature scaling affects regularization"
-author: "Murat Genc"
-date: "2026-07-27"
-tags: ["machine-learning", "rust", "datarust", "scaling", "regularization", "lasso", "ridge"]
-series: "datarust-v06"
+# Lasso Killed the Small-Scale Feature. Scaling Changed the Winner.
+
+*How feature scaling affects regularization*
+
 ---
 
 Three features with different scales: x1 ~ 1, x2 ~ 100, x3 ~ 0.01. True coefficients: `[3, 2, 1]`. Lasso with raw data kills x3. Lasso with scaled data keeps x3. The scale of your features determines which features survive regularization.

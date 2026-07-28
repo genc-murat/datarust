@@ -1,10 +1,7 @@
----
-title: "5% Outliers Broke LinearRegression. 20% Outliers Made It Worse. Here's Why."
-subtitle: "Outlier contamination kills performance — and RobustScaler can't save you"
-author: "Murat Genc"
-date: "2026-07-27"
-tags: ["machine-learning", "rust", "datarust", "outliers", "robust-scaling", "contamination"]
-series: "datarust-v06"
+# 5% Outliers Broke LinearRegression. 20% Outliers Made It Worse. Here's Why.
+
+*Outlier contamination kills performance — and RobustScaler can't save you*
+
 ---
 
 Outliers are not all the same. Some are extreme values from the same distribution. Others follow a completely different relationship. RobustScaler handles the first type. It does nothing for the second type. And the second type is what kills your model.

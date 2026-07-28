@@ -1,10 +1,7 @@
----
-title: "n_init=1 Gave 30% Worse Inertia. n_init=5 Fixed It. n_init=50 Changed Nothing."
-subtitle: "The diminishing returns of KMeans restarts"
-author: "Murat Genc"
-date: "2026-07-26"
-tags: ["machine-learning", "rust", "datarust", "clustering", "kmeans", "initialization"]
-series: "datarust-v06"
+# n_init=1 Gave 30% Worse Inertia. n_init=5 Fixed It. n_init=50 Changed Nothing.
+
+*The diminishing returns of KMeans restarts*
+
 ---
 
 KMeans is sensitive to initialization. k-means++ helps, but it's not foolproof. The solution: run KMeans multiple times with different seeds and keep the best result. That's what `n_init` does. But how many restarts do you actually need?

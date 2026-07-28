@@ -1,10 +1,7 @@
----
-title: "100 Features, 2 Useful. Lasso Won. LinearRegression Crashed."
-subtitle: "How the number of features affects model performance"
-author: "Murat Genc"
-date: "2026-07-27"
-tags: ["machine-learning", "rust", "datarust", "features", "noise", "lasso", "overfitting"]
-series: "datarust-v06"
+# 100 Features, 2 Useful. Lasso Won. LinearRegression Crashed.
+
+*How the number of features affects model performance*
+
 ---
 
 Two useful features. 98 noise features. LinearRegression R²=0.94. Lasso R²=0.98. The curse of dimensionality is real — and Lasso is the cure.
