@@ -35,8 +35,8 @@ const PROFILE_CRATE = {
   docsUrl: 'https://docs.rs/datarust-profile',
   docsRoute: '/docs/profile/README/',
   tagline: 'One-call data profiling and quality reports',
-  blurb: 'Column statistics, type inference, outlier/imbalance detection, and HTML/JSON reports — built on datarust.',
-  highlights: ['Column statistics &amp; histograms', 'Type inference &amp; quality checks', 'HTML &amp; JSON reports'],
+  blurb: 'Column statistics, type inference, pairwise relationships (Pearson, Cramér\'s V, point-biserial), target-leakage hints, and HTML/JSON reports — built on datarust.',
+  highlights: ['Column statistics &amp; histograms', 'Pairwise relationships &amp; heatmaps', 'Quality checks &amp; leakage hints'],
 };
 
 marked.setOptions({ gfm: true });

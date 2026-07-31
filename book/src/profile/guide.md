@@ -101,6 +101,31 @@ let p = profile_table(
 Duplicate-row detection works across both blocks: a row is a duplicate only if
 its numeric *and* categorical cells match an earlier row exactly.
 
+## Pairwise relationships & target leakage
+
+`v0.3` computes pairwise interactions across columns:
+
+- **Pearson correlation matrix** (`rels.pearson`): computed over numeric columns using `datarust::stats::correlation_matrix`.
+- **Cramér's V matrix** (`rels.cramers_v`): computes categorical association (`V ∈ [0.0, 1.0]`) via a pure-Rust contingency table.
+- **Point-biserial correlation** (`rels.point_biserial`): measures correlation between binary categorical columns and continuous numeric columns.
+
+### Target-leakage detection
+
+To check for feature leakage against a target column, construct the profile with `profile_matrix_with_target` or `profile_table_with_target`:
+
+```rust
+use datarust_profile::profile_table_with_target;
+
+let p = profile_table_with_target(
+    Some(&numeric),
+    Some(&categorical),
+    &["age".into(), "income".into(), "city".into(), "churn".into()],
+    "churn",
+)?;
+```
+
+If a feature column has high correlation or association (`|r| >= 0.90` or `V >= 0.90`) with the target column, `run_checks` fires a `QualityKind::TargetLeakage` issue.
+
 ## Data quality checks
 
 [`run_checks`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/fn.run_checks.html)
@@ -114,7 +139,8 @@ use datarust_profile::quality::checks::run_checks;
 
 let mut t = Thresholds::default();
 t.outlier_fraction = 0.02;  // flag columns with ≥2% outliers
-t.imbalance_ratio = 0.90;   // flag categoricals dominated ≥90% by one value
+t.high_correlation = 0.90;  // flag numeric pairs with |r| >= 0.90
+t.target_leakage = 0.85;    // flag feature-target correlation >= 0.85
 
 for issue in run_checks(&p, &t) {
     println!("{:?} [{}] {}: {}",
@@ -124,7 +150,7 @@ for issue in run_checks(&p, &t) {
 }
 ```
 
-### The six checks
+### The eight checks
 
 | Kind | Scope | Fires when |
 |---|---|---|
@@ -133,6 +159,8 @@ for issue in run_checks(&p, &t) {
 | [`NearUnique`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/enum.QualityKind.html) | column (categorical) | `unique / count ≥ threshold.near_unique_ratio` (default `0.98`) — likely an identifier, not a feature. |
 | [`Outliers`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/enum.QualityKind.html) | column (numeric) | `outlier_fraction ≥ threshold.outlier_fraction` (default `0.05`). Severity escalates to `Warning` at `0.2`. |
 | [`Imbalance`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/enum.QualityKind.html) | column (categorical) | `imbalance_ratio ≥ threshold.imbalance_ratio` (default `0.95`). Always `Critical`. |
+| [`HighCorrelation`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/enum.QualityKind.html) | column pair (numeric) | Pearson `\|r\| ≥ threshold.high_correlation` (default `0.95`). Collinearity risk. |
+| [`TargetLeakage`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/enum.QualityKind.html) | column (feature) | Feature-target correlation or Cramér's V `≥ threshold.target_leakage` (default `0.90`). Always `Critical`. |
 | [`DuplicateRows`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/enum.QualityKind.html) | dataset | `duplicate_rows > 0`. Severity escalates to `Warning` at `0.1`. |
 
 Each `QualityIssue` carries a [`Severity`](https://docs.rs/datarust-profile/latest/datarust_profile/types/enum.Severity.html)
@@ -160,7 +188,6 @@ let html = report::to_html_with(&p, &findings);
 let json = report::to_json(&report::JsonReport::from_profile(&p))?;
 ```
 
-The HTML report uses a responsive card grid: numeric cards carry the summary
-statistics, a CSS mini-histogram, and the outlier count; categorical cards
-carry the top value, the imbalance ratio, and a frequency bar chart. Findings
-appear in a severity-coloured list at the top.
+The HTML report uses a responsive card grid: numeric cards carry summary
+statistics, CSS mini-histograms, and outlier counts; categorical cards
+carry top values, imbalance ratios, and frequency bar charts. A Relationships section presents correlation heatmaps for numeric (Pearson) and categorical (Cramér's V) pairs, plus point-biserial tables. Findings appear in a severity-coloured list at the top.

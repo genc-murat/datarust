@@ -9,14 +9,14 @@ required for the HTML report.
 ```toml
 [dependencies]
 datarust = "0.6"
-datarust-profile = "0.2"
+datarust-profile = "0.3"
 ```
 
 For JSON output, enable the `serde` feature (this also pulls in `datarust/serde`):
 
 ```toml
 [dependencies]
-datarust-profile = { version = "0.2", features = ["serde"] }
+datarust-profile = { version = "0.3", features = ["serde"] }
 ```
 
 ## Profile a numeric matrix
@@ -66,6 +66,28 @@ Skewness near zero means a symmetric column; large positive values indicate a
 right tail. Excess kurtosis near zero matches a normal distribution; positive
 values indicate heavier tails, negative values a flatter peak.
 
+## Pairwise relationships & target leakage
+
+`v0.3` computes pairwise column relationships: Pearson correlation for numerics, Cramér's V for categoricals, and point-biserial correlation for binary categorical ⇄ numeric pairs. You can also specify a target column with `profile_table_with_target`.
+
+```rust
+use datarust_profile::profile_table_with_target;
+
+let p = profile_table_with_target(
+    Some(&numeric_matrix),
+    Some(&categorical_matrix),
+    &["age".into(), "income".into(), "churn".into()],
+    "churn",
+)?;
+
+if let Some(rels) = &p.relationships {
+    if let Some(pearson) = &rels.pearson {
+        println!("Pearson correlation between {} and {}: {:.3}",
+            pearson.labels[0], pearson.labels[1], pearson.values[0][1]);
+    }
+}
+```
+
 ## Profile categorical data
 
 [`profile_str_matrix`](https://docs.rs/datarust-profile/latest/datarust_profile/fn.profile_str_matrix.html)
@@ -112,7 +134,7 @@ let p = profile_table(
 ## Render a report
 
 The HTML renderer produces a single self-contained document — inline CSS, no
-JavaScript, no external assets. The JSON renderer needs the `serde` feature.
+JavaScript, no external assets, now with correlation heatmaps. The JSON renderer needs the `serde` feature.
 
 ```rust
 use datarust_profile::report;
@@ -128,14 +150,11 @@ std::fs::write("profile.html", html)?;
 }
 ```
 
-The HTML report lays columns out as a responsive card grid: numeric cards show
-the summary statistics, a CSS mini-histogram, and the outlier count; categorical
-cards show the top value, the imbalance ratio, and a frequency bar chart.
+The HTML report lays columns out as a responsive card grid and adds a Relationships section with interactive-feel correlation heatmaps (Pearson & Cramér's V) and point-biserial tables.
 
 ## Next steps
 
-- The [Profiling Guide](./guide.md) covers numeric, categorical, and mixed
-  profiling in depth, plus the full set of data-quality checks.
+- The [Profiling Guide](./guide.md) covers numeric, categorical, relationships, and the full set of data-quality checks.
 - The [API reference][docsrs] documents every type and function.
 
 [docsrs]: https://docs.rs/datarust-profile

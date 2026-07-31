@@ -47,25 +47,32 @@ For each column, depending on its inferred type:
 | `histogram` (equal-width, Sturges bins)       | `imbalance_ratio` (`freq / present`)           |
 | `outlier_count`, `outlier_fraction` (IQR rule)| `top_values` (top-N value/count pairs)         |
 
+**Pairwise Relationships (`Relationships` block):**
+- **Pearson correlation matrix** over numeric columns (`CorrelationMatrix`).
+- **Cramér's V matrix** over categorical columns (pure-Rust χ² association).
+- **Point-biserial correlation** between binary categorical and numeric columns (`PointBiserialEntry`).
+
 Dataset-wide: `n_rows`, `n_columns`, estimated `memory_bytes`, exact
-`duplicate_rows` and `duplicate_fraction`.
+`duplicate_rows` and `duplicate_fraction`, optional `target_column`.
 
 ### Data-quality findings
 
 [`quality::run_checks`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/fn.run_checks.html)
 scans the profile against configurable [`Thresholds`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/struct.Thresholds.html)
-and emits [`QualityIssue`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/struct.QualityIssue.html)s:
+and emits [`QualityIssue`](https://docs.rs/datarust-profile/latest/datarust_profile/quality/checks/struct.QualityIssue.html)s across 8 categories:
 
 - **HighMissing** — missing fraction at/above threshold.
 - **ConstantColumn** — numeric column with near-zero variance.
 - **NearUnique** — categorical column whose cardinality ≈ row count (likely an identifier).
 - **DuplicateRows** — exact-duplicate rows present.
-- **Outliers** — values outside the Tukey IQR fences.
+- **Outliers** — values outside Tukey IQR fences.
 - **Imbalance** — categorical column dominated by a single value.
+- **HighCorrelation** — pair of numeric columns exceeding correlation threshold (`|r| >= 0.95`).
+- **TargetLeakage** — feature column strongly correlated (`|r| >= 0.90` or `V >= 0.90`) with designated target column.
 
 Each finding carries a [`Severity`](https://docs.rs/datarust-profile/latest/datarust_profile/types/enum.Severity.html)
 (`Info` / `Warning` / `Critical`) and an optional column name. The HTML and
-JSON renderers include findings by default.
+JSON renderers include findings and correlation heatmaps by default.
 
 ## Output formats
 

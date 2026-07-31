@@ -1,6 +1,6 @@
 [package]
 name = "datarust-profile"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.70"
 description = "One-call data profiling and quality reports for the datarust ecosystem"
@@ -74,3 +74,8 @@ required-features = ["serde"]
 name = "custom_report"
 path = "examples/custom_report.rs"
 required-features = ["serde"]
+
+[[example]]
+name = "correlation_analysis"
+path = "examples/correlation_analysis.rs"
+

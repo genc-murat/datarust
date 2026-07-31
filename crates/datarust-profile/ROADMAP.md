@@ -5,17 +5,20 @@ This document tracks the path from the initial release (v0.1.0) toward a
 ecosystem (v1.0). It is a living document — priorities may shift, but the
 principles and the destination stay fixed.
 
-> **Where we are today (v0.2.0):** one-call profiling of numeric `Matrix`,
+> **Where we are today (v0.3.0):** one-call profiling of numeric `Matrix`,
 > categorical `StrMatrix`, and mixed tables; per-column descriptive
 > statistics (count, missing, mean, std, five-number summary, skewness,
 > kurtosis, equal-width histogram, cardinality, top value, imbalance ratio);
-> type inference; duplicate-row detection; six data-quality checks
-> (HighMissing, ConstantColumn, NearUnique, DuplicateRows, Outliers,
-> Imbalance) with configurable thresholds; a self-contained HTML report with
-> per-column card layout and CSS bar charts (no dependencies) and a JSON
-> report behind the `serde` feature; a `_flat` fast path for
-> `profile_matrix`. Built on `datarust::stats` primitives plus local
-> distributional helpers, zero external dependencies by default.
+> type inference; duplicate-row detection; pairwise relationship analysis
+> (Pearson correlation matrix, Cramér's V categorical association matrix,
+> point-biserial correlation); target-leakage detection hints; eight
+> data-quality checks (HighMissing, ConstantColumn, NearUnique, DuplicateRows,
+> Outliers, Imbalance, HighCorrelation, TargetLeakage) with configurable thresholds;
+> a self-contained HTML report with per-column card layout, CSS bar charts,
+> and correlation heatmaps (no dependencies) and a JSON report behind the `serde`
+> feature; a `_flat` fast path for `profile_matrix`. Built on `datarust::stats`
+> primitives plus local distributional & association helpers, zero external dependencies
+> by default.
 
 ## Guiding principles
 
@@ -138,18 +141,18 @@ dataset-wide relationship analysis, reusing `datarust::stats`'s
 
 **Deliverables:**
 
-- [ ] `Relationships` block on `DatasetProfile`: a Pearson correlation matrix
-      over numeric columns (already available in `datarust::stats`), plus a
+- [x] `Relationships` block on `DatasetProfile`: a Pearson correlation matrix
+      over numeric columns (reusing `datarust::stats`), plus a
       Cramér's V matrix over categorical columns (pure-Rust χ², no deps).
-- [ ] Redundancy detection: a `QualityKind::HighCorrelation` finding when any
+- [x] Redundancy detection: a `QualityKind::HighCorrelation` finding when any
       pair of numeric columns exceeds a configurable `|ρ|` threshold (default
       0.95), naming both columns in the message.
-- [ ] Target-leakage hint: an opt-in `profile_table_with_target(..., target:
+- [x] Target-leakage hint: an opt-in `profile_table_with_target(..., target:
       &str)` that flags features highly correlated (or high Cramér's V) with a
       designated target column — a common cause of over-optimistic CV scores.
-- [ ] Correlation heat-map tile in the HTML report (coloured `<td>` cells, no
+- [x] Correlation heat-map tile in the HTML report (coloured `<td>` cells, no
       JS).
-- [ ] Point-biserial correlation between a binary categorical column and each
+- [x] Point-biserial correlation between a binary categorical column and each
       numeric column (detects strong numeric ⇄ binary relationships).
 
 ### v0.4 — Data loading & ergonomics

@@ -14,7 +14,10 @@
 //! Unlike [`super::json`], the HTML renderer works without the `serde`
 //! feature because it reads the profile fields directly.
 
-use crate::profile::{CategoricalStats, ColumnProfile, DatasetProfile, Histogram, NumericStats};
+use crate::profile::{
+    CategoricalStats, ColumnProfile, CorrelationMatrix, DatasetProfile, Histogram, NumericStats,
+    PointBiserialEntry, Relationships,
+};
 use crate::quality::checks::run_checks;
 use crate::quality::{QualityIssue, Thresholds};
 use crate::types::{ColumnType, Severity};
@@ -53,6 +56,7 @@ body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, san
        background: #fafaf7; }
 h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
 h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; border-bottom: 1px solid #ddd; padding-bottom: .25rem; }
+h3 { font-size: 0.95rem; margin: 1rem 0 .4rem; }
 .summary { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 1rem 0; }
 .summary div { background: #fff; border: 1px solid #e3e3e3; border-radius: 6px;
                padding: .75rem 1rem; min-width: 9rem; }
@@ -64,6 +68,17 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; border-bottom: 1px solid #ddd; pad
 .findings .critical { border-left: 4px solid #c62828; background: #fdecea; }
 .findings .warning  { border-left: 4px solid #ef6c00; background: #fff4e5; }
 .findings .info     { border-left: 4px solid #1976d2; background: #e8f0fe; }
+
+/* Relationships & Heatmaps */
+.rel-container { display: flex; flex-direction: column; gap: 1.5rem; margin: 1rem 0; }
+.heatmap-wrapper { overflow-x: auto; background: #fff; border: 1px solid #e3e3e3; border-radius: 6px; padding: 1rem; }
+table.heatmap { border-collapse: collapse; font-size: .8rem; text-align: center; }
+table.heatmap th, table.heatmap td { padding: .4rem .6rem; border: 1px solid #eee; }
+table.heatmap th { font-weight: 600; background: #f7f7f7; color: #444; }
+table.heatmap td { font-variant-numeric: tabular-nums; font-weight: 500; }
+table.rel-table { border-collapse: collapse; font-size: .82rem; width: 100%; max-width: 36rem; }
+table.rel-table th, table.rel-table td { padding: .4rem .6rem; border: 1px solid #eee; text-align: left; }
+table.rel-table th { background: #f7f7f7; font-weight: 600; }
 
 /* Per-column card grid */
 .col-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
@@ -109,10 +124,12 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; border-bottom: 1px solid #ddd; pad
 
 @media (prefers-color-scheme: dark) {
   body { background: #161616; color: #e6e6e6; }
-  .summary div, .col-card { background: #1e1e1e; border-color: #333; }
+  .summary div, .col-card, .heatmap-wrapper { background: #1e1e1e; border-color: #333; }
   .col-card dl.stats dt, .col-card .missing, .cat-list .count, .chart-labels { color: #999; }
   .col-card .full span b, .cat-list .count { color: #aaa; }
   .chart .bar.zero { background: #333; }
+  table.heatmap th, table.rel-table th { background: #2a2a2a; color: #ddd; border-color: #333; }
+  table.heatmap td, table.rel-table td { border-color: #333; }
 }
 "#;
 
@@ -172,6 +189,11 @@ pub fn to_html_with(profile: &DatasetProfile, findings: &[QualityIssue]) -> Stri
         html.push_str("</ul>\n");
     }
 
+    // --- Relationships & Heatmaps ------------------------------------------
+    if let Some(rels) = &profile.relationships {
+        render_relationships(&mut html, rels);
+    }
+
     // --- Per-column card grid ---------------------------------------------
     html.push_str("<h2>Per-column profile</h2>\n<div class=\"col-grid\">\n");
     for col in &profile.columns {
@@ -181,6 +203,81 @@ pub fn to_html_with(profile: &DatasetProfile, findings: &[QualityIssue]) -> Stri
     html.push_str("</body>\n</html>\n");
     html
 }
+
+fn render_relationships(html: &mut String, rels: &Relationships) {
+    if rels.pearson.is_none() && rels.cramers_v.is_none() && rels.point_biserial.is_empty() {
+        return;
+    }
+
+    html.push_str("<h2>Relationships &amp; Interaction</h2>\n<div class=\"rel-container\">\n");
+
+    if let Some(pearson) = &rels.pearson {
+        html.push_str("<div class=\"heatmap-wrapper\"><h3>Pearson correlation matrix (numeric)</h3>\n");
+        render_matrix_heatmap(html, pearson, false);
+        html.push_str("</div>\n");
+    }
+
+    if let Some(cramers) = &rels.cramers_v {
+        html.push_str("<div class=\"heatmap-wrapper\"><h3>Cramér's V matrix (categorical)</h3>\n");
+        render_matrix_heatmap(html, cramers, true);
+        html.push_str("</div>\n");
+    }
+
+    if !rels.point_biserial.is_empty() {
+        html.push_str("<div class=\"heatmap-wrapper\"><h3>Point-biserial correlation (binary categorical ⇄ numeric)</h3>\n");
+        render_point_biserial_table(html, &rels.point_biserial);
+        html.push_str("</div>\n");
+    }
+
+    html.push_str("</div>\n");
+}
+
+fn render_matrix_heatmap(html: &mut String, matrix: &CorrelationMatrix, is_cramers: bool) {
+    html.push_str("<table class=\"heatmap\">\n<thead><tr><th></th>");
+    for label in &matrix.labels {
+        html.push_str(&format!("<th>{}</th>", esc(label)));
+    }
+    html.push_str("</tr></thead>\n<tbody>\n");
+
+    for (i, row_label) in matrix.labels.iter().enumerate() {
+        html.push_str(&format!("<tr><th>{}</th>", esc(row_label)));
+        for (j, &val) in matrix.values[i].iter().enumerate() {
+            let bg_style = if is_cramers {
+                // Cramér's V in [0.0, 1.0] -> White to Purple
+                let opacity = val.clamp(0.0, 1.0);
+                format!("background-color: rgba(138, 43, 226, {:.2}); color: {};", opacity * 0.7, if opacity > 0.5 { "#fff" } else { "inherit" })
+            } else {
+                // Pearson in [-1.0, 1.0] -> Red (-1) .. White (0) .. Blue (+1)
+                let r = val.clamp(-1.0, 1.0);
+                if i == j {
+                    "background-color: rgba(26, 86, 196, 0.2);".to_string()
+                } else if r >= 0.0 {
+                    format!("background-color: rgba(26, 86, 196, {:.2}); color: {};", r * 0.7, if r > 0.5 { "#fff" } else { "inherit" })
+                } else {
+                    let r_abs = r.abs();
+                    format!("background-color: rgba(198, 40, 40, {:.2}); color: {};", r_abs * 0.7, if r_abs > 0.5 { "#fff" } else { "inherit" })
+                }
+            };
+            html.push_str(&format!("<td style=\"{}\">{:.2}</td>", bg_style, val));
+        }
+        html.push_str("</tr>\n");
+    }
+    html.push_str("</tbody></table>\n");
+}
+
+fn render_point_biserial_table(html: &mut String, entries: &[PointBiserialEntry]) {
+    html.push_str("<table class=\"rel-table\">\n<thead><tr><th>Categorical (binary)</th><th>Numeric</th><th>Correlation (r)</th></tr></thead>\n<tbody>\n");
+    for entry in entries {
+        html.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{:.3}</td></tr>\n",
+            esc(&entry.categorical),
+            esc(&entry.numeric),
+            entry.correlation
+        ));
+    }
+    html.push_str("</tbody></table>\n");
+}
+
 
 fn summary_card(html: &mut String, label: &str, value: String) {
     html.push_str(&format!(

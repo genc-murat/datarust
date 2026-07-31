@@ -61,9 +61,10 @@ pub mod types;
 
 pub use error::{ProfileError, Result};
 pub use profile::{
-    CategoricalStats, ColumnProfile, DatasetProfile, FiveNumber, Histogram, NumericStats,
+    CategoricalStats, ColumnProfile, CorrelationMatrix, DatasetProfile, FiveNumber, Histogram,
+    NumericStats, PointBiserialEntry, Relationships,
 };
-pub use quality::{QualityIssue, QualityKind, Thresholds};
+pub use quality::{run_checks, QualityIssue, QualityKind, Thresholds};
 pub use types::{ColumnType, Severity};
 
 use datarust::{Matrix, StrMatrix};
@@ -74,6 +75,16 @@ use datarust::{Matrix, StrMatrix};
 /// columns are named `x0..x{n-1}`.
 pub fn profile_matrix(m: &Matrix, names: Option<&[String]>) -> Result<DatasetProfile> {
     DatasetProfile::from_matrix(m, names)
+}
+
+/// Profiles a numeric [`Matrix`] and sets a designated target column for leakage detection.
+pub fn profile_matrix_with_target(
+    m: &Matrix,
+    names: Option<&[String]>,
+    target: &str,
+) -> Result<DatasetProfile> {
+    let profile = DatasetProfile::from_matrix(m, names)?;
+    Ok(profile.with_target(target))
 }
 
 /// Profiles a string [`StrMatrix`], inferring each column's type.
@@ -92,3 +103,15 @@ pub fn profile_table(
 ) -> Result<DatasetProfile> {
     DatasetProfile::from_table(numeric, categorical, names)
 }
+
+/// Profiles a mixed table and sets a designated target column for leakage detection.
+pub fn profile_table_with_target(
+    numeric: Option<&Matrix>,
+    categorical: Option<&StrMatrix>,
+    names: &[String],
+    target: &str,
+) -> Result<DatasetProfile> {
+    let profile = DatasetProfile::from_table(numeric, categorical, names)?;
+    Ok(profile.with_target(target))
+}
+

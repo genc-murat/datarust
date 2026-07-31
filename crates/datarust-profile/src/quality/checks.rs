@@ -24,6 +24,10 @@ pub enum QualityKind {
     Outliers,
     /// A categorical column is dominated by a single value.
     Imbalance,
+    /// A pair of numeric columns is highly correlated (`|r| >= threshold`).
+    HighCorrelation,
+    /// A feature column is suspiciously highly correlated with the target column.
+    TargetLeakage,
 }
 
 /// A single data-quality finding.
@@ -58,6 +62,10 @@ pub struct Thresholds {
     /// Imbalance ratio (`freq / present`) at or above which
     /// [`QualityKind::Imbalance`] fires.
     pub imbalance_ratio: f64,
+    /// Correlation magnitude `|r|` at or above which [`QualityKind::HighCorrelation`] fires.
+    pub high_correlation: f64,
+    /// Correlation magnitude `|r|` or Cramér's V at or above which [`QualityKind::TargetLeakage`] fires.
+    pub target_leakage: f64,
 }
 
 impl Default for Thresholds {
@@ -68,6 +76,8 @@ impl Default for Thresholds {
             near_unique_ratio: 0.98,
             outlier_fraction: 0.05,
             imbalance_ratio: 0.95,
+            high_correlation: 0.95,
+            target_leakage: 0.90,
         }
     }
 }
@@ -180,5 +190,120 @@ pub fn run_checks(profile: &DatasetProfile, thresholds: &Thresholds) -> Vec<Qual
         });
     }
 
+    // Check relationship findings (HighCorrelation & TargetLeakage)
+    if let Some(rels) = &profile.relationships {
+        // Pearson high correlation
+        if let Some(pearson) = &rels.pearson {
+            let p = pearson.labels.len();
+            for i in 0..p {
+                for j in (i + 1)..p {
+                    let r = pearson.values[i][j];
+                    let abs_r = r.abs();
+
+                    // Check high correlation between feature pairs
+                    if abs_r >= thresholds.high_correlation {
+                        issues.push(QualityIssue {
+                            kind: QualityKind::HighCorrelation,
+                            severity: Severity::Warning,
+                            column: Some(pearson.labels[i].clone()),
+                            message: format!(
+                                "High Pearson correlation between '{}' and '{}' (r = {:.3})",
+                                pearson.labels[i], pearson.labels[j], r
+                            ),
+                        });
+                    }
+
+                    // Check target leakage if target_column matches either column
+                    if let Some(target) = &profile.target_column {
+                        let is_i_target = &pearson.labels[i] == target;
+                        let is_j_target = &pearson.labels[j] == target;
+                        if (is_i_target || is_j_target)
+                            && !(is_i_target && is_j_target)
+                            && abs_r >= thresholds.target_leakage
+                        {
+                            let feature = if is_i_target {
+                                &pearson.labels[j]
+                            } else {
+                                &pearson.labels[i]
+                            };
+                            issues.push(QualityIssue {
+                                kind: QualityKind::TargetLeakage,
+                                severity: Severity::Critical,
+                                column: Some(feature.clone()),
+                                message: format!(
+                                    "Suspected target leakage: feature '{}' has strong correlation with target '{}' (r = {:.3})",
+                                    feature, target, r
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Cramér's V target leakage & high correlation
+        if let Some(cramers) = &rels.cramers_v {
+            let p = cramers.labels.len();
+            for i in 0..p {
+                for j in (i + 1)..p {
+                    let v = cramers.values[i][j];
+
+                    if let Some(target) = &profile.target_column {
+                        let is_i_target = &cramers.labels[i] == target;
+                        let is_j_target = &cramers.labels[j] == target;
+                        if (is_i_target || is_j_target)
+                            && !(is_i_target && is_j_target)
+                            && v >= thresholds.target_leakage
+                        {
+                            let feature = if is_i_target {
+                                &cramers.labels[j]
+                            } else {
+                                &cramers.labels[i]
+                            };
+                            issues.push(QualityIssue {
+                                kind: QualityKind::TargetLeakage,
+                                severity: Severity::Critical,
+                                column: Some(feature.clone()),
+                                message: format!(
+                                    "Suspected target leakage: categorical feature '{}' has high Cramér's V with target '{}' (V = {:.3})",
+                                    feature, target, v
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+
+        // Point-biserial target leakage
+        if let Some(target) = &profile.target_column {
+            for pb in &rels.point_biserial {
+                let abs_r = pb.correlation.abs();
+                if abs_r >= thresholds.target_leakage {
+                    let is_cat_target = &pb.categorical == target;
+                    let is_num_target = &pb.numeric == target;
+                    if (is_cat_target || is_num_target) && !(is_cat_target && is_num_target) {
+                        let feature = if is_cat_target {
+                            &pb.numeric
+                        } else {
+                            &pb.categorical
+                        };
+                        issues.push(QualityIssue {
+                            kind: QualityKind::TargetLeakage,
+                            severity: Severity::Critical,
+                            column: Some(feature.clone()),
+                            message: format!(
+                                "Suspected target leakage: feature '{}' has high point-biserial correlation with target '{}' (r = {:.3})",
+                                feature, target, pb.correlation
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     issues
 }
+

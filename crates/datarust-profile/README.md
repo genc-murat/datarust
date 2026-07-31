@@ -22,7 +22,7 @@ designed to be embedded in CLIs, services, notebooks, and CI pipelines.
 
 ```toml
 [dependencies]
-datarust-profile = "0.1"
+datarust-profile = "0.3"
 ```
 
 For JSON output, enable the `serde` feature (this also pulls in
@@ -30,7 +30,7 @@ For JSON output, enable the `serde` feature (this also pulls in
 
 ```toml
 [dependencies]
-datarust-profile = { version = "0.1", features = ["serde"] }
+datarust-profile = { version = "0.3", features = ["serde"] }
 ```
 
 The default build has **zero external dependencies** beyond `datarust` itself.
@@ -57,7 +57,7 @@ for col in &profile.columns {
         col.name, col.column_type, col.missing_fraction * 100.0);
 }
 
-// Self-contained HTML report (no extra deps):
+// Self-contained HTML report with CSS histograms and correlation heatmaps (no extra deps):
 std::fs::write("profile.html", report::to_html(&profile)).unwrap();
 ```
 
@@ -65,26 +65,36 @@ std::fs::write("profile.html", report::to_html(&profile)).unwrap();
 
 For each column, depending on its inferred type:
 
-| Numeric                           | Categorical                          |
-|-----------------------------------|--------------------------------------|
-| `count`, `missing_count`, `missing_fraction` | `count`, `missing_count`, `missing_fraction` |
-| `mean`, `std` (sample, ddof = 1)  | `unique` (cardinality)               |
-| five-number summary: min/Q1/median/Q3/max | `top` (most frequent value)   |
-|                                   | `freq` (count of `top`)              |
+| Numeric                                       | Categorical                                    |
+|-----------------------------------------------|------------------------------------------------|
+| `count`, `missing_count`, `missing_fraction`  | `count`, `missing_count`, `missing_fraction`   |
+| `mean`, `std` (sample, ddof = 1)              | `unique` (cardinality)                         |
+| five-number summary: min/Q1/median/Q3/max     | `top` (most frequent value)                    |
+| `skewness`, `kurtosis` (excess, Fisher)       | `freq` (count of `top`)                        |
+| `histogram` (equal-width, Sturges bins)       | `imbalance_ratio` (`freq / present`)           |
+| `outlier_count`, `outlier_fraction` (IQR rule)| `top_values` (top-N value/count pairs)         |
+
+**Pairwise Relationships (`Relationships` block):**
+- **Pearson correlation matrix** over numeric columns (`CorrelationMatrix`).
+- **Cramér's V matrix** over categorical columns (pure-Rust χ² association).
+- **Point-biserial correlation** between binary categorical and numeric columns (`PointBiserialEntry`).
 
 Dataset-wide: `n_rows`, `n_columns`, estimated `memory_bytes`, exact
-`duplicate_rows` and `duplicate_fraction`.
+`duplicate_rows` and `duplicate_fraction`, optional `target_column`.
 
 ### Data-quality findings
 
 `quality::run_checks` scans the profile against configurable
-[`Thresholds`] and emits [`QualityIssue`]s:
+[`Thresholds`] and emits [`QualityIssue`]s across 8 categories:
 
 - **HighMissing** — missing fraction at/above threshold.
 - **ConstantColumn** — numeric column with near-zero variance.
-- **NearUnique** — categorical column whose cardinality ≈ row count (likely an
-  identifier, not a feature).
+- **NearUnique** — categorical column whose cardinality ≈ row count (likely an identifier).
 - **DuplicateRows** — exact-duplicate rows present.
+- **Outliers** — values outside Tukey IQR fences.
+- **Imbalance** — categorical column dominated by a single value.
+- **HighCorrelation** — pair of numeric columns exceeding correlation threshold (`|r| >= 0.95`).
+- **TargetLeakage** — feature column strongly correlated (`|r| >= 0.90` or `V >= 0.90`) with designated target column.
 
 Each finding carries a [`Severity`] (`Info` / `Warning` / `Critical`) and an
 optional column name. The HTML and JSON renderers include findings by default.

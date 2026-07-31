@@ -14,22 +14,20 @@ and data-quality toolkit for the datarust ecosystem — zero external
 dependencies by default, reusing `datarust::stats` for the numerical kernels,
 owning the interpretation layer (summaries, flags, reports).
 
-## Where we are — v0.2.0
+## Where we are — v0.3.0
 
-Distributional depth landed: skewness, kurtosis, histograms, IQR outlier
-detection, categorical imbalance, a `_flat` fast path for numeric matrices,
-and a rebuilt HTML card-grid report. Six quality checks now run out of the box
-(HighMissing, ConstantColumn, NearUnique, DuplicateRows, Outliers, Imbalance).
+Pairwise relationships & interaction analysis landed: Pearson correlation matrix, Cramér's V categorical association, point-biserial correlation, target-leakage detection hints (`profile_table_with_target`), correlation heatmaps in the HTML report, and two new data-quality checks (`HighCorrelation`, `TargetLeakage`). Eight quality checks now run out of the box.
 
 ## The release track
 
-### v0.3 — Relationships & interaction
+### v0.3 — Relationships & interaction (Shipped)
 
 Columns in isolation miss collinearity, redundant features, and leakage risk.
-v0.3 introduces pairwise and dataset-wide relationship analysis, reusing
-`datarust::stats`'s correlation and covariance matrices, plus a pure-Rust
-Cramér's V for categorical pairs. A target-leakage hint flags features highly
-correlated with a designated target column.
+v0.3 introduced pairwise and dataset-wide relationship analysis, reusing
+`datarust::stats`'s correlation matrix, plus a pure-Rust Cramér's V for
+categorical pairs and point-biserial correlation for binary categorical ⇄ numeric pairs.
+A target-leakage hint flags features highly correlated with a designated target column,
+and correlation heatmaps are rendered in the HTML report.
 
 ### v0.4 — Data loading & ergonomics
 

@@ -2,4 +2,4 @@
 
 pub mod checks;
 
-pub use checks::{QualityIssue, QualityKind, Thresholds};
+pub use checks::{run_checks, QualityIssue, QualityKind, Thresholds};

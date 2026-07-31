@@ -16,6 +16,8 @@ fn column_bytes(column_type: crate::types::ColumnType, count: usize) -> usize {
     }
 }
 
+use super::relationships::Relationships;
+
 /// A complete profile of a dataset.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -30,11 +32,21 @@ pub struct DatasetProfile {
     pub duplicate_rows: usize,
     /// Fraction of rows that are exact duplicates, in `[0.0, 1.0]`.
     pub duplicate_fraction: f64,
+    /// Optional designated target column name for leakage hints.
+    pub target_column: Option<String>,
     /// One [`ColumnProfile`] per column, in input order.
     pub columns: Vec<ColumnProfile>,
+    /// Pairwise inter-column relationships (Pearson, Cramér's V, point-biserial).
+    pub relationships: Option<Relationships>,
 }
 
 impl DatasetProfile {
+    /// Designated target column setter for leakage detection.
+    pub fn with_target(mut self, target: &str) -> Self {
+        self.target_column = Some(target.to_string());
+        self
+    }
+
     /// Profiles a numeric [`Matrix`].
     ///
     /// Column names default to `x0..x{n-1}` when `names` is `None` or shorter
@@ -72,12 +84,10 @@ impl DatasetProfile {
 
         let mut columns = Vec::with_capacity(cols);
         let mut memory_bytes = 0usize;
+        let mut numeric_data: Vec<(String, Vec<f64>)> = Vec::with_capacity(cols);
+
         for (j, name) in resolved.iter().enumerate().take(cols) {
-            // The flat helpers are not NaN-aware: if a column contains any
-            // non-finite value, its bulk mean/variance/quantile are polluted
-            // by NaN propagation. In that case fall back to the per-column
-            // path, which filters missing values first. The fast path still
-            // wins on the common (fully-finite) case.
+            let col = m.col(j);
             let col_has_nan = (0..rows).any(|i| !data[i * cols + j].is_finite());
             let precomputed = if col_has_nan {
                 None
@@ -96,15 +106,20 @@ impl DatasetProfile {
                     Some(PrecomputedStats { mean, std, five })
                 })()
             };
-            // Skew/kurtosis/histogram/outliers still need the raw column.
-            let col = m.col(j);
             columns.push(ColumnProfile::from_numeric_with_stats(
                 name.clone(),
                 &col,
                 precomputed,
             ));
             memory_bytes += column_bytes(crate::types::ColumnType::Numeric, rows);
+            numeric_data.push((name.clone(), col));
         }
+
+        let num_refs: Vec<(&str, &[f64])> = numeric_data
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_slice()))
+            .collect();
+        let relationships = Relationships::compute(&num_refs, &[]);
 
         let duplicate_rows = count_duplicate_numeric(m);
         Ok(Self::finish(
@@ -113,6 +128,7 @@ impl DatasetProfile {
             memory_bytes,
             duplicate_rows,
             columns,
+            relationships,
         ))
     }
 
@@ -134,12 +150,34 @@ impl DatasetProfile {
 
         let mut columns = Vec::with_capacity(cols);
         let mut memory_bytes = 0usize;
+        let mut numeric_data: Vec<(String, Vec<f64>)> = Vec::new();
+        let mut categorical_data: Vec<(String, Vec<String>)> = Vec::new();
+
         for (j, name) in resolved.iter().enumerate().take(cols) {
             let cells = m.column(j);
             let profile = ColumnProfile::from_strings(name.clone(), &cells);
             memory_bytes += column_bytes(profile.column_type, rows);
+            match profile.column_type {
+                crate::types::ColumnType::Numeric => {
+                    let parsed = infer::parse_numeric_column(&cells);
+                    numeric_data.push((name.clone(), parsed));
+                }
+                crate::types::ColumnType::Categorical => {
+                    categorical_data.push((name.clone(), cells));
+                }
+            }
             columns.push(profile);
         }
+
+        let num_refs: Vec<(&str, &[f64])> = numeric_data
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_slice()))
+            .collect();
+        let cat_refs: Vec<(&str, &[String])> = categorical_data
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_slice()))
+            .collect();
+        let relationships = Relationships::compute(&num_refs, &cat_refs);
 
         let duplicate_rows = count_duplicate_str(m);
         Ok(Self::finish(
@@ -148,6 +186,7 @@ impl DatasetProfile {
             memory_bytes,
             duplicate_rows,
             columns,
+            relationships,
         ))
     }
 
@@ -199,11 +238,15 @@ impl DatasetProfile {
 
         let mut columns = Vec::with_capacity(cols);
         let mut memory_bytes = 0usize;
+        let mut numeric_data: Vec<(String, Vec<f64>)> = Vec::new();
+        let mut categorical_data: Vec<(String, Vec<String>)> = Vec::new();
+
         if let Some(nm) = numeric {
             for (j, name) in names.iter().enumerate().take(n_numeric) {
                 let col = nm.col(j);
                 columns.push(ColumnProfile::from_numeric(name.clone(), &col));
                 memory_bytes += column_bytes(crate::types::ColumnType::Numeric, rows);
+                numeric_data.push((name.clone(), col));
             }
         }
         if let Some(cm) = categorical {
@@ -211,9 +254,28 @@ impl DatasetProfile {
                 let cells = cm.column(offset);
                 let profile = ColumnProfile::from_strings(names[j].clone(), &cells);
                 memory_bytes += column_bytes(profile.column_type, rows);
+                match profile.column_type {
+                    crate::types::ColumnType::Numeric => {
+                        let parsed = infer::parse_numeric_column(&cells);
+                        numeric_data.push((names[j].clone(), parsed));
+                    }
+                    crate::types::ColumnType::Categorical => {
+                        categorical_data.push((names[j].clone(), cells));
+                    }
+                }
                 columns.push(profile);
             }
         }
+
+        let num_refs: Vec<(&str, &[f64])> = numeric_data
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_slice()))
+            .collect();
+        let cat_refs: Vec<(&str, &[String])> = categorical_data
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_slice()))
+            .collect();
+        let relationships = Relationships::compute(&num_refs, &cat_refs);
 
         let duplicate_rows = match (numeric, categorical) {
             (Some(nm), Some(cm)) => count_duplicate_table(nm, cm),
@@ -227,6 +289,7 @@ impl DatasetProfile {
             memory_bytes,
             duplicate_rows,
             columns,
+            relationships,
         ))
     }
 
@@ -236,6 +299,7 @@ impl DatasetProfile {
         memory_bytes: usize,
         duplicate_rows: usize,
         columns: Vec<ColumnProfile>,
+        relationships: Option<Relationships>,
     ) -> Self {
         let duplicate_fraction = if n_rows == 0 {
             0.0
@@ -248,10 +312,13 @@ impl DatasetProfile {
             memory_bytes,
             duplicate_rows,
             duplicate_fraction,
+            target_column: None,
             columns,
+            relationships,
         }
     }
 }
+
 
 fn count_duplicate_numeric(m: &Matrix) -> usize {
     let rows = m.nrows();

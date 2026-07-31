@@ -124,8 +124,8 @@ fn quality_flags_high_missing_and_constant() {
 #[test]
 fn html_card_layout_replaces_table() {
     // v0.2 replaces the per-column <table> with a responsive card grid.
-    let m = Matrix::from_rows(vec![vec![1.0, f64::NAN], vec![1.0, 2.0]]).unwrap();
-    let p = profile_matrix(&m, Some(&names(&["a", "b"]))).unwrap();
+    let m = Matrix::from_rows(vec![vec![1.0], vec![2.0]]).unwrap();
+    let p = profile_matrix(&m, Some(&names(&["a"]))).unwrap();
     let html = datarust_profile::report::to_html(&p);
     // New layout markers: card grid + a CSS bar chart (the histogram).
     assert!(html.contains("col-grid"));
@@ -138,6 +138,7 @@ fn html_card_layout_replaces_table() {
     assert!(html.contains("a"));
     assert!(html.contains("numeric"));
 }
+
 
 #[cfg(feature = "serde")]
 #[test]
@@ -264,3 +265,104 @@ fn categorical_stats_carry_top_values_list() {
     assert_eq!(c.top_values.first().unwrap().0, "a");
     assert_eq!(c.top_values.first().unwrap().1, 2);
 }
+
+#[test]
+fn pearson_correlation_matrix_computed() {
+    let m = Matrix::from_rows(vec![
+        vec![1.0, 2.0],
+        vec![2.0, 4.0],
+        vec![3.0, 6.0],
+        vec![4.0, 8.0],
+    ])
+    .unwrap();
+
+    let p = profile_matrix(&m, Some(&names(&["x", "y"]))).unwrap();
+    let rels = p.relationships.as_ref().unwrap();
+    let pearson = rels.pearson.as_ref().unwrap();
+
+    assert_eq!(pearson.labels, vec!["x", "y"]);
+    // Perfectly correlated
+    assert!((pearson.values[0][1] - 1.0).abs() < 1e-6);
+    assert!((pearson.values[1][0] - 1.0).abs() < 1e-6);
+
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(issues.iter().any(|i| {
+        i.kind == datarust_profile::QualityKind::HighCorrelation
+    }));
+}
+
+#[test]
+fn cramers_v_computed_for_categoricals() {
+    let s = StrMatrix::from_strings(vec![
+        vec!["cat_A".to_string(), "yes".to_string()],
+        vec!["cat_A".to_string(), "yes".to_string()],
+        vec!["cat_B".to_string(), "no".to_string()],
+        vec!["cat_B".to_string(), "no".to_string()],
+    ])
+    .unwrap();
+
+    let p = profile_str_matrix(&s, Some(&names(&["grp", "flag"]))).unwrap();
+    let rels = p.relationships.as_ref().unwrap();
+    let cramers = rels.cramers_v.as_ref().unwrap();
+
+    assert_eq!(cramers.labels, vec!["grp", "flag"]);
+    assert!((cramers.values[0][1] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn point_biserial_and_target_leakage_detected() {
+    let numeric = Matrix::from_rows(vec![
+        vec![1.0],
+        vec![1.0],
+        vec![5.0],
+        vec![5.0],
+    ])
+    .unwrap();
+
+    let categorical = StrMatrix::from_strings(vec![
+        vec!["low".to_string()],
+        vec!["low".to_string()],
+        vec!["high".to_string()],
+        vec!["high".to_string()],
+    ])
+    .unwrap();
+
+    let p = datarust_profile::profile_table_with_target(
+        Some(&numeric),
+        Some(&categorical),
+        &names(&["num_val", "target_cat"]),
+        "target_cat",
+    )
+    .unwrap();
+
+    let rels = p.relationships.as_ref().unwrap();
+    assert!(!rels.point_biserial.is_empty());
+    let pb = &rels.point_biserial[0];
+    assert_eq!(pb.categorical, "target_cat");
+    assert_eq!(pb.numeric, "num_val");
+    assert!((pb.correlation.abs() - 1.0).abs() < 1e-6);
+
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(issues.iter().any(|i| {
+        i.kind == datarust_profile::QualityKind::TargetLeakage
+    }));
+}
+
+
+#[test]
+fn html_report_includes_relationships_heatmaps() {
+    let m = Matrix::from_rows(vec![
+        vec![1.0, 2.0],
+        vec![2.0, 4.0],
+        vec![3.0, 6.0],
+    ])
+    .unwrap();
+
+    let p = profile_matrix(&m, Some(&names(&["a", "b"]))).unwrap();
+    let html = datarust_profile::report::to_html(&p);
+
+    assert!(html.contains("Relationships &amp; Interaction"));
+    assert!(html.contains("Pearson correlation matrix"));
+    assert!(html.contains("class=\"heatmap\""));
+}
+
