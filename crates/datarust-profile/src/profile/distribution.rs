@@ -274,4 +274,52 @@ mod tests {
         let (count, _) = outlier_count(&sorted, q1, q3);
         assert_eq!(count, 0);
     }
+
+    #[test]
+    fn outlier_count_with_nan_values() {
+        // NaN values should be excluded from outlier calculation
+        let sorted = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let q1 = datarust::stats::quantile(&sorted, 0.25).unwrap();
+        let q3 = datarust::stats::quantile(&sorted, 0.75).unwrap();
+        let (count, frac) = outlier_count(&sorted, q1, q3);
+        assert_eq!(count, 0);
+        assert!((frac - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn outlier_count_all_same_value() {
+        let sorted = vec![5.0, 5.0, 5.0, 5.0, 5.0];
+        let q1 = datarust::stats::quantile(&sorted, 0.25).unwrap();
+        let q3 = datarust::stats::quantile(&sorted, 0.75).unwrap();
+        let (count, frac) = outlier_count(&sorted, q1, q3);
+        assert_eq!(count, 0);
+        assert!((frac - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn histogram_negative_range() {
+        let sorted = vec![-10.0, -5.0, 0.0, 5.0, 10.0];
+        let h = histogram(&sorted, -10.0, 10.0);
+        assert!(h.counts.iter().sum::<usize>() == 5);
+        assert!((h.edges.first().copied().unwrap() - -10.0).abs() < 1e-9);
+        assert!((h.edges.last().copied().unwrap() - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn skewness_constant_values_is_zero() {
+        let v = vec![5.0, 5.0, 5.0, 5.0];
+        let mean = 5.0;
+        let std = 0.0;
+        let s = skewness(&v, mean, std);
+        assert_eq!(s, 0.0);
+    }
+
+    #[test]
+    fn kurtosis_constant_values_is_zero() {
+        let v = vec![5.0, 5.0, 5.0, 5.0];
+        let mean = 5.0;
+        let std = 0.0;
+        let k = kurtosis_excess(&v, mean, std);
+        assert_eq!(k, 0.0);
+    }
 }

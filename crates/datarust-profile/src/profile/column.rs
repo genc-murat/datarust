@@ -298,3 +298,117 @@ fn compute_categorical(cells: &[String]) -> Option<CategoricalStats> {
         top_values,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::ColumnType;
+
+    #[test]
+    fn from_numeric_handles_empty() {
+        let p = ColumnProfile::from_numeric("x".to_string(), &[]);
+        assert_eq!(p.name, "x");
+        assert_eq!(p.column_type, ColumnType::Numeric);
+        assert_eq!(p.count, 0);
+        assert_eq!(p.missing_count, 0);
+        assert_eq!(p.missing_fraction, 0.0);
+        assert!(p.numeric.is_none());
+    }
+
+    #[test]
+    fn from_numeric_all_nan() {
+        let p = ColumnProfile::from_numeric("x".to_string(), &[f64::NAN, f64::NAN]);
+        assert_eq!(p.count, 2);
+        assert_eq!(p.missing_count, 2);
+        assert_eq!(p.missing_fraction, 1.0);
+        assert!(p.numeric.is_none());
+    }
+
+    #[test]
+    fn from_numeric_computes_stats() {
+        let p = ColumnProfile::from_numeric("x".to_string(), &[1.0, 2.0, 3.0, 4.0, 5.0]);
+        assert_eq!(p.count, 5);
+        assert_eq!(p.missing_count, 0);
+        let n = p.numeric.as_ref().unwrap();
+        assert!((n.mean - 3.0).abs() < 1e-9);
+        assert!((n.five.min - 1.0).abs() < 1e-9);
+        assert!((n.five.max - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn from_numeric_with_nan() {
+        let p = ColumnProfile::from_numeric("x".to_string(), &[1.0, f64::NAN, 3.0]);
+        assert_eq!(p.count, 3);
+        assert_eq!(p.missing_count, 1);
+        assert!((p.missing_fraction - 1.0 / 3.0).abs() < 1e-9);
+        let n = p.numeric.as_ref().unwrap();
+        assert!((n.mean - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn from_strings_numeric() {
+        let cells = vec!["1.0".to_string(), "2.0".to_string(), "3.0".to_string()];
+        let p = ColumnProfile::from_strings("x".to_string(), &cells);
+        assert_eq!(p.column_type, ColumnType::Numeric);
+        assert!(p.numeric.is_some());
+    }
+
+    #[test]
+    fn from_strings_categorical() {
+        let cells = vec!["a".to_string(), "b".to_string(), "a".to_string()];
+        let p = ColumnProfile::from_strings("x".to_string(), &cells);
+        assert_eq!(p.column_type, ColumnType::Categorical);
+        let c = p.categorical.as_ref().unwrap();
+        assert_eq!(c.unique, 2);
+        assert_eq!(c.top, "a");
+        assert_eq!(c.freq, 2);
+    }
+
+    #[test]
+    fn from_strings_with_missing() {
+        let cells = vec!["1.0".to_string(), "NA".to_string(), "3.0".to_string()];
+        let p = ColumnProfile::from_strings("x".to_string(), &cells);
+        assert_eq!(p.column_type, ColumnType::Numeric);
+        assert_eq!(p.missing_count, 1);
+        assert!((p.missing_fraction - 1.0 / 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn from_strings_all_missing_is_categorical() {
+        let cells = vec!["NA".to_string(), "null".to_string(), "".to_string()];
+        let p = ColumnProfile::from_strings("x".to_string(), &cells);
+        assert_eq!(p.column_type, ColumnType::Categorical);
+        assert_eq!(p.missing_count, 3);
+        assert!(p.categorical.is_none());
+    }
+
+    #[test]
+    fn histogram_nbins() {
+        let h = crate::profile::distribution::histogram(&[1.0, 2.0, 3.0], 1.0, 3.0);
+        assert_eq!(h.nbins(), h.counts.len());
+        assert_eq!(h.max_count(), 1);
+    }
+
+    #[test]
+    fn histogram_max_count() {
+        let h = crate::profile::distribution::histogram(&[1.0, 1.0, 2.0, 3.0], 1.0, 3.0);
+        assert_eq!(h.max_count(), 2);
+    }
+
+    #[test]
+    fn histogram_empty_max_count() {
+        let h = crate::profile::distribution::histogram(&[], 0.0, 0.0);
+        assert_eq!(h.nbins(), 0);
+        assert_eq!(h.max_count(), 0);
+    }
+
+    #[test]
+    fn top_values_cap() {
+        // Create many unique categorical values (non-numeric strings)
+        let cells: Vec<String> = (0..20).map(|i| format!("val_{}", i)).collect();
+        let p = ColumnProfile::from_strings("x".to_string(), &cells);
+        let c = p.categorical.as_ref().unwrap();
+        assert_eq!(c.unique, 20);
+        assert!(c.top_values.len() <= 8); // TOP_VALUES_CAP
+    }
+}

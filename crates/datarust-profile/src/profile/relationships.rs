@@ -292,3 +292,135 @@ fn calculate_point_biserial(binary: &[f64], numeric: &[f64]) -> Option<f64> {
         Some(r.clamp(-1.0, 1.0))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compute_pearson_returns_none_for_less_than_two_cols() {
+        let cols = vec![("a", &[1.0, 2.0][..])];
+        assert!(compute_pearson(&cols).is_none());
+    }
+
+    #[test]
+    fn compute_pearson_returns_none_for_empty() {
+        let cols = vec![("a", &[][..]), ("b", &[][..])];
+        assert!(compute_pearson(&cols).is_none());
+    }
+
+    #[test]
+    fn compute_pearson_perfect_correlation() {
+        let cols = vec![("x", &[1.0, 2.0, 3.0][..]), ("y", &[2.0, 4.0, 6.0][..])];
+        let mat = compute_pearson(&cols).unwrap();
+        assert_eq!(mat.labels, vec!["x", "y"]);
+        assert!((mat.values[0][1] - 1.0).abs() < 1e-6);
+        assert!((mat.values[1][0] - 1.0).abs() < 1e-6);
+        assert!((mat.values[0][0] - 1.0).abs() < 1e-6);
+        assert!((mat.values[1][1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn compute_pearson_negative_correlation() {
+        let cols = vec![("x", &[1.0, 2.0, 3.0][..]), ("y", &[3.0, 2.0, 1.0][..])];
+        let mat = compute_pearson(&cols).unwrap();
+        assert!((mat.values[0][1] + 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn compute_pearson_uncorrelated() {
+        let cols = vec![("x", &[1.0, 2.0, 3.0][..]), ("y", &[2.0, 1.0, 3.0][..])];
+        let mat = compute_pearson(&cols).unwrap();
+        assert!(mat.values[0][1].abs() < 1.0);
+    }
+
+    #[test]
+    fn compute_cramers_v_returns_none_for_less_than_two_cols() {
+        let a = ["x".to_string()];
+        let cols = vec![("a", &a[..])];
+        assert!(compute_cramers_v(&cols).is_none());
+    }
+
+    #[test]
+    fn compute_cramers_v_perfect_association() {
+        let a = ["x".to_string(), "x".to_string(), "y".to_string(), "y".to_string()];
+        let b = ["p".to_string(), "p".to_string(), "q".to_string(), "q".to_string()];
+        let cols = vec![("a", &a[..]), ("b", &b[..])];
+        let mat = compute_cramers_v(&cols).unwrap();
+        assert_eq!(mat.labels, vec!["a", "b"]);
+        assert!((mat.values[0][1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn compute_cramers_v_with_missing() {
+        let a = ["x".to_string(), "NA".to_string(), "y".to_string()];
+        let b = ["p".to_string(), "q".to_string(), "NA".to_string()];
+        let cols = vec![("a", &a[..]), ("b", &b[..])];
+        let mat = compute_cramers_v(&cols).unwrap();
+        // Should still compute with valid pairs
+        assert!(mat.values[0][1] >= 0.0);
+    }
+
+    #[test]
+    fn compute_cramers_v_single_level() {
+        let a = ["x".to_string(), "x".to_string(), "x".to_string()];
+        let b = ["p".to_string(), "q".to_string(), "r".to_string()];
+        let cols = vec![("a", &a[..]), ("b", &b[..])];
+        let mat = compute_cramers_v(&cols).unwrap();
+        // One column has only one level -> V = 0
+        assert_eq!(mat.values[0][1], 0.0);
+    }
+
+    #[test]
+    fn compute_point_biserial_binary_categorical() {
+        let numeric = vec![("num", &[1.0, 1.0, 5.0, 5.0][..])];
+        let cat = ["low".to_string(), "low".to_string(), "high".to_string(), "high".to_string()];
+        let categorical = vec![("cat", &cat[..])];
+        let entries = compute_point_biserial(&numeric, &categorical);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].categorical, "cat");
+        assert_eq!(entries[0].numeric, "num");
+        assert!((entries[0].correlation.abs() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn compute_point_biserial_non_binary_skipped() {
+        let numeric = vec![("num", &[1.0, 2.0, 3.0][..])];
+        let cat = ["a".to_string(), "b".to_string(), "c".to_string()];
+        let categorical = vec![("cat", &cat[..])];
+        let entries = compute_point_biserial(&numeric, &categorical);
+        assert_eq!(entries.len(), 0);
+    }
+
+    #[test]
+    fn compute_point_biserial_with_missing() {
+        let numeric = vec![("num", &[1.0, f64::NAN, 5.0, 5.0][..])];
+        let cat = ["low".to_string(), "low".to_string(), "high".to_string(), "high".to_string()];
+        let categorical = vec![("cat", &cat[..])];
+        let entries = compute_point_biserial(&numeric, &categorical);
+        // Should still work, missing in numeric is filtered
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn relationships_compute_all() {
+        let numeric = vec![("x", &[1.0, 2.0, 3.0, 4.0][..]), ("y", &[2.0, 4.0, 6.0, 8.0][..])];
+        let cat = ["p".to_string(), "p".to_string(), "q".to_string(), "q".to_string()];
+        let categorical = vec![("a", &cat[..])];
+        let rels = Relationships::compute(&numeric, &categorical).unwrap();
+        assert!(rels.pearson.is_some());
+        assert!(rels.cramers_v.is_none()); // only one categorical
+        assert!(!rels.point_biserial.is_empty());
+    }
+
+    #[test]
+    fn relationships_compute_only_categorical() {
+        let numeric = vec![];
+        let a = ["p".to_string(), "p".to_string(), "q".to_string(), "q".to_string()];
+        let b = ["x".to_string(), "x".to_string(), "y".to_string(), "y".to_string()];
+        let categorical = vec![("a", &a[..]), ("b", &b[..])];
+        let rels = Relationships::compute(&numeric, &categorical).unwrap();
+        assert!(rels.pearson.is_none());
+        assert!(rels.cramers_v.is_some());
+    }
+}

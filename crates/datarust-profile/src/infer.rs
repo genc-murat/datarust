@@ -59,3 +59,63 @@ pub fn parse_numeric_column(cells: &[String]) -> Vec<f64> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_missing_recognizes_all_markers() {
+        assert!(is_missing(""));
+        assert!(is_missing("NA"));
+        assert!(is_missing("N/A"));
+        assert!(is_missing("null"));
+        assert!(is_missing("NULL"));
+        assert!(is_missing("NaN"));
+        assert!(is_missing("nan"));
+        assert!(is_missing("None"));
+        assert!(is_missing("none"));
+        assert!(is_missing("-"));
+        assert!(is_missing("?"));
+        assert!(is_missing("  NA  "));
+        assert!(is_missing("  nan  "));
+        assert!(!is_missing("0"));
+        assert!(!is_missing("1.5"));
+        assert!(!is_missing("hello"));
+    }
+
+    #[test]
+    fn infer_column_all_missing_is_categorical() {
+        let cells = vec!["NA".to_string(), "null".to_string(), "".to_string()];
+        assert_eq!(infer_column(&cells), ColumnType::Categorical);
+    }
+
+    #[test]
+    fn infer_column_mixed_numeric_and_missing_is_numeric() {
+        let cells = vec!["1.0".to_string(), "NA".to_string(), "2.0".to_string()];
+        assert_eq!(infer_column(&cells), ColumnType::Numeric);
+    }
+
+    #[test]
+    fn infer_column_one_non_numeric_is_categorical() {
+        let cells = vec!["1.0".to_string(), "hello".to_string(), "2.0".to_string()];
+        assert_eq!(infer_column(&cells), ColumnType::Categorical);
+    }
+
+    #[test]
+    fn parse_numeric_column_handles_missing() {
+        let cells = vec!["1.0".to_string(), "NA".to_string(), "2.0".to_string()];
+        let parsed = parse_numeric_column(&cells);
+        assert!((parsed[0] - 1.0).abs() < 1e-9);
+        assert!(parsed[1].is_nan());
+        assert!((parsed[2] - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn parse_numeric_column_non_numeric_becomes_nan() {
+        let cells = vec!["1.0".to_string(), "hello".to_string()];
+        let parsed = parse_numeric_column(&cells);
+        assert!((parsed[0] - 1.0).abs() < 1e-9);
+        assert!(parsed[1].is_nan());
+    }
+}
