@@ -275,7 +275,6 @@ pub fn run_checks(profile: &DatasetProfile, thresholds: &Thresholds) -> Vec<Qual
             }
         }
 
-
         // Point-biserial target leakage
         if let Some(target) = &profile.target_column {
             for pb in &rels.point_biserial {
@@ -306,4 +305,3 @@ pub fn run_checks(profile: &DatasetProfile, thresholds: &Thresholds) -> Vec<Qual
 
     issues
 }
-

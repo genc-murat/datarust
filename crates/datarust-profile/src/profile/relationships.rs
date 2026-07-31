@@ -1,7 +1,7 @@
 //! Pairwise relationship statistics: Pearson correlation, Cramér's V, and point-biserial correlation.
 
-use std::collections::{HashMap, HashSet};
 use crate::infer;
+use std::collections::{HashMap, HashSet};
 
 /// A square symmetric correlation or association matrix between named variables.
 #[derive(Debug, Clone, PartialEq)]
@@ -284,8 +284,7 @@ fn calculate_point_biserial(binary: &[f64], numeric: &[f64]) -> Option<f64> {
         return Some(0.0);
     }
 
-    let r = ((m1 - m0) / s_y)
-        * ((n0 * n1) as f64 / (total_n * (total_n - 1)) as f64).sqrt();
+    let r = ((m1 - m0) / s_y) * ((n0 * n1) as f64 / (total_n * (total_n - 1)) as f64).sqrt();
 
     if r.is_nan() {
         None

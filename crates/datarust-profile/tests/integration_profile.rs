@@ -139,7 +139,6 @@ fn html_card_layout_replaces_table() {
     assert!(html.contains("numeric"));
 }
 
-
 #[cfg(feature = "serde")]
 #[test]
 fn json_report_round_trips() {
@@ -286,9 +285,9 @@ fn pearson_correlation_matrix_computed() {
     assert!((pearson.values[1][0] - 1.0).abs() < 1e-6);
 
     let issues = run_checks(&p, &Thresholds::default());
-    assert!(issues.iter().any(|i| {
-        i.kind == datarust_profile::QualityKind::HighCorrelation
-    }));
+    assert!(issues
+        .iter()
+        .any(|i| { i.kind == datarust_profile::QualityKind::HighCorrelation }));
 }
 
 #[test]
@@ -311,13 +310,7 @@ fn cramers_v_computed_for_categoricals() {
 
 #[test]
 fn point_biserial_and_target_leakage_detected() {
-    let numeric = Matrix::from_rows(vec![
-        vec![1.0],
-        vec![1.0],
-        vec![5.0],
-        vec![5.0],
-    ])
-    .unwrap();
+    let numeric = Matrix::from_rows(vec![vec![1.0], vec![1.0], vec![5.0], vec![5.0]]).unwrap();
 
     let categorical = StrMatrix::from_strings(vec![
         vec!["low".to_string()],
@@ -343,20 +336,14 @@ fn point_biserial_and_target_leakage_detected() {
     assert!((pb.correlation.abs() - 1.0).abs() < 1e-6);
 
     let issues = run_checks(&p, &Thresholds::default());
-    assert!(issues.iter().any(|i| {
-        i.kind == datarust_profile::QualityKind::TargetLeakage
-    }));
+    assert!(issues
+        .iter()
+        .any(|i| { i.kind == datarust_profile::QualityKind::TargetLeakage }));
 }
-
 
 #[test]
 fn html_report_includes_relationships_heatmaps() {
-    let m = Matrix::from_rows(vec![
-        vec![1.0, 2.0],
-        vec![2.0, 4.0],
-        vec![3.0, 6.0],
-    ])
-    .unwrap();
+    let m = Matrix::from_rows(vec![vec![1.0, 2.0], vec![2.0, 4.0], vec![3.0, 6.0]]).unwrap();
 
     let p = profile_matrix(&m, Some(&names(&["a", "b"]))).unwrap();
     let html = datarust_profile::report::to_html(&p);
@@ -365,4 +352,3 @@ fn html_report_includes_relationships_heatmaps() {
     assert!(html.contains("Pearson correlation matrix"));
     assert!(html.contains("class=\"heatmap\""));
 }
-

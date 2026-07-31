@@ -212,7 +212,9 @@ fn render_relationships(html: &mut String, rels: &Relationships) {
     html.push_str("<h2>Relationships &amp; Interaction</h2>\n<div class=\"rel-container\">\n");
 
     if let Some(pearson) = &rels.pearson {
-        html.push_str("<div class=\"heatmap-wrapper\"><h3>Pearson correlation matrix (numeric)</h3>\n");
+        html.push_str(
+            "<div class=\"heatmap-wrapper\"><h3>Pearson correlation matrix (numeric)</h3>\n",
+        );
         render_matrix_heatmap(html, pearson, false);
         html.push_str("</div>\n");
     }
@@ -245,17 +247,29 @@ fn render_matrix_heatmap(html: &mut String, matrix: &CorrelationMatrix, is_crame
             let bg_style = if is_cramers {
                 // Cramér's V in [0.0, 1.0] -> White to Purple
                 let opacity = val.clamp(0.0, 1.0);
-                format!("background-color: rgba(138, 43, 226, {:.2}); color: {};", opacity * 0.7, if opacity > 0.5 { "#fff" } else { "inherit" })
+                format!(
+                    "background-color: rgba(138, 43, 226, {:.2}); color: {};",
+                    opacity * 0.7,
+                    if opacity > 0.5 { "#fff" } else { "inherit" }
+                )
             } else {
                 // Pearson in [-1.0, 1.0] -> Red (-1) .. White (0) .. Blue (+1)
                 let r = val.clamp(-1.0, 1.0);
                 if i == j {
                     "background-color: rgba(26, 86, 196, 0.2);".to_string()
                 } else if r >= 0.0 {
-                    format!("background-color: rgba(26, 86, 196, {:.2}); color: {};", r * 0.7, if r > 0.5 { "#fff" } else { "inherit" })
+                    format!(
+                        "background-color: rgba(26, 86, 196, {:.2}); color: {};",
+                        r * 0.7,
+                        if r > 0.5 { "#fff" } else { "inherit" }
+                    )
                 } else {
                     let r_abs = r.abs();
-                    format!("background-color: rgba(198, 40, 40, {:.2}); color: {};", r_abs * 0.7, if r_abs > 0.5 { "#fff" } else { "inherit" })
+                    format!(
+                        "background-color: rgba(198, 40, 40, {:.2}); color: {};",
+                        r_abs * 0.7,
+                        if r_abs > 0.5 { "#fff" } else { "inherit" }
+                    )
                 }
             };
             html.push_str(&format!("<td style=\"{}\">{:.2}</td>", bg_style, val));
@@ -277,7 +291,6 @@ fn render_point_biserial_table(html: &mut String, entries: &[PointBiserialEntry]
     }
     html.push_str("</tbody></table>\n");
 }
-
 
 fn summary_card(html: &mut String, label: &str, value: String) {
     html.push_str(&format!(

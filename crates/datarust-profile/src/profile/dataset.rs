@@ -319,7 +319,6 @@ impl DatasetProfile {
     }
 }
 
-
 fn count_duplicate_numeric(m: &Matrix) -> usize {
     let rows = m.nrows();
     let cols = m.ncols();

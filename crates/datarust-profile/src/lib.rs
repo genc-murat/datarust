@@ -114,4 +114,3 @@ pub fn profile_table_with_target(
     let profile = DatasetProfile::from_table(numeric, categorical, names)?;
     Ok(profile.with_target(target))
 }
-

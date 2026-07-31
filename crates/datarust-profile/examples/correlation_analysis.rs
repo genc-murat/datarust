@@ -1,9 +1,7 @@
 //! Example demonstrating relationships & interaction analysis (Pearson correlation, Cramér's V, point-biserial, target leakage).
 
 use datarust::{Matrix, StrMatrix};
-use datarust_profile::{
-    profile_table_with_target, report, run_checks, Thresholds,
-};
+use datarust_profile::{profile_table_with_target, report, run_checks, Thresholds};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Construct synthetic dataset with collinear features and a binary target
@@ -35,7 +33,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let profile = profile_table_with_target(Some(&numeric), Some(&categorical), &names, "target")?;
 
-    println!("Dataset: {} rows x {} columns", profile.n_rows, profile.n_columns);
+    println!(
+        "Dataset: {} rows x {} columns",
+        profile.n_rows, profile.n_columns
+    );
 
     if let Some(rels) = &profile.relationships {
         if let Some(p) = &rels.pearson {
@@ -70,7 +71,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let issues = run_checks(&profile, &Thresholds::default());
     println!("\nData Quality Findings ({} issues):", issues.len());
     for issue in &issues {
-        println!("  [{}] [{:?}] {}", issue.severity, issue.kind, issue.message);
+        println!(
+            "  [{}] [{:?}] {}",
+            issue.severity, issue.kind, issue.message
+        );
     }
 
     let html = report::to_html_with(&profile, &issues);
