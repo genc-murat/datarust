@@ -60,6 +60,17 @@ The deterministic benchmark harness that produces the numbers on the [Performanc
 cargo run --release --features matrixmultiply --example bench_compare_rust 15
 ```
 
+## Real World Examples
+
+We provide several real-world examples to demonstrate the capabilities of datarust.
+
+- **`cargo run --example iris --features datasets`**: Logistic regression on the classic Iris dataset.
+- **`cargo run --example wine --features datasets`**: Logistic regression on the Wine quality dataset.
+- **`cargo run --example mnist`**: Digits classification on a synthetic MNIST-like dataset using Logistic Regression.
+- **`cargo run --example housing`**: Linear regression on a synthetic California-housing-like dataset, predicting median house value.
+- **`cargo run --example titanic`**: Survival classification using a synthetic Titanic-like dataset with `ColumnTransformer` (scaling numeric features and one-hot encoding categorical features).
+- **`cargo run --example spam`**: Email spam classification using synthetic TF-IDF text features.
+
 ## Using embedded datasets
 
 The `datasets` feature provides classic toy datasets (Iris, Breast Cancer,

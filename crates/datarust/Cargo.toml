@@ -118,6 +118,32 @@ required-features = ["serde"]
 name = "kmeans_clustering"
 path = "examples/kmeans_clustering.rs"
 
+[[example]]
+name = "iris"
+path = "examples/iris.rs"
+required-features = ["datasets"]
+
+[[example]]
+name = "wine"
+path = "examples/wine.rs"
+required-features = ["datasets"]
+
+[[example]]
+name = "mnist"
+path = "examples/mnist.rs"
+
+[[example]]
+name = "housing"
+path = "examples/housing.rs"
+
+[[example]]
+name = "titanic"
+path = "examples/titanic.rs"
+
+[[example]]
+name = "spam"
+path = "examples/spam.rs"
+
 [package.metadata.docs.rs]
 features = ["serde", "rayon", "matrixmultiply", "datasets"]
 rustdoc-args = ["--cfg", "docsrs"]

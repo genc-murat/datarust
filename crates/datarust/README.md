@@ -1789,6 +1789,17 @@ let test = Matrix::new(vec![vec![0.2, 0.2], vec![19.9, 19.9]])?;
 let predicted = km.predict(&test)?;        // e.g. [0, 2]
 ```
 
+## Real World Examples
+
+We also provide standard real-world examples in the `examples/` directory:
+
+- **Iris (`cargo run --example iris --features datasets`)**: Logistic regression on the classic Iris dataset.
+- **Wine (`cargo run --example wine --features datasets`)**: Logistic regression on the Wine quality dataset.
+- **MNIST (`cargo run --example mnist`)**: Digits classification on a synthetic MNIST-like dataset.
+- **Housing (`cargo run --example housing`)**: Linear regression on a synthetic California-housing-like dataset.
+- **Titanic (`cargo run --example titanic`)**: Survival classification using a synthetic Titanic-like dataset with `ColumnTransformer` (scaling and one-hot encoding).
+- **Spam (`cargo run --example spam`)**: Email spam classification using synthetic TF-IDF text features.
+
 ## Roadmap
 
 datarust is working toward a complete scikit-learn-style ML toolkit for Rust,
