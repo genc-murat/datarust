@@ -574,8 +574,10 @@ mod tests {
         let issues = run_checks(&profile, &Thresholds::default());
         assert!(!issues.iter().any(|i| i.kind == QualityKind::HighMissing));
         // But with custom threshold of 0.25 it should
-        let mut t = Thresholds::default();
-        t.missing_fraction = 0.25;
+        let t = Thresholds {
+            missing_fraction: 0.25,
+            ..Default::default()
+        };
         let issues = run_checks(&profile, &t);
         assert!(issues.iter().any(|i| i.kind == QualityKind::HighMissing));
     }

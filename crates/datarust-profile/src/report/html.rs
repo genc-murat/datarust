@@ -234,99 +234,6 @@ fn render_relationships(html: &mut String, rels: &Relationships) {
     html.push_str("</div>\n");
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn esc_empty() {
-        assert_eq!(esc(""), "");
-    }
-
-    #[test]
-    fn esc_special_chars() {
-        assert_eq!(esc("&"), "&amp;");
-        assert_eq!(esc("<"), "&lt;");
-        assert_eq!(esc(">"), "&gt;");
-        assert_eq!(esc("\""), "&quot;");
-        assert_eq!(esc("'"), "&#39;");
-    }
-
-    #[test]
-    fn esc_mixed() {
-        assert_eq!(esc("a<b&c\"d'e"), "a&lt;b&amp;c&quot;d&#39;e");
-    }
-
-    #[test]
-    fn esc_plain_text() {
-        assert_eq!(esc("hello world"), "hello world");
-    }
-
-    #[test]
-    fn fmt_num_normal() {
-        assert_eq!(fmt_num(1.2345), "1.2345");
-    }
-
-    #[test]
-    fn fmt_num_nan() {
-        assert_eq!(fmt_num(f64::NAN), "—");
-    }
-
-    #[test]
-    fn fmt_num_infinity() {
-        assert_eq!(fmt_num(f64::INFINITY), "—");
-        assert_eq!(fmt_num(f64::NEG_INFINITY), "—");
-    }
-
-    #[test]
-    fn fmt_num_zero() {
-        assert_eq!(fmt_num(0.0), "0.0000");
-    }
-
-    #[test]
-    fn fmt_num_large() {
-        assert!(fmt_num(1e7).contains("e"));
-    }
-
-    #[test]
-    fn fmt_num_small() {
-        assert!(fmt_num(1e-5).contains("e"));
-    }
-
-    #[test]
-    fn format_bytes_zero() {
-        assert_eq!(format_bytes(0), "0 B");
-    }
-
-    #[test]
-    fn format_bytes_bytes() {
-        assert_eq!(format_bytes(512), "512 B");
-    }
-
-    #[test]
-    fn format_bytes_kib() {
-        assert_eq!(format_bytes(2048), "2.0 KiB");
-    }
-
-    #[test]
-    fn format_bytes_mib() {
-        let v = 1024 * 1024;
-        assert_eq!(format_bytes(v), "1.0 MiB");
-    }
-
-    #[test]
-    fn format_bytes_gib() {
-        let v = 1024 * 1024 * 1024;
-        assert_eq!(format_bytes(v), "1.0 GiB");
-    }
-
-    #[test]
-    fn format_bytes_tib() {
-        let v = 1024 * 1024 * 1024 * 1024;
-        assert_eq!(format_bytes(v), "1.0 TiB");
-    }
-}
-
 fn render_matrix_heatmap(html: &mut String, matrix: &CorrelationMatrix, is_cramers: bool) {
     html.push_str("<table class=\"heatmap\">\n<thead><tr><th></th>");
     for label in &matrix.labels {
@@ -561,5 +468,98 @@ fn format_bytes(bytes: usize) -> String {
         format!("{} {}", bytes, UNITS[unit])
     } else {
         format!("{:.1} {}", value, UNITS[unit])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn esc_empty() {
+        assert_eq!(esc(""), "");
+    }
+
+    #[test]
+    fn esc_special_chars() {
+        assert_eq!(esc("&"), "&amp;");
+        assert_eq!(esc("<"), "&lt;");
+        assert_eq!(esc(">"), "&gt;");
+        assert_eq!(esc("\""), "&quot;");
+        assert_eq!(esc("'"), "&#39;");
+    }
+
+    #[test]
+    fn esc_mixed() {
+        assert_eq!(esc("a<b&c\"d'e"), "a&lt;b&amp;c&quot;d&#39;e");
+    }
+
+    #[test]
+    fn esc_plain_text() {
+        assert_eq!(esc("hello world"), "hello world");
+    }
+
+    #[test]
+    fn fmt_num_normal() {
+        assert_eq!(fmt_num(1.2345), "1.2345");
+    }
+
+    #[test]
+    fn fmt_num_nan() {
+        assert_eq!(fmt_num(f64::NAN), "—");
+    }
+
+    #[test]
+    fn fmt_num_infinity() {
+        assert_eq!(fmt_num(f64::INFINITY), "—");
+        assert_eq!(fmt_num(f64::NEG_INFINITY), "—");
+    }
+
+    #[test]
+    fn fmt_num_zero() {
+        assert_eq!(fmt_num(0.0), "0.0000");
+    }
+
+    #[test]
+    fn fmt_num_large() {
+        assert!(fmt_num(1e7).contains("e"));
+    }
+
+    #[test]
+    fn fmt_num_small() {
+        assert!(fmt_num(1e-5).contains("e"));
+    }
+
+    #[test]
+    fn format_bytes_zero() {
+        assert_eq!(format_bytes(0), "0 B");
+    }
+
+    #[test]
+    fn format_bytes_bytes() {
+        assert_eq!(format_bytes(512), "512 B");
+    }
+
+    #[test]
+    fn format_bytes_kib() {
+        assert_eq!(format_bytes(2048), "2.0 KiB");
+    }
+
+    #[test]
+    fn format_bytes_mib() {
+        let v = 1024 * 1024;
+        assert_eq!(format_bytes(v), "1.0 MiB");
+    }
+
+    #[test]
+    fn format_bytes_gib() {
+        let v = 1024 * 1024 * 1024;
+        assert_eq!(format_bytes(v), "1.0 GiB");
+    }
+
+    #[test]
+    fn format_bytes_tib() {
+        let v = 1024 * 1024 * 1024 * 1024;
+        assert_eq!(format_bytes(v), "1.0 TiB");
     }
 }
