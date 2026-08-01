@@ -161,8 +161,26 @@ async function check() {
     errors.push(`.well-known/api-catalog: failed to read or parse RFC 9727 linkset (${err.message})`);
   }
 
+  const mcpServerCardFile = path.join(DIST, '.well-known', 'mcp', 'server-card.json');
+  try {
+    const cardRaw = await readFile(mcpServerCardFile, 'utf8');
+    const card = JSON.parse(cardRaw);
+    if (!card.serverInfo || !card.serverInfo.name || !card.serverInfo.version) {
+      errors.push('.well-known/mcp/server-card.json: serverInfo object with name and version is required');
+    }
+    if (!card.endpoint) {
+      errors.push('.well-known/mcp/server-card.json: endpoint property is required');
+    }
+    if (!card.capabilities) {
+      errors.push('.well-known/mcp/server-card.json: capabilities property is required');
+    }
+  } catch (err) {
+    errors.push(`.well-known/mcp/server-card.json: failed to read or parse SEP-1649 MCP server card (${err.message})`);
+  }
+
 
   if (errors.length) {
+
     console.error(`Site check failed with ${errors.length} error(s):\n${errors.map((error) => `- ${error}`).join('\n')}`);
     process.exitCode = 1;
     return;
