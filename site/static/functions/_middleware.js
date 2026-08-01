@@ -13,7 +13,7 @@ export async function onRequest(context) {
     }
     const mdUrl = new URL(mdPath, request.url);
     try {
-      const mdResponse = await env.ASSETS.fetch(new Request(mdUrl, request));
+      const mdResponse = await env.ASSETS.fetch(new Request(mdUrl.toString()));
       if (mdResponse.status === 200) {
         const text = await mdResponse.text();
         const tokens = Math.ceil(text.length / 4);
