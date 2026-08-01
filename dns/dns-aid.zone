@@ -10,5 +10,8 @@ _index._agents.datarust.dev. 3600 IN HTTPS 1 datarust.dev. alpn="h2,http/1.1" po
 ; 2. Agent-to-Agent (A2A) Discovery Record (_a2a._agents.datarust.dev.)
 _a2a._agents.datarust.dev.   3600 IN SVCB  1 datarust.dev. alpn="a2a" port=443 mandatory=alpn,port
 
-; 3. Generic Agent Endpoint Discovery Record (_agents.datarust.dev.)
+; 3. Model Context Protocol (MCP) Discovery Record (_mcp._agents.datarust.dev.)
+_mcp._agents.datarust.dev.   3600 IN SVCB  1 datarust.dev. alpn="mcp" port=443 mandatory=alpn,port
+
+; 4. Generic Agent Endpoint Discovery Record (_agents.datarust.dev.)
 _agents.datarust.dev.        3600 IN HTTPS 1 datarust.dev. alpn="h2,http/1.1" port=443 mandatory=alpn,port
