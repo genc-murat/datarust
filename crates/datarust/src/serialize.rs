@@ -17,8 +17,10 @@ use crate::error::Result;
 /// Serialize a fitted transformer to a pretty-printed JSON string.
 ///
 /// ```rust,no_run
-/// use datarust::{Matrix, StandardScaler, Transformer};
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::StandardScaler;
 /// use datarust::serialize::to_json;
+/// use datarust::Transformer;
 ///
 /// let x = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
 /// let mut scaler = StandardScaler::new();
@@ -32,7 +34,7 @@ pub fn to_json<T: serde::Serialize>(t: &T) -> Result<String> {
 /// Deserialize a transformer from a JSON string.
 ///
 /// ```rust,no_run
-/// use datarust::StandardScaler;
+/// use datarust::scaler::StandardScaler;
 /// use datarust::serialize::from_json;
 ///
 /// let json = r#"{"mean":[2.0],"std":[1.0],"with_mean":true,"with_std":true,"fitted":true}"#;
@@ -48,8 +50,10 @@ pub fn from_json<T: serde::de::DeserializeOwned>(s: &str) -> Result<T> {
 /// `&Path`, `PathBuf`).
 ///
 /// ```rust,no_run
-/// use datarust::{Matrix, StandardScaler, Transformer};
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::StandardScaler;
 /// use datarust::serialize::save_json;
+/// use datarust::Transformer;
 ///
 /// let x = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
 /// let mut scaler = StandardScaler::new();
@@ -68,7 +72,7 @@ pub fn save_json<T: serde::Serialize, P: AsRef<Path>>(t: &T, path: P) -> Result<
 /// `&Path`, `PathBuf`).
 ///
 /// ```rust,no_run
-/// use datarust::StandardScaler;
+/// use datarust::scaler::StandardScaler;
 /// use datarust::serialize::load_json;
 ///
 /// let scaler: StandardScaler = load_json("scaler.json").unwrap();
