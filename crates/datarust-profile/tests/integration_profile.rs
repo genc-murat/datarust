@@ -1,9 +1,12 @@
 //! End-to-end tests for the public profile API.
 
+use std::error::Error as StdError;
+
 use datarust::{Matrix, StrMatrix};
 use datarust_profile::quality::checks::run_checks;
 use datarust_profile::{
-    profile_matrix, profile_str_matrix, profile_table, ColumnType, Severity, Thresholds,
+    profile_matrix, profile_matrix_with_target, profile_str_matrix, profile_table,
+    profile_table_with_target, ColumnType, Severity, Thresholds,
 };
 
 fn names(parts: &[&str]) -> Vec<String> {
@@ -351,4 +354,610 @@ fn html_report_includes_relationships_heatmaps() {
     assert!(html.contains("Relationships &amp; Interaction"));
     assert!(html.contains("Pearson correlation matrix"));
     assert!(html.contains("class=\"heatmap\""));
+}
+
+// ---- error.rs tests --------------------------------------------------------
+
+#[test]
+fn error_display_invalid_input() {
+    let e = datarust_profile::ProfileError::InvalidInput("bad".into());
+    assert!(e.to_string().contains("invalid input"));
+}
+
+#[test]
+fn error_display_empty_input() {
+    let e = datarust_profile::ProfileError::EmptyInput("no rows".into());
+    assert!(e.to_string().contains("empty input"));
+}
+
+#[test]
+fn error_display_io() {
+    let io_err = std::io::Error::new(std::io::ErrorKind::Other, "oops");
+    let e = datarust_profile::ProfileError::Io(io_err);
+    assert!(e.to_string().contains("io error"));
+    assert!(e.source().is_some());
+}
+
+#[test]
+fn error_from_datarust_error() {
+    let dr_err = datarust::error::DatarustError::ShapeMismatch {
+        expected: "(2, 2)".to_string(),
+        actual: "(3, 3)".to_string(),
+    };
+    let e: datarust_profile::ProfileError = dr_err.into();
+    assert!(e.to_string().contains("datarust error"));
+    assert!(e.source().is_some());
+}
+
+#[test]
+fn error_from_io_error() {
+    let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no");
+    let e: datarust_profile::ProfileError = io_err.into();
+    assert!(e.to_string().contains("io error"));
+}
+
+// ---- types.rs tests --------------------------------------------------------
+
+#[test]
+fn column_type_display() {
+    assert_eq!(datarust_profile::ColumnType::Numeric.to_string(), "numeric");
+    assert_eq!(
+        datarust_profile::ColumnType::Categorical.to_string(),
+        "categorical"
+    );
+}
+
+#[test]
+fn severity_display() {
+    assert_eq!(datarust_profile::Severity::Info.to_string(), "info");
+    assert_eq!(datarust_profile::Severity::Warning.to_string(), "warning");
+    assert_eq!(
+        datarust_profile::Severity::Critical.to_string(),
+        "critical"
+    );
+}
+
+// ---- dataset profile edge cases --------------------------------------------
+
+#[test]
+fn profile_table_only_numeric() {
+    let numeric = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+    let p = profile_table(Some(&numeric), None, &names(&["a", "b"])).unwrap();
+    assert_eq!(p.n_columns, 2);
+    assert_eq!(p.columns[0].column_type, ColumnType::Numeric);
+    assert_eq!(p.columns[1].column_type, ColumnType::Numeric);
+    assert_eq!(p.memory_bytes, 2 * 2 * 8); // 2 rows x 2 cols x 8 bytes
+}
+
+#[test]
+fn profile_table_only_categorical() {
+    let cat = StrMatrix::from_strings(vec![vec!["x", "y"], vec!["z", "w"]]).unwrap();
+    let p = profile_table(None, Some(&cat), &names(&["a", "b"])).unwrap();
+    assert_eq!(p.n_columns, 2);
+    assert_eq!(p.columns[0].column_type, ColumnType::Categorical);
+    assert_eq!(p.columns[1].column_type, ColumnType::Categorical);
+}
+
+#[test]
+fn profile_table_name_count_mismatch_errors() {
+    let numeric = Matrix::from_rows(vec![vec![1.0, 2.0]]).unwrap();
+    let result = profile_table(Some(&numeric), None, &names(&["a"]));
+    assert!(result.is_err());
+}
+
+#[test]
+fn profile_table_empty_all_errors() {
+    let result = profile_table(None, None, &[]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn profile_table_mixed_row_counts_errors() {
+    let numeric = Matrix::from_rows(vec![vec![1.0], vec![2.0], vec![3.0]]).unwrap();
+    let cat = StrMatrix::from_strings(vec![vec!["a"], vec!["b"]]).unwrap();
+    let result = profile_table(Some(&numeric), Some(&cat), &names(&["n", "c"]));
+    assert!(result.is_err());
+}
+
+#[test]
+fn profile_str_matrix_default_names() {
+    let s = StrMatrix::from_strings(vec![vec!["a", "b"], vec!["c", "d"]]).unwrap();
+    let p = profile_str_matrix(&s, None).unwrap();
+    assert_eq!(p.columns[0].name, "x0");
+    assert_eq!(p.columns[1].name, "x1");
+}
+
+#[test]
+fn profile_str_matrix_wrong_name_count_falls_back_to_defaults() {
+    let s = StrMatrix::from_strings(vec![vec!["a", "b"], vec!["c", "d"]]).unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["only_one"]))).unwrap();
+    assert_eq!(p.columns[0].name, "x0");
+    assert_eq!(p.columns[1].name, "x1");
+}
+
+#[test]
+fn profile_matrix_with_target_sets_target_column() {
+    let m = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+    let p = profile_matrix_with_target(&m, Some(&names(&["a", "b"])), "b").unwrap();
+    assert_eq!(p.target_column.as_deref(), Some("b"));
+}
+
+#[test]
+fn profile_table_with_target_sets_target_column() {
+    let numeric = Matrix::from_rows(vec![vec![1.0], vec![2.0], vec![3.0]]).unwrap();
+    let cat = StrMatrix::from_strings(vec![vec!["x"], vec!["y"], vec!["z"]]).unwrap();
+    let p =
+        profile_table_with_target(Some(&numeric), Some(&cat), &names(&["n", "c"]), "c").unwrap();
+    assert_eq!(p.target_column.as_deref(), Some("c"));
+}
+
+#[test]
+fn memory_bytes_numeric_only() {
+    let m = Matrix::from_rows(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]).unwrap();
+    let p = profile_matrix(&m, None).unwrap();
+    // 2 rows x 3 cols x 8 bytes = 48
+    assert_eq!(p.memory_bytes, 48);
+}
+
+#[test]
+fn memory_bytes_mixed_table() {
+    let numeric = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+    let cat = StrMatrix::from_strings(vec![vec!["a", "b"], vec!["c", "d"]]).unwrap();
+    let p = profile_table(Some(&numeric), Some(&cat), &names(&["n1", "n2", "c1", "c2"])).unwrap();
+    // 2 numeric cols x 2 rows x 8 bytes + 2 categorical cols x 2 rows x 24 bytes = 32 + 96 = 128
+    assert_eq!(p.memory_bytes, 128);
+}
+
+#[test]
+fn single_row_matrix() {
+    let m = Matrix::from_rows(vec![vec![42.0, 7.0]]).unwrap();
+    let p = profile_matrix(&m, Some(&names(&["a", "b"]))).unwrap();
+    assert_eq!(p.n_rows, 1);
+    assert_eq!(p.n_columns, 2);
+    let n = p.columns[0].numeric.as_ref().unwrap();
+    assert!((n.mean - 42.0).abs() < 1e-9);
+    assert!((n.five.min - 42.0).abs() < 1e-9);
+    assert!((n.five.max - 42.0).abs() < 1e-9);
+}
+
+#[test]
+fn all_nan_column_numeric_type() {
+    let m = Matrix::from_rows(vec![vec![f64::NAN], vec![f64::NAN]]).unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
+    assert_eq!(p.columns[0].column_type, ColumnType::Numeric);
+    assert_eq!(p.columns[0].missing_count, 2);
+    assert_eq!(p.columns[0].missing_fraction, 1.0);
+    assert!(p.columns[0].numeric.is_none());
+}
+
+#[test]
+fn all_nan_column_html_shows_no_values() {
+    let m = Matrix::from_rows(vec![vec![f64::NAN], vec![f64::NAN]]).unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
+    let html = datarust_profile::report::to_html(&p);
+    assert!(html.contains("No non-missing values"));
+}
+
+#[test]
+fn duplicate_rows_in_str_matrix() {
+    let s = StrMatrix::from_strings(vec![
+        vec!["a", "x"],
+        vec!["b", "y"],
+        vec!["a", "x"], // duplicate
+    ])
+    .unwrap();
+    let p = profile_str_matrix(&s, None).unwrap();
+    assert_eq!(p.duplicate_rows, 1);
+    assert!((p.duplicate_fraction - 1.0 / 3.0).abs() < 1e-9);
+}
+
+#[test]
+fn duplicate_rows_in_mixed_table() {
+    let numeric = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![1.0, 2.0]]).unwrap();
+    let cat = StrMatrix::from_strings(vec![vec!["a"], vec!["b"], vec!["a"]]).unwrap();
+    let p = profile_table(Some(&numeric), Some(&cat), &names(&["n1", "n2", "c"])).unwrap();
+    assert_eq!(p.duplicate_rows, 1);
+}
+
+#[test]
+fn html_report_with_categorical_column() {
+    let s = StrMatrix::from_strings(vec![
+        vec!["red", "big"],
+        vec!["blue", "small"],
+        vec!["red", "big"],
+    ])
+    .unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["color", "size"]))).unwrap();
+    let html = datarust_profile::report::to_html(&p);
+    assert!(html.contains("categorical"));
+    assert!(html.contains("color"));
+    assert!(html.contains("size"));
+    assert!(html.contains("cat-list"));
+}
+
+#[test]
+fn html_report_with_no_findings() {
+    // Clean uncorrelated data with no quality issues
+    let m = Matrix::from_rows(vec![
+        vec![1.0, 50.0],
+        vec![2.0, 30.0],
+        vec![3.0, 10.0],
+        vec![4.0, 40.0],
+        vec![5.0, 20.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["a", "b"]))).unwrap();
+    let html = datarust_profile::report::to_html(&p);
+    assert!(html.contains("No data-quality findings"));
+}
+
+#[test]
+fn html_report_with_findings() {
+    // Data with a constant column to trigger a finding
+    let m = Matrix::from_rows(vec![
+        vec![5.0, 10.0],
+        vec![5.0, 20.0],
+        vec![5.0, 30.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["c", "v"]))).unwrap();
+    let html = datarust_profile::report::to_html(&p);
+    assert!(html.contains("Data quality findings"));
+    assert!(html.contains("constant"));
+}
+
+#[test]
+fn html_report_to_html_with_custom_findings() {
+    let m = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+    let p = profile_matrix(&m, Some(&names(&["a", "b"]))).unwrap();
+    let custom_issue = datarust_profile::QualityIssue {
+        kind: datarust_profile::QualityKind::DuplicateRows,
+        severity: Severity::Info,
+        column: None,
+        message: "Custom finding".to_string(),
+    };
+    let html = datarust_profile::report::to_html_with(&p, &[custom_issue]);
+    assert!(html.contains("Custom finding"));
+    assert!(html.contains("info"));
+}
+
+#[test]
+fn html_report_point_biserial_table() {
+    let numeric = Matrix::from_rows(vec![vec![1.0], vec![1.0], vec![5.0], vec![5.0]]).unwrap();
+    let cat = StrMatrix::from_strings(vec![
+        vec!["low"],
+        vec!["low"],
+        vec!["high"],
+        vec!["high"],
+    ])
+    .unwrap();
+    let p = profile_table_with_target(
+        Some(&numeric),
+        Some(&cat),
+        &names(&["val", "target"]),
+        "target",
+    )
+    .unwrap();
+    let html = datarust_profile::report::to_html(&p);
+    assert!(html.contains("Point-biserial"));
+    assert!(html.contains("rel-table"));
+}
+
+#[test]
+fn pearson_negative_correlation_detected() {
+    let m = Matrix::from_rows(vec![
+        vec![1.0, 10.0],
+        vec![2.0, 8.0],
+        vec![3.0, 6.0],
+        vec![4.0, 4.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x", "y"]))).unwrap();
+    let rels = p.relationships.as_ref().unwrap();
+    let pearson = rels.pearson.as_ref().unwrap();
+    assert!((pearson.values[0][1] + 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn no_relationships_for_single_column() {
+    let m = Matrix::from_rows(vec![vec![1.0], vec![2.0], vec![3.0]]).unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
+    assert!(p.relationships.is_none());
+}
+
+#[test]
+fn no_relationships_for_single_categorical_column() {
+    let s = StrMatrix::from_strings(vec![vec!["a"], vec!["b"], vec!["c"]]).unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["k"]))).unwrap();
+    // Single column: no pairs to compute relationships for
+    assert!(p.relationships.is_none());
+}
+
+#[test]
+fn quality_no_issues_on_clean_data() {
+    // Use uncorrelated data to avoid HighCorrelation
+    let m = Matrix::from_rows(vec![
+        vec![1.0, 50.0],
+        vec![2.0, 30.0],
+        vec![3.0, 10.0],
+        vec![4.0, 40.0],
+        vec![5.0, 20.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["a", "b"]))).unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(issues.is_empty());
+}
+
+#[test]
+fn quality_target_leakage_via_pearson_with_numeric_target() {
+    let m = Matrix::from_rows(vec![
+        vec![1.0, 1.0],
+        vec![2.0, 2.0],
+        vec![3.0, 3.0],
+        vec![4.0, 4.0],
+    ])
+    .unwrap();
+    let p = profile_matrix_with_target(&m, Some(&names(&["feature", "target"])), "target").unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(issues
+        .iter()
+        .any(|i| i.kind == datarust_profile::QualityKind::TargetLeakage));
+}
+
+#[test]
+fn quality_target_leakage_via_cramers_v() {
+    let s = StrMatrix::from_strings(vec![
+        vec!["cat_A", "yes"],
+        vec!["cat_A", "yes"],
+        vec!["cat_B", "no"],
+        vec!["cat_B", "no"],
+    ])
+    .unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["feature", "target"]))).unwrap();
+    let p = p.with_target("target");
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(issues
+        .iter()
+        .any(|i| i.kind == datarust_profile::QualityKind::TargetLeakage));
+}
+
+#[test]
+fn quality_high_missing_all_columns() {
+    // 100% missing in both columns
+    let m = Matrix::from_rows(vec![
+        vec![f64::NAN, f64::NAN],
+        vec![f64::NAN, f64::NAN],
+        vec![f64::NAN, f64::NAN],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, None).unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(issues.iter().all(|i| i.severity == Severity::Critical));
+}
+
+#[test]
+fn quality_all_issues_together() {
+    // Constant column, high missing (>=50%), outliers, duplicates
+    // 5 NaN out of 9 = 55.6% missing
+    let m = Matrix::from_rows(vec![
+        vec![5.0, f64::NAN],
+        vec![5.0, f64::NAN],
+        vec![5.0, f64::NAN],
+        vec![5.0, f64::NAN],
+        vec![5.0, f64::NAN],
+        vec![5.0, 1.0],
+        vec![5.0, 2.0],
+        vec![5.0, 100.0],
+        vec![5.0, 100.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["c", "v"]))).unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    let kinds: Vec<_> = issues.iter().map(|i| i.kind).collect();
+    assert!(kinds.contains(&datarust_profile::QualityKind::ConstantColumn));
+    assert!(kinds.contains(&datarust_profile::QualityKind::HighMissing));
+    assert!(kinds.contains(&datarust_profile::QualityKind::DuplicateRows));
+}
+
+#[test]
+fn histogram_edge_labels_in_html() {
+    let m = Matrix::from_rows(vec![
+        vec![1.0],
+        vec![2.0],
+        vec![3.0],
+        vec![4.0],
+        vec![5.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
+    let html = datarust_profile::report::to_html(&p);
+    assert!(html.contains("chart-labels"));
+    assert!(html.contains("1.0000"));
+    assert!(html.contains("5.0000"));
+}
+
+#[test]
+fn skewness_positive_html() {
+    // Right-skewed data
+    let m = Matrix::from_rows(vec![
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![1.0],
+        vec![100.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
+    let n = p.columns[0].numeric.as_ref().unwrap();
+    assert!(n.skewness > 0.0);
+    let html = datarust_profile::report::to_html(&p);
+    assert!(html.contains("skew"));
+}
+
+#[test]
+fn categorical_with_all_unique_values() {
+    let s = StrMatrix::from_strings(vec![
+        vec!["id_1"],
+        vec!["id_2"],
+        vec!["id_3"],
+        vec!["id_4"],
+    ])
+    .unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["uid"]))).unwrap();
+    let c = p.columns[0].categorical.as_ref().unwrap();
+    assert_eq!(c.unique, 4);
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(issues
+        .iter()
+        .any(|i| i.kind == datarust_profile::QualityKind::NearUnique));
+}
+
+#[test]
+fn str_matrix_infers_integer_strings_as_numeric() {
+    let s = StrMatrix::from_strings(vec![vec!["10"], vec!["20"], vec!["30"]]).unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["x"]))).unwrap();
+    assert_eq!(p.columns[0].column_type, ColumnType::Numeric);
+    let n = p.columns[0].numeric.as_ref().unwrap();
+    assert!((n.mean - 20.0).abs() < 1e-9);
+}
+
+#[test]
+fn str_matrix_infers_float_strings_as_numeric() {
+    let s = StrMatrix::from_strings(vec![vec!["1.5"], vec!["2.5"], vec!["3.5"]]).unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["x"]))).unwrap();
+    assert_eq!(p.columns[0].column_type, ColumnType::Numeric);
+    let n = p.columns[0].numeric.as_ref().unwrap();
+    assert!((n.mean - 2.5).abs() < 1e-9);
+}
+
+#[test]
+fn str_matrix_missing_values_not_counted_in_categorical() {
+    let s = StrMatrix::from_strings(vec![
+        vec!["a"],
+        vec!["NA"],
+        vec!["a"],
+        vec!["b"],
+    ])
+    .unwrap();
+    let p = profile_str_matrix(&s, Some(&names(&["k"]))).unwrap();
+    let c = p.columns[0].categorical.as_ref().unwrap();
+    // unique=2 (a, b), top=a with freq=2
+    assert_eq!(c.unique, 2);
+    assert_eq!(c.top, "a");
+    assert_eq!(c.freq, 2);
+    assert_eq!(p.columns[0].missing_count, 1);
+}
+
+#[test]
+fn negative_correlation_no_high_correlation_issue() {
+    // Perfect negative correlation should NOT trigger HighCorrelation
+    // (threshold is 0.95, and we check |r| >= threshold)
+    let m = Matrix::from_rows(vec![
+        vec![1.0, 10.0],
+        vec![2.0, 8.0],
+        vec![3.0, 6.0],
+        vec![4.0, 4.0],
+        vec![5.0, 2.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x", "y"]))).unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    // r = -1.0, |r| = 1.0 >= 0.95, so it SHOULD fire
+    assert!(issues
+        .iter()
+        .any(|i| i.kind == datarust_profile::QualityKind::HighCorrelation));
+}
+
+#[test]
+fn moderate_correlation_no_issue() {
+    // Correlation around 0.7 should NOT trigger
+    let m = Matrix::from_rows(vec![
+        vec![1.0, 10.0],
+        vec![2.0, 12.0],
+        vec![3.0, 11.0],
+        vec![4.0, 15.0],
+        vec![5.0, 14.0],
+    ])
+    .unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x", "y"]))).unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    assert!(!issues
+        .iter()
+        .any(|i| i.kind == datarust_profile::QualityKind::HighCorrelation));
+}
+
+#[test]
+fn profile_table_numeric_block_only_errors_without_rows() {
+    let result = profile_table(None, None, &[]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn large_outlier_fraction_triggers_warning() {
+    // Tight cluster [1,1,...,2,2,...] with extreme outliers
+    // Q1≈1, Q3≈2, IQR≈1, upper fence≈3.5 → 100,200,300,400 are outliers
+    // 4/20 = 20% outliers -> severity Warning (>= 0.2)
+    let mut rows: Vec<Vec<f64>> = Vec::new();
+    for _ in 0..10 { rows.push(vec![1.0]); }
+    for _ in 0..6 { rows.push(vec![2.0]); }
+    rows.push(vec![100.0]);
+    rows.push(vec![200.0]);
+    rows.push(vec![300.0]);
+    rows.push(vec![400.0]);
+    let m = Matrix::from_rows(rows).unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    let outlier_issue = issues
+        .iter()
+        .find(|i| i.kind == datarust_profile::QualityKind::Outliers);
+    assert!(outlier_issue.is_some());
+    assert_eq!(outlier_issue.unwrap().severity, Severity::Warning);
+}
+
+#[test]
+fn small_outlier_fraction_triggers_info() {
+    // 1/20 = 5% outliers -> severity Info (< 0.2)
+    let mut rows: Vec<Vec<f64>> = (0..19).map(|i| vec![i as f64]).collect();
+    rows.push(vec![1000.0]);
+    let m = Matrix::from_rows(rows).unwrap();
+    let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    let outlier_issue = issues
+        .iter()
+        .find(|i| i.kind == datarust_profile::QualityKind::Outliers);
+    assert!(outlier_issue.is_some());
+    assert_eq!(outlier_issue.unwrap().severity, Severity::Info);
+}
+
+#[test]
+fn duplicate_rows_below_10_percent_info() {
+    // 1/20 = 5% duplicates -> Info (< 10%)
+    let mut rows: Vec<Vec<f64>> = (0..20).map(|i| vec![i as f64, i as f64 * 10.0]).collect();
+    rows.push(vec![0.0, 0.0]); // one duplicate
+    let m = Matrix::from_rows(rows).unwrap();
+    let p = profile_matrix(&m, None).unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    let dup_issue = issues
+        .iter()
+        .find(|i| i.kind == datarust_profile::QualityKind::DuplicateRows);
+    assert!(dup_issue.is_some());
+    assert_eq!(dup_issue.unwrap().severity, Severity::Info);
+}
+
+#[test]
+fn duplicate_rows_above_10_percent_warning() {
+    // 3/20 = 15% duplicates -> Warning (>= 10%)
+    let mut rows: Vec<Vec<f64>> = (0..17).map(|i| vec![i as f64, i as f64]).collect();
+    rows.push(vec![0.0, 0.0]);
+    rows.push(vec![1.0, 1.0]);
+    rows.push(vec![2.0, 2.0]);
+    let m = Matrix::from_rows(rows).unwrap();
+    let p = profile_matrix(&m, None).unwrap();
+    let issues = run_checks(&p, &Thresholds::default());
+    let dup_issue = issues
+        .iter()
+        .find(|i| i.kind == datarust_profile::QualityKind::DuplicateRows);
+    assert!(dup_issue.is_some());
+    assert_eq!(dup_issue.unwrap().severity, Severity::Warning);
 }

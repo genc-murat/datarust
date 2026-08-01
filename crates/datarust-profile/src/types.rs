@@ -46,3 +46,70 @@ impl fmt::Display for Severity {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_numeric() {
+        assert_eq!(ColumnType::Numeric.to_string(), "numeric");
+    }
+
+    #[test]
+    fn display_categorical() {
+        assert_eq!(ColumnType::Categorical.to_string(), "categorical");
+    }
+
+    #[test]
+    fn severity_info() {
+        assert_eq!(Severity::Info.to_string(), "info");
+    }
+
+    #[test]
+    fn severity_warning() {
+        assert_eq!(Severity::Warning.to_string(), "warning");
+    }
+
+    #[test]
+    fn severity_critical() {
+        assert_eq!(Severity::Critical.to_string(), "critical");
+    }
+
+    #[test]
+    fn column_type_equality() {
+        assert_eq!(ColumnType::Numeric, ColumnType::Numeric);
+        assert_eq!(ColumnType::Categorical, ColumnType::Categorical);
+        assert_ne!(ColumnType::Numeric, ColumnType::Categorical);
+    }
+
+    #[test]
+    fn severity_equality() {
+        assert_eq!(Severity::Info, Severity::Info);
+        assert_ne!(Severity::Info, Severity::Critical);
+    }
+
+    #[test]
+    fn column_type_clone() {
+        let ct = ColumnType::Numeric;
+        let ct2 = ct;
+        assert_eq!(ct, ct2);
+    }
+
+    #[test]
+    fn severity_clone() {
+        let s = Severity::Warning;
+        let s2 = s;
+        assert_eq!(s, s2);
+    }
+
+    #[test]
+    fn column_type_debug() {
+        assert!(format!("{:?}", ColumnType::Numeric).contains("Numeric"));
+    }
+
+    #[test]
+    fn severity_debug() {
+        assert!(format!("{:?}", Severity::Critical).contains("Critical"));
+    }
+}

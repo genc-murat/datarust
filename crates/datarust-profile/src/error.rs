@@ -66,3 +66,71 @@ impl From<serde_json::Error> for ProfileError {
 
 /// The canonical `Result` type alias used throughout the crate.
 pub type Result<T> = std::result::Result<T, ProfileError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_invalid_input() {
+        let e = ProfileError::InvalidInput("bad".to_string());
+        assert_eq!(e.to_string(), "invalid input: bad");
+    }
+
+    #[test]
+    fn display_empty_input() {
+        let e = ProfileError::EmptyInput("0 rows".to_string());
+        assert_eq!(e.to_string(), "empty input: 0 rows");
+    }
+
+    #[test]
+    fn display_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let e = ProfileError::Io(io_err);
+        assert_eq!(e.to_string(), "io error: file missing");
+    }
+
+    #[test]
+    fn source_invalid_input() {
+        let e = ProfileError::InvalidInput("x".to_string());
+        assert!(e.source().is_none());
+    }
+
+    #[test]
+    fn source_empty_input() {
+        let e = ProfileError::EmptyInput("x".to_string());
+        assert!(e.source().is_none());
+    }
+
+    #[test]
+    fn source_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "oops");
+        let e = ProfileError::Io(io_err);
+        assert!(e.source().is_some());
+    }
+
+    #[test]
+    fn from_datarust_error() {
+        let dr_err = datarust::error::DatarustError::ShapeMismatch {
+            expected: "(2, 2)".to_string(),
+            actual: "(3, 3)".to_string(),
+        };
+        let e: ProfileError = dr_err.into();
+        assert!(e.to_string().contains("datarust error"));
+        assert!(e.source().is_some());
+    }
+
+    #[test]
+    fn from_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let e: ProfileError = io_err.into();
+        assert!(e.to_string().contains("io error"));
+    }
+
+    #[test]
+    fn debug_is_impl() {
+        let e = ProfileError::InvalidInput("test".to_string());
+        let debug = format!("{:?}", e);
+        assert!(debug.contains("InvalidInput"));
+    }
+}
