@@ -134,11 +134,11 @@ async function check() {
     }
   }
 
-  const middlewareFile = path.join(DIST, 'functions', '_middleware.js');
+  const workerFile = path.join(DIST, '_worker.js');
   try {
-    await access(middlewareFile);
+    await access(workerFile);
   } catch {
-    errors.push('functions/_middleware.js: missing Cloudflare Pages markdown negotiation middleware');
+    errors.push('_worker.js: missing Cloudflare Pages markdown negotiation worker');
   }
 
   const apiCatalogFile = path.join(DIST, '.well-known', 'api-catalog');
