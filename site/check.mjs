@@ -134,11 +134,11 @@ async function check() {
     }
   }
 
-  const workerFile = path.join(ROOT, 'src', 'worker.js');
+  const workerFile = path.join(DIST, '_worker.js');
   try {
     await access(workerFile);
   } catch {
-    errors.push('src/worker.js: missing Cloudflare Worker markdown negotiation script');
+    errors.push('_worker.js: missing Cloudflare Pages markdown negotiation worker');
   }
 
   const apiCatalogFile = path.join(DIST, '.well-known', 'api-catalog');
