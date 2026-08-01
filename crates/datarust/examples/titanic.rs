@@ -26,7 +26,7 @@ impl Rng {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Titanic Survival Classification ===");
-    
+
     // 1. Generate synthetic titanic-like data
     // Numeric: Age, Fare, SibSp, Parch
     // Categorical: Sex, Pclass, Embarked
@@ -35,39 +35,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut num_rows = Vec::with_capacity(n);
     let mut cat_rows = Vec::with_capacity(n);
     let mut y = Vec::with_capacity(n);
-    
+
     let sexes = ["male", "female"];
     let pclasses = ["1", "2", "3"];
     let embarked = ["C", "Q", "S"];
-    
+
     for _ in 0..n {
         let age = 1.0 + rng.next_f64() * 70.0;
         let fare = 5.0 + rng.next_f64() * 100.0;
-        let sibsp = (rng.next_f64() * 4.0) as f64;
-        let parch = (rng.next_f64() * 3.0) as f64;
-        
+        let sibsp = (rng.next_f64() * 4.0).floor();
+        let parch = (rng.next_f64() * 3.0).floor();
+
         let sex = sexes[(rng.next_f64() * 2.0) as usize % 2];
         let pclass = pclasses[(rng.next_f64() * 3.0) as usize % 3];
         let emb = embarked[(rng.next_f64() * 3.0) as usize % 3];
-        
+
         num_rows.push(vec![age, fare, sibsp, parch]);
         cat_rows.push(vec![sex, pclass, emb]);
-        
+
         // Survival probability depends on sex and class mostly
         let mut score = 0.0;
-        if sex == "female" { score += 2.0; }
-        if pclass == "1" { score += 1.5; }
-        if pclass == "3" { score -= 1.0; }
-        if age < 10.0 { score += 1.0; }
-        
-        let survived = if score + (rng.next_f64() * 2.0 - 1.0) > 1.0 { 1.0 } else { 0.0 };
+        if sex == "female" {
+            score += 2.0;
+        }
+        if pclass == "1" {
+            score += 1.5;
+        }
+        if pclass == "3" {
+            score -= 1.0;
+        }
+        if age < 10.0 {
+            score += 1.0;
+        }
+
+        let survived = if score + (rng.next_f64() * 2.0 - 1.0) > 1.0 {
+            1.0
+        } else {
+            0.0
+        };
         y.push(survived);
     }
-    
+
     let numeric = Matrix::new(num_rows)?;
     let categorical = StrMatrix::from_strings(cat_rows)?;
     let table = Table::new(numeric, categorical)?;
-    
+
     println!("Synthetic Data: {} samples", n);
     println!("Numeric features: Age, Fare, SibSp, Parch");
     println!("Categorical features: Sex, Pclass, Embarked");
@@ -87,9 +99,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 OneHotEncoder::new().handle_unknown(HandleUnknown::Ignore),
             ),
         );
-        
+
     let x = ct.fit_transform(&table)?;
-    println!("Feature matrix after preprocessing: {} × {}", x.nrows(), x.ncols());
+    println!(
+        "Feature matrix after preprocessing: {} × {}",
+        x.nrows(),
+        x.ncols()
+    );
 
     // 3. Split
     let (x_tr, x_te, y_tr, y_te) = TrainTestSplit::new()

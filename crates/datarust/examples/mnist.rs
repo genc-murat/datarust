@@ -22,18 +22,18 @@ impl Rng {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== MNIST Digits Classification ===");
-    
+
     // 1. Generate synthetic digits-like data (64 pixels, 10 classes)
     let n = 500;
     let mut rng = Rng(2025);
     let mut num_rows = Vec::with_capacity(n);
     let mut y = Vec::with_capacity(n);
-    
+
     for _ in 0..n {
         let label = (rng.next_f64() * 10.0) as u8;
         let label = label.min(9);
         y.push(label as f64);
-        
+
         let mut row = Vec::with_capacity(64);
         for i in 0..64 {
             // Give features some correlation with the label
@@ -43,9 +43,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         num_rows.push(row);
     }
-    
+
     let x = Matrix::new(num_rows)?;
-    println!("Synthetic Data: {} samples, {} features, 10 classes", x.nrows(), x.ncols());
+    println!(
+        "Synthetic Data: {} samples, {} features, 10 classes",
+        x.nrows(),
+        x.ncols()
+    );
 
     // 2. Preprocess & Split
     let (x_tr, x_te, y_tr, y_te) = TrainTestSplit::new()
