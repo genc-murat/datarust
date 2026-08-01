@@ -1,0 +1,14 @@
+; DNS for AI Discovery (DNS-AID) Zone Records for datarust.dev
+; Based on draft-mozleywilliams-dnsop-dnsaid and RFC 9460 (SVCB / HTTPS Resource Records)
+;
+; Zone: datarust.dev
+; TTL: 3600
+
+; 1. Agent Index Discovery Record (_index._agents.datarust.dev.)
+_index._agents.datarust.dev. 3600 IN HTTPS 1 datarust.dev. alpn="h2,http/1.1" port=443 mandatory=alpn,port
+
+; 2. Agent-to-Agent (A2A) Discovery Record (_a2a._agents.datarust.dev.)
+_a2a._agents.datarust.dev.   3600 IN SVCB  1 datarust.dev. alpn="a2a" port=443 mandatory=alpn,port
+
+; 3. Generic Agent Endpoint Discovery Record (_agents.datarust.dev.)
+_agents.datarust.dev.        3600 IN HTTPS 1 datarust.dev. alpn="h2,http/1.1" port=443 mandatory=alpn,port
