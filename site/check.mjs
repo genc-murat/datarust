@@ -91,12 +91,44 @@ async function check() {
     errors.push(`blog count mismatch: ${blogSources.length} sources, ${blogPages} generated pages`);
   }
 
+  const headersFile = path.join(DIST, '_headers');
+  try {
+    const headersContent = await readFile(headersFile, 'utf8');
+    let inHomepageSection = false;
+    let homepageLinkHeader = null;
+    for (const line of headersContent.split('\n')) {
+      const trimmed = line.trim();
+      if (!line.startsWith(' ') && !line.startsWith('\t')) {
+        inHomepageSection = (trimmed === '/');
+      } else if (inHomepageSection && trimmed.startsWith('Link:')) {
+        homepageLinkHeader = trimmed.slice(5).trim();
+      }
+    }
+    if (!homepageLinkHeader) {
+      errors.push('_headers: missing Link header for homepage (/)');
+    } else {
+      const linkUris = [...homepageLinkHeader.matchAll(/<([^>]+)>/g)].map((m) => m[1]);
+      if (linkUris.length === 0) {
+        errors.push('_headers: invalid Link header syntax for homepage');
+      }
+      for (const uri of linkUris) {
+        const target = await resolvePublicPath(uri);
+        if (!target) {
+          errors.push(`_headers Link header: broken link ${uri}`);
+        }
+      }
+    }
+  } catch {
+    errors.push('_headers: missing _headers file in dist');
+  }
+
   if (errors.length) {
     console.error(`Site check failed with ${errors.length} error(s):\n${errors.map((error) => `- ${error}`).join('\n')}`);
     process.exitCode = 1;
     return;
   }
   console.log(`Site check passed: ${htmlFiles.length} HTML pages and ${files.length} total files.`);
+
 }
 
 await check();

@@ -1,0 +1,17 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://datarust.dev/",
+      "service-doc": [
+        {
+          "href": "https://datarust.dev/docs/api/",
+          "type": "text/html"
+        },
+        {
+          "href": "https://datarust.dev/docs/",
+          "type": "text/html"
+        }
+      ]
+    }
+  ]
+}

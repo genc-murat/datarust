@@ -5,8 +5,15 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
   Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
 
+/
+  Link: </.well-known/api-catalog>; rel="api-catalog", </docs/api/>; rel="service-doc"
+
+/.well-known/api-catalog
+  Content-Type: application/linkset+json
+
 /assets/*
   Cache-Control: public, max-age=86400
 
 /blog/img/*
   Cache-Control: public, max-age=604800
+
