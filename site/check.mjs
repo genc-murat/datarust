@@ -141,6 +141,27 @@ async function check() {
     errors.push('functions/_middleware.js: missing Cloudflare Pages markdown negotiation middleware');
   }
 
+  const apiCatalogFile = path.join(DIST, '.well-known', 'api-catalog');
+  try {
+    const catalogRaw = await readFile(apiCatalogFile, 'utf8');
+    const catalog = JSON.parse(catalogRaw);
+    if (!Array.isArray(catalog.linkset) || catalog.linkset.length === 0) {
+      errors.push('.well-known/api-catalog: linkset array is missing or empty');
+    } else {
+      for (const entry of catalog.linkset) {
+        if (!entry.anchor) {
+          errors.push('.well-known/api-catalog: entry missing anchor');
+        }
+        if (!entry['service-doc']) {
+          errors.push('.well-known/api-catalog: entry missing service-doc relation');
+        }
+      }
+    }
+  } catch (err) {
+    errors.push(`.well-known/api-catalog: failed to read or parse RFC 9727 linkset (${err.message})`);
+  }
+
+
   if (errors.length) {
     console.error(`Site check failed with ${errors.length} error(s):\n${errors.map((error) => `- ${error}`).join('\n')}`);
     process.exitCode = 1;

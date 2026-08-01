@@ -1,14 +1,43 @@
 {
   "linkset": [
     {
-      "anchor": "https://datarust.dev/",
+      "anchor": "https://datarust.dev/docs/api/",
+      "service-desc": [
+        {
+          "href": "https://docs.rs/datarust",
+          "type": "text/html"
+        }
+      ],
       "service-doc": [
         {
-          "href": "https://datarust.dev/docs/api/",
-          "type": "text/html"
-        },
-        {
           "href": "https://datarust.dev/docs/",
+          "type": "text/html"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://datarust.dev/",
+          "type": "text/html"
+        }
+      ]
+    },
+    {
+      "anchor": "https://datarust.dev/docs/profile/README/",
+      "service-desc": [
+        {
+          "href": "https://docs.rs/datarust-profile",
+          "type": "text/html"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://datarust.dev/docs/profile/README/",
+          "type": "text/html"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://datarust.dev/",
           "type": "text/html"
         }
       ]
