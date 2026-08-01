@@ -23,3 +23,4 @@ lcov.info
 # Cloudflare Pages site output and Node dependencies
 /dist/
 /node_modules/
+/.wrangler/
