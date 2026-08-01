@@ -183,10 +183,3 @@ jobs:
         run: npm run build
       - name: Validate generated site
         run: npm run check
-      - name: Deploy to Cloudflare (datarust.dev)
-        # Only deploy from main — PR builds are validated above but not pushed.
-        # Requires the CLOUDFLARE_API_TOKEN repository secret.
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler deploy
