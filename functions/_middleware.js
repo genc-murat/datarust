@@ -25,8 +25,9 @@ export async function onRequest(context) {
           headers,
         });
       }
-    } catch {
-      // Fall through to HTML asset if fetching markdown asset fails.
+      return new Response(`Error: mdResponse.status was ${mdResponse.status} for URL ${mdUrl.toString()}`, { status: 500 });
+    } catch (e) {
+      return new Response(`Exception: ${e.message}`, { status: 500 });
     }
   }
   return context.next();
