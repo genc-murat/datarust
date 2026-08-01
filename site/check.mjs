@@ -122,12 +122,32 @@ async function check() {
     errors.push('_headers: missing _headers file in dist');
   }
 
+  for (const htmlFile of htmlFiles) {
+    const mdFile = htmlFile.replace(/\.html$/, '.md');
+    try {
+      const mdContent = await readFile(mdFile, 'utf8');
+      if (!mdContent.trim()) {
+        errors.push(`${path.relative(ROOT, mdFile)}: empty markdown file`);
+      }
+    } catch {
+      errors.push(`${path.relative(ROOT, htmlFile)}: missing corresponding markdown file (.md) for agent negotiation`);
+    }
+  }
+
+  const middlewareFile = path.join(DIST, 'functions', '_middleware.js');
+  try {
+    await access(middlewareFile);
+  } catch {
+    errors.push('functions/_middleware.js: missing Cloudflare Pages markdown negotiation middleware');
+  }
+
   if (errors.length) {
     console.error(`Site check failed with ${errors.length} error(s):\n${errors.map((error) => `- ${error}`).join('\n')}`);
     process.exitCode = 1;
     return;
   }
-  console.log(`Site check passed: ${htmlFiles.length} HTML pages and ${files.length} total files.`);
+  console.log(`Site check passed: ${htmlFiles.length} HTML pages (and matching .md pages) across ${files.length} total files.`);
+
 
 }
 

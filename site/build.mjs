@@ -527,6 +527,59 @@ function blogPage(post, index, orderedPosts) {
   });
 }
 
+function homePageMarkdown(posts, docs) {
+  return `# datarust & datarust-profile
+
+Scikit-learn-style preprocessing, classical machine learning, and data profiling for Rust — zero dependencies by default.
+
+## Crates
+
+- **datarust** (${DATARUST_CRATE.version}): ${DATARUST_CRATE.tagline}
+  ${DATARUST_CRATE.blurb}
+  Documentation: ${SITE_URL}/docs/
+
+- **datarust-profile** (${PROFILE_CRATE.version}): ${PROFILE_CRATE.tagline}
+  ${PROFILE_CRATE.blurb}
+  Documentation: ${SITE_URL}/docs/profile/README/
+
+## Quick Start
+
+\`\`\`toml
+[dependencies]
+datarust = "${DATARUST_CRATE.version}"
+datarust-profile = "${PROFILE_CRATE.version}"
+\`\`\`
+
+- [Documentation](${SITE_URL}/docs/)
+- [Field Notes](${SITE_URL}/blog/)
+- [Source Code](${GITHUB_URL})
+`;
+}
+
+function blogIndexMarkdown(posts) {
+  const list = posts
+    .map((post) => `- [${post.title}](${SITE_URL}${post.route}): ${post.description}`)
+    .join('\n');
+  return `# datarust Field Notes
+
+Practical lessons, benchmarks, and architectural decisions from classical machine learning in Rust.
+
+## Posts
+
+${list}
+`;
+}
+
+function notFoundMarkdown() {
+  return `# 404 - Page Not Found
+
+The requested datarust page could not be found.
+
+- [Documentation](${SITE_URL}/docs/)
+- [Field Notes](${SITE_URL}/blog/)
+`;
+}
+
 function notFoundPage() {
   return pageShell({
     title: 'Page not found',
@@ -537,7 +590,7 @@ function notFoundPage() {
   });
 }
 
-async function writePage(route, html) {
+async function writePage(route, html, markdown) {
   const destination = route === '/'
     ? path.join(DIST, 'index.html')
     : route === '/404.html'
@@ -545,6 +598,11 @@ async function writePage(route, html) {
       : path.join(DIST, route.replace(/^\//, ''), 'index.html');
   await mkdir(path.dirname(destination), { recursive: true });
   await writeFile(destination, html);
+
+  if (markdown) {
+    const mdDestination = destination.replace(/\.html$/, '.md');
+    await writeFile(mdDestination, markdown);
+  }
 }
 
 function feedXml(posts) {
@@ -585,12 +643,12 @@ async function build() {
   await cp(path.join(ROOT, 'site', 'assets'), path.join(DIST, 'assets'), { recursive: true });
   await cp(path.join(BLOG_ROOT, 'img'), path.join(DIST, 'blog', 'img'), { recursive: true });
 
-  await writePage('/', homePage(posts, docs));
-  await writePage('/blog/', blogIndex(posts));
-  await writePage('/404.html', notFoundPage());
+  await writePage('/', homePage(posts, docs), homePageMarkdown(posts, docs));
+  await writePage('/blog/', blogIndex(posts), blogIndexMarkdown(posts));
+  await writePage('/404.html', notFoundPage(), notFoundMarkdown());
 
   for (const [index, page] of docs.pages.entries()) {
-    await writePage(page.route, docsPage(page, index, docs));
+    await writePage(page.route, docsPage(page, index, docs), page.markdown);
   }
 
   const orderedPosts = posts
@@ -599,8 +657,9 @@ async function build() {
   for (const post of posts) {
     const neighbors = post.number ? orderedPosts : posts.filter((candidate) => candidate.isRelease);
     const index = neighbors.findIndex((candidate) => candidate.route === post.route);
-    await writePage(post.route, blogPage(post, index, neighbors));
+    await writePage(post.route, blogPage(post, index, neighbors), post.markdown);
   }
+
 
   const searchEntries = [
     ...docs.pages.map((page) => ({ type: 'Docs', title: page.title, description: page.description, url: page.route, headings: page.toc.map((item) => item.text) })),

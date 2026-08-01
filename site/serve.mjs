@@ -84,6 +84,28 @@ createServer(async (request, response) => {
     createReadStream(path.join(DIST, '404.html')).pipe(response);
     return;
   }
+
+  const accept = request.headers['accept'] || '';
+  if (accept.includes('text/markdown')) {
+    const mdFile = file.replace(/\.html$/, '.md');
+    try {
+      await access(mdFile);
+      const content = await readFile(mdFile, 'utf8');
+      const tokens = Math.ceil(content.length / 4);
+      const customHeaders = await getCustomHeaders(pathname);
+      const headers = {
+        ...customHeaders,
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'x-markdown-tokens': String(tokens),
+      };
+      response.writeHead(200, headers);
+      response.end(content);
+      return;
+    } catch {
+      // Fallback to standard HTML serving if mdFile not found.
+    }
+  }
+
   const customHeaders = await getCustomHeaders(pathname);
   const defaultContentType = TYPES[path.extname(file)] || 'application/octet-stream';
   const headers = {
@@ -95,4 +117,5 @@ createServer(async (request, response) => {
 }).listen(PORT, HOST, () => {
   console.log(`datarust site preview: http://${HOST}:${PORT}`);
 });
+
 
