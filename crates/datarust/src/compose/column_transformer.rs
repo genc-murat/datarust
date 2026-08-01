@@ -56,6 +56,17 @@ pub enum ColumnSpec {
 }
 
 /// Combined input carrying numeric and categorical columns of equal row count.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::{Matrix, StrMatrix};
+/// use datarust::compose::Table;
+///
+/// let numeric = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+/// let categorical = StrMatrix::new(vec![vec!["a".into()], vec!["b".into()]]).unwrap();
+/// let table = Table::new(numeric, categorical).unwrap();
+/// ```
 #[derive(Debug, Clone)]
 pub struct Table {
     /// The numeric feature matrix.

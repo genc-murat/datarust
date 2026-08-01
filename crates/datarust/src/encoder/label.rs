@@ -19,6 +19,17 @@ pub enum LabelHandleUnknown {
 /// `sklearn.preprocessing.LabelEncoder`. Classes are sorted (sklearn default).
 ///
 /// Operates on `Vec<String>` (1-D) input.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::{LabelEncoder, LabelTransformer};
+///
+/// let mut enc = LabelEncoder::new();
+/// enc.fit(["cat", "dog", "cat", "bird"]).unwrap();
+/// let labels = enc.transform(["bird", "cat"]).unwrap();
+/// // bird=0, cat=1, dog=2
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LabelEncoder {

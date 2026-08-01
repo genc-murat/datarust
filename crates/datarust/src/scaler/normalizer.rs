@@ -24,6 +24,19 @@ pub enum Norm {
 ///
 /// `Normalizer` is stateless — `fit` does nothing meaningful — matching
 /// sklearn behavior.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::{Normalizer, Norm};
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![3.0, 4.0], vec![1.0, 0.0]]).unwrap();
+/// let mut normalizer = Normalizer::new(Norm::L2);
+/// let normalized = normalizer.fit_transform(&x).unwrap();
+/// // row 0: [0.6, 0.8], L2 norm = 1.0
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Normalizer {

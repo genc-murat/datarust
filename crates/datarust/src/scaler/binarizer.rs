@@ -8,6 +8,19 @@ use crate::Transformer;
 ///
 /// Values strictly greater than `threshold` become 1.0; all others become 0.0.
 /// The transformer is stateless (no statistics learned during fit).
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::Binarizer;
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![-1.0, 0.5, 1.0], vec![0.0, 2.0, 3.0]]).unwrap();
+/// let mut binarizer = Binarizer::new().threshold(0.0);
+/// let binary = binarizer.fit_transform(&x).unwrap();
+/// // [[0.0, 1.0, 1.0], [0.0, 1.0, 1.0]]
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Binarizer {

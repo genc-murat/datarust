@@ -27,6 +27,19 @@ pub enum KnnWeights {
 /// and a reference row are observed.  The raw squared distance is scaled by
 /// `total_features / n_observed_features` so that pairs with many co-observed
 /// features are preferred.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::imputer::{KnnImputer, KnnWeights};
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![1.0, 2.0], vec![f64::NAN, 4.0], vec![3.0, 6.0]]).unwrap();
+/// let mut imputer = KnnImputer::new(2, KnnWeights::Uniform);
+/// let filled = imputer.fit_transform(&x).unwrap();
+/// // NAN at (1,0) imputed from nearest neighbors
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KnnImputer {

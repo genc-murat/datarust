@@ -42,6 +42,19 @@ pub enum PCASolver {
 ///
 /// Centers the data, computes the covariance matrix, and projects onto the
 /// top eigenvectors found via Jacobi eigenvalue decomposition.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::decomposition::{PCA, PCAComponents};
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]).unwrap();
+/// let mut pca = PCA::new(PCAComponents::Count(1));
+/// let projected = pca.fit_transform(&x).unwrap();
+/// // projects 2D data onto 1 principal component
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PCA {

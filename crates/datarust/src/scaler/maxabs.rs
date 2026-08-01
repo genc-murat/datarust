@@ -19,6 +19,19 @@ use rayon::prelude::*;
 ///
 /// When the column contains only zeros the scaled values remain zero
 /// (division by zero is guarded).
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::MaxAbsScaler;
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![-3.0, 10.0], vec![3.0, -10.0]]).unwrap();
+/// let mut scaler = MaxAbsScaler::new();
+/// let scaled = scaler.fit_transform(&x).unwrap();
+/// // output in [-1, 1] range: [[-1.0, 1.0], [1.0, -1.0]]
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MaxAbsScaler {

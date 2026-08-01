@@ -19,6 +19,19 @@ pub enum PowerMethod {
 ///
 /// After the power transform, the data is standardized (zero mean, unit
 /// variance) per column when `standardize = true` (default).
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::PowerTransformer;
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![1.0], vec![2.0], vec![3.0], vec![10.0], vec![50.0]]).unwrap();
+/// let mut pt = PowerTransformer::new();
+/// let transformed = pt.fit_transform(&x).unwrap();
+/// // output is approximately standard normal per column
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PowerTransformer {

@@ -11,6 +11,17 @@ use crate::model_selection::rng::Rng;
 ///
 /// Divides `n_samples` into `n_splits` consecutive folds (optionally shuffled);
 /// each fold serves as the test set once, with the remaining folds as training.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::model_selection::KFold;
+///
+/// let kf = KFold::new().with_n_splits(3);
+/// for (train_idx, test_idx) in kf.split(6).unwrap() {
+///     // train_idx and test_idx are non-overlapping index sets
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct KFold {
     n_splits: usize,
@@ -104,6 +115,18 @@ impl KFold {
 ///
 /// Each fold approximately preserves the class ratio of the full dataset.
 /// Labels may contain two or more non-negative integer-valued classes.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::model_selection::StratifiedKFold;
+///
+/// let skf = StratifiedKFold::new().with_n_splits(3);
+/// let y = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+/// for (train_idx, test_idx) in skf.split(&y).unwrap() {
+///     // each fold preserves class ratio
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct StratifiedKFold {
     n_splits: usize,

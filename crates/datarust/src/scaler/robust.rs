@@ -10,6 +10,19 @@ use crate::Transformer;
 /// Centers to the median and scales according to the interquartile range
 /// (default Q3 - Q1) using numpy-default linear quantile interpolation.
 /// The quantile range can be customized via [`quantile_range`](RobustScaler::quantile_range).
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::RobustScaler;
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![100.0, 200.0]]).unwrap();
+/// let mut scaler = RobustScaler::new();
+/// let scaled = scaler.fit_transform(&x).unwrap();
+/// // outlier at 100.0 has limited effect on scaling
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RobustScaler {

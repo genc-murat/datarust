@@ -17,6 +17,19 @@ pub enum UnknownFrequency {
 
 /// Replace each category with its frequency (count or normalized proportion),
 /// mirroring a common "frequency / count encoder".
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::StrMatrix;
+/// use datarust::encoder::FrequencyEncoder;
+/// use datarust::traits::CategoricalTransformer;
+///
+/// let x = StrMatrix::new(vec![vec!["a".into()], vec!["b".into()], vec!["a".into()]]).unwrap();
+/// let mut enc = FrequencyEncoder::new(true); // normalized proportions
+/// let encoded = enc.fit_transform(&x).unwrap();
+/// // "a" -> 0.667, "b" -> 0.333
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FrequencyEncoder {

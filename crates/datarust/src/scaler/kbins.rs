@@ -30,6 +30,20 @@ pub enum KBinsEncode {
 
 /// Bin continuous data into intervals, mirroring
 /// `sklearn.preprocessing.KBinsDiscretizer`.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::{KBinsDiscretizer, BinStrategy, KBinsEncode};
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![0.0], vec![1.0], vec![2.0], vec![3.0], vec![4.0]]).unwrap();
+/// let mut kb = KBinsDiscretizer::new(3).unwrap()
+///     .strategy(BinStrategy::Uniform);
+/// let discretized = kb.fit_transform(&x).unwrap();
+/// // values binned into 3 ordinal bins
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KBinsDiscretizer {

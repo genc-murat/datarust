@@ -8,6 +8,19 @@ use crate::Transformer;
 /// `sklearn.feature_selection.VarianceThreshold`.
 ///
 /// Keeps features whose variance exceeds `threshold`.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::selection::VarianceThreshold;
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![0.0, 1.0], vec![0.0, 2.0], vec![0.0, 3.0]]).unwrap();
+/// let mut selector = VarianceThreshold::new(0.0).unwrap();
+/// let selected = selector.fit_transform(&x).unwrap();
+/// // column 0 has zero variance and is dropped
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VarianceThreshold {

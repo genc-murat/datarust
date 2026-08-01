@@ -33,6 +33,19 @@ pub enum DropStrategy {
 /// Input is a 2-D [`StrMatrix`]; output is a dense [`Matrix`] by default.
 /// Use [`sparse_output`](OneHotEncoder::sparse_output) and
 /// [`transform_sparse`](OneHotEncoder::transform_sparse) for CSR output.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::StrMatrix;
+/// use datarust::encoder::OneHotEncoder;
+/// use datarust::traits::CategoricalTransformer;
+///
+/// let x = StrMatrix::new(vec![vec!["a".into(), "x".into()], vec!["b".into(), "y".into()]]).unwrap();
+/// let mut enc = OneHotEncoder::new();
+/// let encoded = enc.fit_transform(&x).unwrap();
+/// // 4 columns: a, b, x, y (one-hot)
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OneHotEncoder {

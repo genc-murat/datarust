@@ -22,6 +22,19 @@ pub enum ImputeStrategy {
 /// Impute missing values (represented as `f64::NAN`) using a per-column statistic.
 ///
 /// Mirrors `sklearn.impute.SimpleImputer`.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::imputer::{SimpleImputer, ImputeStrategy};
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![1.0, f64::NAN], vec![f64::NAN, 4.0], vec![3.0, 6.0]]).unwrap();
+/// let mut imputer = SimpleImputer::new(ImputeStrategy::Mean);
+/// let filled = imputer.fit_transform(&x).unwrap();
+/// // NAN values replaced with column means
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SimpleImputer {

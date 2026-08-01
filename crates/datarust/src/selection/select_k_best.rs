@@ -23,6 +23,21 @@ pub enum ScoreFunc {
 /// `sklearn.feature_selection.SelectKBest`.
 ///
 /// Labels (`y`) are provided via a side-channel at `fit_with_labels` time.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::selection::{SelectKBest, ScoreFunc};
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![1.0, 0.1, 10.0], vec![2.0, 0.2, 20.0], vec![3.0, 0.3, 30.0]]).unwrap();
+/// let y = vec!["cat_a", "cat_b", "cat_b"];
+/// let mut selector = SelectKBest::new(ScoreFunc::FClassif, 2).unwrap();
+/// selector.fit_with_labels(&x, &y).unwrap();
+/// let selected = selector.transform(&x).unwrap();
+/// // keeps 2 best features out of 3
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SelectKBest {

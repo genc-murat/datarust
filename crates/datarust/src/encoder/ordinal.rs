@@ -35,6 +35,19 @@ pub enum OrdinalHandleUnknown {
 ///
 /// Categories per column are sorted lexicographically by default (sklearn
 /// default), or can be user-specified via [`OrdinalCategories::Manual`].
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::StrMatrix;
+/// use datarust::encoder::{OrdinalEncoder, OrdinalCategories};
+/// use datarust::traits::CategoricalTransformer;
+///
+/// let x = StrMatrix::new(vec![vec!["low".into()], vec!["high".into()], vec!["medium".into()]]).unwrap();
+/// let mut enc = OrdinalEncoder::new(OrdinalCategories::Auto);
+/// let encoded = enc.fit_transform(&x).unwrap();
+/// // categories sorted: high=0, low=1, medium=2
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OrdinalEncoder {

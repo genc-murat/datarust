@@ -15,6 +15,17 @@ fn checked_element_count(rows: usize, cols: usize) -> Result<usize> {
 /// The flat layout (one allocation, stride-1 row traversal) keeps every numeric
 /// hot loop cache-friendly and auto-vectorizable — a substantial speedup over
 /// the previous `Vec<Vec<f64>>` representation on large dense inputs.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::Matrix;
+///
+/// let m = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+/// assert_eq!(m.nrows(), 2);
+/// assert_eq!(m.ncols(), 2);
+/// assert_eq!(m.get(0, 0), 1.0);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Matrix {
     /// Flat row-major data, length `rows * cols`.
@@ -63,6 +74,15 @@ impl Matrix {
     ///
     /// With the flat internal representation this stores the buffer directly,
     /// with no per-row chunking or copy.
+    ///
+    /// ```rust
+    /// use datarust::Matrix;
+    ///
+    /// let m = Matrix::from_flat(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+    /// assert_eq!(m.nrows(), 2);
+    /// assert_eq!(m.ncols(), 3);
+    /// assert_eq!(m.get(1, 2), 6.0);
+    /// ```
     pub fn from_flat(rows: usize, cols: usize, flat: Vec<f64>) -> Result<Self> {
         if rows == 0 || cols == 0 {
             return Err(DatarustError::EmptyInput("zero dimension".into()));
@@ -226,6 +246,13 @@ impl Matrix {
     }
 
     /// Returns the row at index `i` as a contiguous slice.
+    ///
+    /// ```rust
+    /// use datarust::Matrix;
+    ///
+    /// let m = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+    /// assert_eq!(m.row(0), &[1.0, 2.0]);
+    /// ```
     #[inline]
     pub fn row(&self, i: usize) -> &[f64] {
         let start = i * self.cols;
@@ -233,6 +260,13 @@ impl Matrix {
     }
 
     /// Returns column `j` as a new vector.
+    ///
+    /// ```rust
+    /// use datarust::Matrix;
+    ///
+    /// let m = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+    /// assert_eq!(m.col(1), vec![2.0, 4.0]);
+    /// ```
     pub fn col(&self, j: usize) -> Vec<f64> {
         (0..self.rows)
             .map(|i| self.data[i * self.cols + j])
@@ -266,6 +300,16 @@ impl Matrix {
     }
 
     /// Returns the transpose of the matrix.
+    ///
+    /// ```rust
+    /// use datarust::Matrix;
+    ///
+    /// let m = Matrix::new(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]).unwrap();
+    /// let t = m.transpose();
+    /// assert_eq!(t.nrows(), 3);
+    /// assert_eq!(t.ncols(), 2);
+    /// assert_eq!(t.get(0, 1), 4.0);
+    /// ```
     pub fn transpose(&self) -> Matrix {
         let rows = self.rows;
         let cols = self.cols;
@@ -283,6 +327,16 @@ impl Matrix {
     }
 
     /// Multiplies two matrices and returns the product.
+    ///
+    /// ```rust
+    /// use datarust::Matrix;
+    ///
+    /// let a = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+    /// let b = Matrix::new(vec![vec![5.0, 6.0], vec![7.0, 8.0]]).unwrap();
+    /// let c = a.matmul(&b).unwrap();
+    /// assert_eq!(c.get(0, 0), 19.0); // 1*5 + 2*7
+    /// assert_eq!(c.get(0, 1), 22.0); // 1*6 + 2*8
+    /// ```
     #[allow(clippy::needless_range_loop)]
     pub fn matmul(&self, other: &Matrix) -> Result<Matrix> {
         if self.cols != other.rows {

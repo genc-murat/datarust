@@ -7,6 +7,15 @@ use crate::error::{DatarustError, Result};
 use rayon::prelude::*;
 
 /// Returns the mean of each column.
+///
+/// ```rust
+/// use datarust::stats::column_mean;
+///
+/// let data = vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
+/// let means = column_mean(&data);
+/// assert!((means[0] - 3.0).abs() < 1e-12);
+/// assert!((means[1] - 4.0).abs() < 1e-12);
+/// ```
 pub fn column_mean(data: &[Vec<f64>]) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -55,6 +64,14 @@ pub fn column_mean_flat(data: &[f64], rows: usize, cols: usize) -> Vec<f64> {
 }
 
 /// Returns the variance of each column using the given delta degrees of freedom.
+///
+/// ```rust
+/// use datarust::stats::column_variance;
+///
+/// let data = vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
+/// let var = column_variance(&data, 0);
+/// assert!((var[0] - 8.0 / 3.0).abs() < 1e-12);
+/// ```
 pub fn column_variance(data: &[Vec<f64>], ddof: usize) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -105,6 +122,14 @@ pub fn column_std(data: &[Vec<f64>], ddof: usize) -> Vec<f64> {
 }
 
 /// Returns the minimum value of each column.
+///
+/// ```rust
+/// use datarust::stats::column_min;
+///
+/// let data = vec![vec![3.0, 1.0], vec![1.0, 5.0], vec![2.0, 2.0]];
+/// let mins = column_min(&data);
+/// assert_eq!(mins, vec![1.0, 1.0]);
+/// ```
 pub fn column_min(data: &[Vec<f64>]) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -126,6 +151,14 @@ pub fn column_min(data: &[Vec<f64>]) -> Vec<f64> {
 }
 
 /// Returns the maximum value of each column.
+///
+/// ```rust
+/// use datarust::stats::column_max;
+///
+/// let data = vec![vec![3.0, 1.0], vec![1.0, 5.0], vec![2.0, 2.0]];
+/// let maxs = column_max(&data);
+/// assert_eq!(maxs, vec![3.0, 5.0]);
+/// ```
 pub fn column_max(data: &[Vec<f64>]) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -192,6 +225,13 @@ pub fn max(data: &[f64]) -> f64 {
 /// population variance, `ddof = 1` the sample variance (the numpy default).
 /// Returns [`f64::NAN`] for an empty slice or when `ddof >= n` (a
 /// non-positive denominator), mirroring [`column_variance`].
+///
+/// ```rust
+/// use datarust::stats::variance;
+///
+/// let v = variance(&[1.0, 2.0, 3.0, 4.0, 5.0], 1);
+/// assert!((v - 2.5).abs() < 1e-12);
+/// ```
 pub fn variance(data: &[f64], ddof: usize) -> f64 {
     let n = data.len();
     if n == 0 || ddof >= n {
@@ -207,6 +247,13 @@ pub fn variance(data: &[f64], ddof: usize) -> f64 {
 ///
 /// The 1-D counterpart of [`column_std`]. Simply `variance(data, ddof).sqrt()`;
 /// see [`variance`] for the `ddof` and empty-slice semantics.
+///
+/// ```rust
+/// use datarust::stats::std;
+///
+/// let s = std(&[1.0, 2.0, 3.0, 4.0, 5.0], 1);
+/// assert!((s - 1.5811).abs() < 1e-3);
+/// ```
 pub fn std(data: &[f64], ddof: usize) -> f64 {
     variance(data, ddof).sqrt()
 }
@@ -215,6 +262,13 @@ pub fn std(data: &[f64], ddof: usize) -> f64 {
 ///
 /// Returns `None` for an empty slice instead of panicking. Callers that can
 /// guarantee a non-empty slice may safely [`Option::unwrap`] the result.
+///
+/// ```rust
+/// use datarust::stats::median_sorted;
+///
+/// let sorted = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+/// assert!((median_sorted(&sorted).unwrap() - 3.0).abs() < 1e-12);
+/// ```
 pub fn median_sorted(sorted: &[f64]) -> Option<f64> {
     let n = sorted.len();
     if n == 0 {
@@ -850,6 +904,15 @@ fn covariance_centered_gemm(
 /// Covariance matrix (p × p) for an n × p data matrix.
 ///
 /// `ddof=0` gives population covariance, `ddof=1` gives sample covariance.
+///
+/// ```rust
+/// use datarust::stats::covariance_matrix;
+///
+/// let data = vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
+/// let cov = covariance_matrix(&data, 0);
+/// assert_eq!(cov.len(), 2);
+/// assert_eq!(cov[0].len(), 2);
+/// ```
 #[allow(clippy::needless_range_loop)]
 pub fn covariance_matrix(data: &[Vec<f64>], ddof: usize) -> Vec<Vec<f64>> {
     if data.is_empty() {
@@ -865,6 +928,14 @@ pub fn covariance_matrix(data: &[Vec<f64>], ddof: usize) -> Vec<Vec<f64>> {
 }
 
 /// Pearson correlation matrix (p × p).
+///
+/// ```rust
+/// use datarust::stats::correlation_matrix;
+///
+/// let data = vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
+/// let corr = correlation_matrix(&data);
+/// assert!((corr[0][1] - 1.0).abs() < 1e-12); // perfect correlation
+/// ```
 pub fn correlation_matrix(data: &[Vec<f64>]) -> Vec<Vec<f64>> {
     if data.is_empty() {
         return vec![];

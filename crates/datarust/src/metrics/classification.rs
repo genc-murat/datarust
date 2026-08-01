@@ -42,6 +42,15 @@ pub struct ConfusionMatrix {
 ///
 /// For binary `{0, 1}` input this reduces to the familiar `[[tn, fp], [fn, tp]]`
 /// 2×2 layout.
+///
+/// ```rust
+/// use datarust::metrics::classification::confusion_matrix;
+///
+/// let y_true = vec![0.0, 1.0, 1.0, 0.0];
+/// let y_pred = vec![0.0, 1.0, 0.0, 1.0];
+/// let cm = confusion_matrix(&y_true, &y_pred).unwrap();
+/// // [[2, 0], [1, 1]] (tn=2, fp=0, fn=1, tp=1)
+/// ```
 pub fn confusion_matrix(y_true: &[f64], y_pred: &[f64]) -> Result<Vec<Vec<usize>>> {
     Ok(confusion_matrix_labeled(y_true, y_pred)?.counts)
 }
@@ -67,6 +76,15 @@ pub fn confusion_matrix_labeled(y_true: &[f64], y_pred: &[f64]) -> Result<Confus
 ///
 /// Mirrors `sklearn.metrics.accuracy_score`. Works for binary and multiclass
 /// labels; two samples agree when their validated integer labels are equal.
+///
+/// ```rust
+/// use datarust::metrics::classification::accuracy_score;
+///
+/// let y_true = vec![0.0, 1.0, 2.0, 2.0];
+/// let y_pred = vec![0.0, 1.0, 1.0, 2.0];
+/// let acc = accuracy_score(&y_true, &y_pred).unwrap();
+/// assert!((acc - 0.75).abs() < 1e-12);
+/// ```
 pub fn accuracy_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
     check_lengths(y_true, y_pred)?;
     let n = y_true.len();

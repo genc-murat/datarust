@@ -25,6 +25,20 @@ pub enum UnknownTarget {
 ///   (n_c * mean_c + smoothing * global_mean) / (n_c + smoothing)
 /// ```
 /// Operates on a 2-D [`StrMatrix`] and a 1-D target vector.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::{Matrix, StrMatrix};
+/// use datarust::encoder::TargetEncoder;
+/// use datarust::traits::TargetTransformer;
+///
+/// let x = StrMatrix::new(vec![vec!["a".into()], vec!["b".into()], vec!["a".into()]]).unwrap();
+/// let y = vec![1.0, 2.0, 3.0];
+/// let mut enc = TargetEncoder::new(1.0).unwrap();
+/// let encoded = enc.fit_transform(&x, &y).unwrap();
+/// // category "a" -> smoothed mean of [1.0, 3.0]
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TargetEncoder {

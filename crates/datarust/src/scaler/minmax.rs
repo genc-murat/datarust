@@ -7,6 +7,19 @@ use crate::Transformer;
 /// Scale features to a given range, mirroring `sklearn.preprocessing.MinMaxScaler`.
 ///
 /// Default range is `[0, 1]`.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::MinMaxScaler;
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]).unwrap();
+/// let mut scaler = MinMaxScaler::new();
+/// let scaled = scaler.fit_transform(&x).unwrap();
+/// // scaled values are in [0, 1] range
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MinMaxScaler {

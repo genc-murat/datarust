@@ -13,6 +13,25 @@ use crate::Transformer;
 /// The function pointers are **not** serialized.  After deserialization call
 /// [`set_func`](FunctionTransformer::set_func) to restore the function before
 /// calling `transform` or `inverse_transform`.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::function_transformer::FunctionTransformer;
+/// use datarust::Transformer;
+///
+/// fn log_transform(x: &Matrix) -> datarust::Result<Matrix> {
+///     let data: Vec<Vec<f64>> = x.rows_ref().iter()
+///         .map(|row| row.iter().map(|v| (v + 1.0).ln()).collect())
+///         .collect();
+///     Matrix::new(data)
+/// }
+///
+/// let x = Matrix::new(vec![vec![0.0, 1.0], vec![2.0, 3.0]]).unwrap();
+/// let mut ft = FunctionTransformer::new(log_transform);
+/// let out = ft.fit_transform(&x).unwrap();
+/// ```
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FunctionTransformer {

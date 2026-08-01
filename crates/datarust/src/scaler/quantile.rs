@@ -19,6 +19,19 @@ pub enum OutputDistribution {
 ///
 /// This method transforms the features to follow a uniform or a normal
 /// distribution. It is robust to outliers.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::scaler::QuantileTransformer;
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![0.0], vec![1.0], vec![2.0], vec![3.0], vec![4.0]]).unwrap();
+/// let mut qt = QuantileTransformer::new(5).unwrap();
+/// let transformed = qt.fit_transform(&x).unwrap();
+/// // output follows uniform distribution on [0, 1]
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct QuantileTransformer {

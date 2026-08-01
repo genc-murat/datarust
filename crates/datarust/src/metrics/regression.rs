@@ -62,6 +62,15 @@ pub fn mean_squared_error(y_true: &[f64], y_pred: &[f64], squared: bool) -> Resu
 /// Mirrors `sklearn.metrics.mean_absolute_error`.
 ///
 /// `MAE = (1/n) Σ |yᵢ − ŷᵢ|`
+///
+/// ```rust
+/// use datarust::metrics::regression::mean_absolute_error;
+///
+/// let y_true = vec![3.0, -0.5, 2.0, 7.0];
+/// let y_pred = vec![2.5, 0.0, 2.0, 8.0];
+/// let mae = mean_absolute_error(&y_true, &y_pred).unwrap();
+/// assert!((mae - 0.5).abs() < 1e-12);
+/// ```
 pub fn mean_absolute_error(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
     check_lengths(y_true, y_pred)?;
     let n = y_true.len() as f64;
@@ -78,6 +87,15 @@ pub fn mean_absolute_error(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
 /// Mirrors `sklearn.metrics.r2_score`. Best possible score is 1.0; a model
 /// that always predicts the mean of `y_true` scores 0.0; worse models score
 /// negative.
+///
+/// ```rust
+/// use datarust::metrics::regression::r2_score;
+///
+/// let y_true = vec![3.0, -0.5, 2.0, 7.0];
+/// let y_pred = vec![2.5, 0.0, 2.0, 8.0];
+/// let r2 = r2_score(&y_true, &y_pred).unwrap();
+/// assert!((r2 - 0.9486).abs() < 1e-3);
+/// ```
 ///
 /// `R² = 1 − SS_res / SS_tot` where `SS_res = Σ (yᵢ − ŷᵢ)²` and
 /// `SS_tot = Σ (yᵢ − ȳ)²`.

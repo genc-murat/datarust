@@ -8,6 +8,19 @@ use crate::Transformer;
 ///
 /// For `degree=2` and input `[x1, x2]` the output (with bias) is:
 /// `[1, x1, x2, x1^2, x1*x2, x2^2]`.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use datarust::matrix::Matrix;
+/// use datarust::polynomial::PolynomialFeatures;
+/// use datarust::Transformer;
+///
+/// let x = Matrix::new(vec![vec![2.0, 3.0]]).unwrap();
+/// let mut poly = PolynomialFeatures::new(2);
+/// let out = poly.fit_transform(&x).unwrap();
+/// // [1, 2, 3, 4, 6, 9] with bias
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PolynomialFeatures {

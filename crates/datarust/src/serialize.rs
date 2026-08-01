@@ -15,11 +15,29 @@ use std::path::Path;
 use crate::error::Result;
 
 /// Serialize a fitted transformer to a pretty-printed JSON string.
+///
+/// ```rust,no_run
+/// use datarust::{Matrix, StandardScaler, Transformer};
+/// use datarust::serialize::to_json;
+///
+/// let x = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+/// let mut scaler = StandardScaler::new();
+/// scaler.fit(&x).unwrap();
+/// let json = to_json(&scaler).unwrap();
+/// ```
 pub fn to_json<T: serde::Serialize>(t: &T) -> Result<String> {
     Ok(serde_json::to_string_pretty(t)?)
 }
 
 /// Deserialize a transformer from a JSON string.
+///
+/// ```rust,no_run
+/// use datarust::StandardScaler;
+/// use datarust::serialize::from_json;
+///
+/// let json = r#"{"mean":[2.0],"std":[1.0],"with_mean":true,"with_std":true,"fitted":true}"#;
+/// let scaler: StandardScaler = from_json(json).unwrap();
+/// ```
 pub fn from_json<T: serde::de::DeserializeOwned>(s: &str) -> Result<T> {
     Ok(serde_json::from_str(s)?)
 }
@@ -28,6 +46,16 @@ pub fn from_json<T: serde::de::DeserializeOwned>(s: &str) -> Result<T> {
 ///
 /// `path` accepts anything implementing [`AsRef<Path>`] (e.g. `&str`, `String`,
 /// `&Path`, `PathBuf`).
+///
+/// ```rust,no_run
+/// use datarust::{Matrix, StandardScaler, Transformer};
+/// use datarust::serialize::save_json;
+///
+/// let x = Matrix::new(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
+/// let mut scaler = StandardScaler::new();
+/// scaler.fit(&x).unwrap();
+/// save_json(&scaler, "scaler.json").unwrap();
+/// ```
 pub fn save_json<T: serde::Serialize, P: AsRef<Path>>(t: &T, path: P) -> Result<()> {
     let s = to_json(t)?;
     std::fs::write(path, s)?;
@@ -38,6 +66,13 @@ pub fn save_json<T: serde::Serialize, P: AsRef<Path>>(t: &T, path: P) -> Result<
 ///
 /// `path` accepts anything implementing [`AsRef<Path>`] (e.g. `&str`, `String`,
 /// `&Path`, `PathBuf`).
+///
+/// ```rust,no_run
+/// use datarust::StandardScaler;
+/// use datarust::serialize::load_json;
+///
+/// let scaler: StandardScaler = load_json("scaler.json").unwrap();
+/// ```
 pub fn load_json<T: serde::de::DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<T> {
     let s = std::fs::read_to_string(path)?;
     from_json(&s)
