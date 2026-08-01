@@ -343,8 +343,18 @@ mod tests {
 
     #[test]
     fn compute_cramers_v_perfect_association() {
-        let a = ["x".to_string(), "x".to_string(), "y".to_string(), "y".to_string()];
-        let b = ["p".to_string(), "p".to_string(), "q".to_string(), "q".to_string()];
+        let a = [
+            "x".to_string(),
+            "x".to_string(),
+            "y".to_string(),
+            "y".to_string(),
+        ];
+        let b = [
+            "p".to_string(),
+            "p".to_string(),
+            "q".to_string(),
+            "q".to_string(),
+        ];
         let cols = vec![("a", &a[..]), ("b", &b[..])];
         let mat = compute_cramers_v(&cols).unwrap();
         assert_eq!(mat.labels, vec!["a", "b"]);
@@ -374,7 +384,12 @@ mod tests {
     #[test]
     fn compute_point_biserial_binary_categorical() {
         let numeric = vec![("num", &[1.0, 1.0, 5.0, 5.0][..])];
-        let cat = ["low".to_string(), "low".to_string(), "high".to_string(), "high".to_string()];
+        let cat = [
+            "low".to_string(),
+            "low".to_string(),
+            "high".to_string(),
+            "high".to_string(),
+        ];
         let categorical = vec![("cat", &cat[..])];
         let entries = compute_point_biserial(&numeric, &categorical);
         assert_eq!(entries.len(), 1);
@@ -395,7 +410,12 @@ mod tests {
     #[test]
     fn compute_point_biserial_with_missing() {
         let numeric = vec![("num", &[1.0, f64::NAN, 5.0, 5.0][..])];
-        let cat = ["low".to_string(), "low".to_string(), "high".to_string(), "high".to_string()];
+        let cat = [
+            "low".to_string(),
+            "low".to_string(),
+            "high".to_string(),
+            "high".to_string(),
+        ];
         let categorical = vec![("cat", &cat[..])];
         let entries = compute_point_biserial(&numeric, &categorical);
         // Should still work, missing in numeric is filtered
@@ -404,8 +424,16 @@ mod tests {
 
     #[test]
     fn relationships_compute_all() {
-        let numeric = vec![("x", &[1.0, 2.0, 3.0, 4.0][..]), ("y", &[2.0, 4.0, 6.0, 8.0][..])];
-        let cat = ["p".to_string(), "p".to_string(), "q".to_string(), "q".to_string()];
+        let numeric = vec![
+            ("x", &[1.0, 2.0, 3.0, 4.0][..]),
+            ("y", &[2.0, 4.0, 6.0, 8.0][..]),
+        ];
+        let cat = [
+            "p".to_string(),
+            "p".to_string(),
+            "q".to_string(),
+            "q".to_string(),
+        ];
         let categorical = vec![("a", &cat[..])];
         let rels = Relationships::compute(&numeric, &categorical).unwrap();
         assert!(rels.pearson.is_some());
@@ -416,8 +444,18 @@ mod tests {
     #[test]
     fn relationships_compute_only_categorical() {
         let numeric = vec![];
-        let a = ["p".to_string(), "p".to_string(), "q".to_string(), "q".to_string()];
-        let b = ["x".to_string(), "x".to_string(), "y".to_string(), "y".to_string()];
+        let a = [
+            "p".to_string(),
+            "p".to_string(),
+            "q".to_string(),
+            "q".to_string(),
+        ];
+        let b = [
+            "x".to_string(),
+            "x".to_string(),
+            "y".to_string(),
+            "y".to_string(),
+        ];
         let categorical = vec![("a", &a[..]), ("b", &b[..])];
         let rels = Relationships::compute(&numeric, &categorical).unwrap();
         assert!(rels.pearson.is_none());

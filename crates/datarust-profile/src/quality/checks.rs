@@ -309,10 +309,15 @@ pub fn run_checks(profile: &DatasetProfile, thresholds: &Thresholds) -> Vec<Qual
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profile::{ColumnProfile, DatasetProfile, FiveNumber, NumericStats, Histogram};
+    use crate::profile::{ColumnProfile, DatasetProfile, FiveNumber, Histogram, NumericStats};
     use crate::types::{ColumnType, Severity};
 
-    fn make_numeric_profile(name: &str, mean: f64, std: f64, missing_fraction: f64) -> ColumnProfile {
+    fn make_numeric_profile(
+        name: &str,
+        mean: f64,
+        std: f64,
+        missing_fraction: f64,
+    ) -> ColumnProfile {
         ColumnProfile {
             name: name.to_string(),
             column_type: ColumnType::Numeric,
@@ -322,10 +327,19 @@ mod tests {
             numeric: Some(NumericStats {
                 mean,
                 std,
-                five: FiveNumber { min: mean - 2.0 * std, q1: mean - 0.67 * std, median: mean, q3: mean + 0.67 * std, max: mean + 2.0 * std },
+                five: FiveNumber {
+                    min: mean - 2.0 * std,
+                    q1: mean - 0.67 * std,
+                    median: mean,
+                    q3: mean + 0.67 * std,
+                    max: mean + 2.0 * std,
+                },
                 skewness: 0.0,
                 kurtosis: 0.0,
-                histogram: Histogram { edges: vec![], counts: vec![] },
+                histogram: Histogram {
+                    edges: vec![],
+                    counts: vec![],
+                },
                 outlier_count: 0,
                 outlier_fraction: 0.0,
             }),
@@ -333,7 +347,12 @@ mod tests {
         }
     }
 
-    fn make_categorical_profile(name: &str, unique: usize, imbalance_ratio: f64, missing_fraction: f64) -> ColumnProfile {
+    fn make_categorical_profile(
+        name: &str,
+        unique: usize,
+        imbalance_ratio: f64,
+        missing_fraction: f64,
+    ) -> ColumnProfile {
         ColumnProfile {
             name: name.to_string(),
             column_type: ColumnType::Categorical,
@@ -365,7 +384,9 @@ mod tests {
             relationships: None,
         };
         let issues = run_checks(&profile, &Thresholds::default());
-        assert!(issues.iter().any(|i| i.kind == QualityKind::HighMissing && i.severity == Severity::Warning));
+        assert!(issues
+            .iter()
+            .any(|i| i.kind == QualityKind::HighMissing && i.severity == Severity::Warning));
     }
 
     #[test]
@@ -382,7 +403,9 @@ mod tests {
             relationships: None,
         };
         let issues = run_checks(&profile, &Thresholds::default());
-        assert!(issues.iter().any(|i| i.kind == QualityKind::HighMissing && i.severity == Severity::Critical));
+        assert!(issues
+            .iter()
+            .any(|i| i.kind == QualityKind::HighMissing && i.severity == Severity::Critical));
     }
 
     #[test]
@@ -435,7 +458,9 @@ mod tests {
             relationships: None,
         };
         let issues = run_checks(&profile, &Thresholds::default());
-        assert!(issues.iter().any(|i| i.kind == QualityKind::Imbalance && i.severity == Severity::Critical));
+        assert!(issues
+            .iter()
+            .any(|i| i.kind == QualityKind::Imbalance && i.severity == Severity::Critical));
     }
 
     #[test]
@@ -469,7 +494,9 @@ mod tests {
             relationships: None,
         };
         let issues = run_checks(&profile, &Thresholds::default());
-        assert!(issues.iter().any(|i| i.kind == QualityKind::DuplicateRows && i.severity == Severity::Warning));
+        assert!(issues
+            .iter()
+            .any(|i| i.kind == QualityKind::DuplicateRows && i.severity == Severity::Warning));
     }
 
     #[test]
@@ -489,10 +516,16 @@ mod tests {
             duplicate_fraction: 0.0,
             target_column: None,
             columns: vec![col1, col2],
-            relationships: Some(Relationships { pearson: Some(pearson), cramers_v: None, point_biserial: vec![] }),
+            relationships: Some(Relationships {
+                pearson: Some(pearson),
+                cramers_v: None,
+                point_biserial: vec![],
+            }),
         };
         let issues = run_checks(&profile, &Thresholds::default());
-        assert!(issues.iter().any(|i| i.kind == QualityKind::HighCorrelation));
+        assert!(issues
+            .iter()
+            .any(|i| i.kind == QualityKind::HighCorrelation));
     }
 
     #[test]
@@ -512,10 +545,16 @@ mod tests {
             duplicate_fraction: 0.0,
             target_column: Some("target".to_string()),
             columns: vec![col1, col2],
-            relationships: Some(Relationships { pearson: Some(pearson), cramers_v: None, point_biserial: vec![] }),
+            relationships: Some(Relationships {
+                pearson: Some(pearson),
+                cramers_v: None,
+                point_biserial: vec![],
+            }),
         };
         let issues = run_checks(&profile, &Thresholds::default());
-        assert!(issues.iter().any(|i| i.kind == QualityKind::TargetLeakage && i.severity == Severity::Critical));
+        assert!(issues
+            .iter()
+            .any(|i| i.kind == QualityKind::TargetLeakage && i.severity == Severity::Critical));
     }
 
     #[test]

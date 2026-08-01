@@ -411,10 +411,7 @@ fn column_type_display() {
 fn severity_display() {
     assert_eq!(datarust_profile::Severity::Info.to_string(), "info");
     assert_eq!(datarust_profile::Severity::Warning.to_string(), "warning");
-    assert_eq!(
-        datarust_profile::Severity::Critical.to_string(),
-        "critical"
-    );
+    assert_eq!(datarust_profile::Severity::Critical.to_string(), "critical");
 }
 
 // ---- dataset profile edge cases --------------------------------------------
@@ -503,7 +500,12 @@ fn memory_bytes_numeric_only() {
 fn memory_bytes_mixed_table() {
     let numeric = Matrix::from_rows(vec![vec![1.0, 2.0], vec![3.0, 4.0]]).unwrap();
     let cat = StrMatrix::from_strings(vec![vec!["a", "b"], vec!["c", "d"]]).unwrap();
-    let p = profile_table(Some(&numeric), Some(&cat), &names(&["n1", "n2", "c1", "c2"])).unwrap();
+    let p = profile_table(
+        Some(&numeric),
+        Some(&cat),
+        &names(&["n1", "n2", "c1", "c2"]),
+    )
+    .unwrap();
     // 2 numeric cols x 2 rows x 8 bytes + 2 categorical cols x 2 rows x 24 bytes = 32 + 96 = 128
     assert_eq!(p.memory_bytes, 128);
 }
@@ -594,12 +596,7 @@ fn html_report_with_no_findings() {
 #[test]
 fn html_report_with_findings() {
     // Data with a constant column to trigger a finding
-    let m = Matrix::from_rows(vec![
-        vec![5.0, 10.0],
-        vec![5.0, 20.0],
-        vec![5.0, 30.0],
-    ])
-    .unwrap();
+    let m = Matrix::from_rows(vec![vec![5.0, 10.0], vec![5.0, 20.0], vec![5.0, 30.0]]).unwrap();
     let p = profile_matrix(&m, Some(&names(&["c", "v"]))).unwrap();
     let html = datarust_profile::report::to_html(&p);
     assert!(html.contains("Data quality findings"));
@@ -624,13 +621,8 @@ fn html_report_to_html_with_custom_findings() {
 #[test]
 fn html_report_point_biserial_table() {
     let numeric = Matrix::from_rows(vec![vec![1.0], vec![1.0], vec![5.0], vec![5.0]]).unwrap();
-    let cat = StrMatrix::from_strings(vec![
-        vec!["low"],
-        vec!["low"],
-        vec!["high"],
-        vec!["high"],
-    ])
-    .unwrap();
+    let cat = StrMatrix::from_strings(vec![vec!["low"], vec!["low"], vec!["high"], vec!["high"]])
+        .unwrap();
     let p = profile_table_with_target(
         Some(&numeric),
         Some(&cat),
@@ -762,14 +754,7 @@ fn quality_all_issues_together() {
 
 #[test]
 fn histogram_edge_labels_in_html() {
-    let m = Matrix::from_rows(vec![
-        vec![1.0],
-        vec![2.0],
-        vec![3.0],
-        vec![4.0],
-        vec![5.0],
-    ])
-    .unwrap();
+    let m = Matrix::from_rows(vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0], vec![5.0]]).unwrap();
     let p = profile_matrix(&m, Some(&names(&["x"]))).unwrap();
     let html = datarust_profile::report::to_html(&p);
     assert!(html.contains("chart-labels"));
@@ -797,13 +782,8 @@ fn skewness_positive_html() {
 
 #[test]
 fn categorical_with_all_unique_values() {
-    let s = StrMatrix::from_strings(vec![
-        vec!["id_1"],
-        vec!["id_2"],
-        vec!["id_3"],
-        vec!["id_4"],
-    ])
-    .unwrap();
+    let s = StrMatrix::from_strings(vec![vec!["id_1"], vec!["id_2"], vec!["id_3"], vec!["id_4"]])
+        .unwrap();
     let p = profile_str_matrix(&s, Some(&names(&["uid"]))).unwrap();
     let c = p.columns[0].categorical.as_ref().unwrap();
     assert_eq!(c.unique, 4);
@@ -833,13 +813,7 @@ fn str_matrix_infers_float_strings_as_numeric() {
 
 #[test]
 fn str_matrix_missing_values_not_counted_in_categorical() {
-    let s = StrMatrix::from_strings(vec![
-        vec!["a"],
-        vec!["NA"],
-        vec!["a"],
-        vec!["b"],
-    ])
-    .unwrap();
+    let s = StrMatrix::from_strings(vec![vec!["a"], vec!["NA"], vec!["a"], vec!["b"]]).unwrap();
     let p = profile_str_matrix(&s, Some(&names(&["k"]))).unwrap();
     let c = p.columns[0].categorical.as_ref().unwrap();
     // unique=2 (a, b), top=a with freq=2
@@ -899,8 +873,12 @@ fn large_outlier_fraction_triggers_warning() {
     // Q1≈1, Q3≈2, IQR≈1, upper fence≈3.5 → 100,200,300,400 are outliers
     // 4/20 = 20% outliers -> severity Warning (>= 0.2)
     let mut rows: Vec<Vec<f64>> = Vec::new();
-    for _ in 0..10 { rows.push(vec![1.0]); }
-    for _ in 0..6 { rows.push(vec![2.0]); }
+    for _ in 0..10 {
+        rows.push(vec![1.0]);
+    }
+    for _ in 0..6 {
+        rows.push(vec![2.0]);
+    }
     rows.push(vec![100.0]);
     rows.push(vec![200.0]);
     rows.push(vec![300.0]);
