@@ -14,6 +14,9 @@
 /.well-known/mcp/server-card.json
   Content-Type: application/json; charset=utf-8
 
+/.well-known/agent-skills/index.json
+  Content-Type: application/json; charset=utf-8
+
 /assets/*
   Cache-Control: public, max-age=86400
 

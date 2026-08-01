@@ -178,8 +178,31 @@ async function check() {
     errors.push(`.well-known/mcp/server-card.json: failed to read or parse SEP-1649 MCP server card (${err.message})`);
   }
 
+  const agentSkillsFile = path.join(DIST, '.well-known', 'agent-skills', 'index.json');
+  try {
+    const indexRaw = await readFile(agentSkillsFile, 'utf8');
+    const index = JSON.parse(indexRaw);
+    if (index.$schema !== 'https://schemas.agentskills.io/discovery/0.2.0/schema.json') {
+      errors.push('.well-known/agent-skills/index.json: $schema must be https://schemas.agentskills.io/discovery/0.2.0/schema.json');
+    }
+    if (!Array.isArray(index.skills) || index.skills.length === 0) {
+      errors.push('.well-known/agent-skills/index.json: skills array is missing or empty');
+    } else {
+      for (const skill of index.skills) {
+        if (!skill.name || !skill.type || !skill.description || !skill.url || !skill.digest) {
+          errors.push(`.well-known/agent-skills/index.json: skill entry ${skill.name || 'unknown'} missing required fields (name, type, description, url, digest)`);
+        }
+        if (!skill.digest.startsWith('sha256:')) {
+          errors.push(`.well-known/agent-skills/index.json: skill ${skill.name} digest must start with sha256:`);
+        }
+      }
+    }
+  } catch (err) {
+    errors.push(`.well-known/agent-skills/index.json: failed to read or parse Agent Skills index (${err.message})`);
+  }
 
   if (errors.length) {
+
 
     console.error(`Site check failed with ${errors.length} error(s):\n${errors.map((error) => `- ${error}`).join('\n')}`);
     process.exitCode = 1;

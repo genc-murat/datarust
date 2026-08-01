@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "data-profiling",
+      "type": "skill-md",
+      "description": "Automated dataset profiling, quality checks, pairwise relationships, and report generation in Rust with datarust-profile.",
+      "url": "https://datarust.dev/.well-known/agent-skills/data-profiling/SKILL.md",
+      "digest": "sha256:37f53b3c6244c79faf457e700a13a7c5a4751d49d9097161ccf9ef26106a0abd"
+    },
+    {
+      "name": "classical-ml",
+      "type": "skill-md",
+      "description": "Scikit-learn-style preprocessing, feature engineering, and classical machine learning estimators in Rust with datarust.",
+      "url": "https://datarust.dev/.well-known/agent-skills/classical-ml/SKILL.md",
+      "digest": "sha256:d1d53c4d1780974be64fbca0ef1a0fba84244b5e7df8eea9b913a2f36883f1ad"
+    }
+  ]
+}
