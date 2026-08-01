@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "datarust",
+  "account_id": "a9586af5ab9d93b50bc28a551cd348fb",
   "compatibility_date": "2026-07-26",
   "routes": [
     {
