@@ -152,3 +152,108 @@ if (tocLinks.length && 'IntersectionObserver' in window) {
     if (heading) observer.observe(heading);
   });
 }
+
+function registerWebMcp() {
+  const modelContext = navigator.modelContext || (window.navigator && window.navigator.modelContext);
+  if (!modelContext) return;
+
+  const tools = [
+    {
+      name: 'search_docs',
+      description: 'Search documentation and field notes for datarust and datarust-profile.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search term' }
+        },
+        required: ['query']
+      },
+      execute: async ({ query }) => {
+        if (!searchIndex) {
+          const res = await fetch('/search.json');
+          searchIndex = await res.json();
+        }
+        const terms = (query || '').toLowerCase().split(/\s+/).filter(Boolean);
+        const matches = searchIndex
+          .map((entry) => {
+            const title = entry.title.toLowerCase();
+            const haystack = `${entry.title} ${entry.description} ${entry.headings.join(' ')}`.toLowerCase();
+            const score = terms.reduce((total, term) => total + (title.includes(term) ? 3 : haystack.includes(term) ? 1 : -10), 0);
+            return { entry, score };
+          })
+          .filter(({ score }) => score >= terms.length)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5)
+          .map(({ entry }) => entry);
+        return { results: matches };
+      }
+    },
+    {
+      name: 'get_crate_info',
+      description: 'Get details, features, and documentation links for datarust or datarust-profile crates.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          crateName: { type: 'string', enum: ['datarust', 'datarust-profile'], description: 'Crate name' }
+        },
+        required: ['crateName']
+      },
+      execute: async ({ crateName }) => {
+        if (crateName === 'datarust-profile') {
+          return {
+            name: 'datarust-profile',
+            tagline: 'One-call data profiling and quality reports',
+            docs: 'https://datarust.dev/docs/profile/README/',
+            cratesUrl: 'https://crates.io/crates/datarust-profile'
+          };
+        }
+        return {
+          name: 'datarust',
+          tagline: 'Scikit-learn-style preprocessing and classical ML',
+          docs: 'https://datarust.dev/docs/',
+          cratesUrl: 'https://crates.io/crates/datarust'
+        };
+      }
+    },
+    {
+      name: 'navigate_to',
+      description: 'Navigate to a documentation or field note page on datarust.dev.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Target path (e.g. /docs/, /blog/)' }
+        },
+        required: ['path']
+      },
+      execute: async ({ path }) => {
+        if (path) window.location.href = path;
+        return { success: true, path };
+      }
+    }
+  ];
+
+  if (typeof modelContext.provideContext === 'function') {
+    try {
+      modelContext.provideContext({ tools });
+    } catch {
+      // Fallback
+    }
+  }
+
+  if (typeof modelContext.registerTool === 'function') {
+    tools.forEach((tool) => {
+      try {
+        modelContext.registerTool(tool);
+      } catch {
+        // Fallback
+      }
+    });
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', registerWebMcp);
+} else {
+  registerWebMcp();
+}
+

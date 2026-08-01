@@ -201,7 +201,21 @@ async function check() {
     errors.push(`.well-known/agent-skills/index.json: failed to read or parse Agent Skills index (${err.message})`);
   }
 
+  const appJsFile = path.join(DIST, 'assets', 'app.js');
+  try {
+    const appJsContent = await readFile(appJsFile, 'utf8');
+    if (!appJsContent.includes('navigator.modelContext') && !appJsContent.includes('modelContext')) {
+      errors.push('assets/app.js: missing WebMCP navigator.modelContext tool registration');
+    }
+    if (!appJsContent.includes('provideContext') && !appJsContent.includes('registerTool')) {
+      errors.push('assets/app.js: missing provideContext/registerTool call for WebMCP');
+    }
+  } catch {
+    errors.push('assets/app.js: missing client application JavaScript bundle');
+  }
+
   if (errors.length) {
+
 
 
     console.error(`Site check failed with ${errors.length} error(s):\n${errors.map((error) => `- ${error}`).join('\n')}`);
