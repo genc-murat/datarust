@@ -49,12 +49,16 @@ Richer categorical profiling: string-length distributions, casing/format flags
 that catch silent duplicates (`"USA"` vs `"usa "`), and identifier-vs-feature
 scoring beyond the current binary `NearUnique` check.
 
-### v0.7 — Performance
+### v0.7 — Performance (In progress)
 
-Make the hot paths competitive with vectorised tooling: a `rayon` feature,
-hash-based deduplication replacing the O(n²) row scan, cache-friendly
-column-major gathering, and a `criterion` benchmark suite guarding
-throughput in CI.
+The hot paths are already competitive with the reference tools: row
+deduplication is hash-based instead of an O(n²) scan, categorical columns are
+gathered as borrowed `&str` slices (no per-cell `String` clones) with all
+infer/profile/relationships paths generic over `T: AsRef<str>`, missing
+detection no longer allocates, and Cramér's V runs over pre-encoded integer
+codes. A `criterion` benchmark suite now guards throughput
+(`profile_str_matrix` 100 000 × 20: 269 ms → 132 ms). Remaining: a `rayon`
+feature for parallel per-column statistics.
 
 ### v0.8 — Time series
 

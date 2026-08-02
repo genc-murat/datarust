@@ -6,6 +6,28 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
 
 ## Unreleased
 
+- **PowerTransformer:** the lambda-search likelihood now uses a precomputed
+  jacobian term and a single fused Welford mean+variance pass — `fit_transform`
+  1 000 × 20 drops from 36.4 ms to 20.3 ms (1.8×).
+- **QuantileTransformer:** column-major `transform` with a single trailing
+  transpose — 10 000 × 100 goes from 27.7 ms to 23.1 ms.
+- **Quantile statistics:** introselect replaces the full sort in
+  `column_quantiles_many` — 100 000 × 100 goes from 144.7 ms to 86.0 ms (1.7×).
+- **KnnImputer:** precomputed observed features, borrow-based neighbor search
+  (no per-row reference-matrix copy), and partial neighbor selection —
+  `fit_transform` 1 000 × 20 drops from 72.9 ms to 18.1 ms (4.0×).
+- **KMeans:** nearest-centroid assignment via precomputed squared norms (FMA
+  dot product) — `fit_predict` 5 000 × 20 × 10 is ~7% faster.
+- **LogisticRegression:** the IRLS weighted Gram matrix and multinomial Hessian
+  are accumulated in place (rank-1 sums, lower triangle only) instead of via a
+  materialised weighted design matrix and general matmul — `fit` 50 000 × 100
+  drops from 3.86 s to 1.56 s (2.5×).
+- **datarust-profile:** hash-based row deduplication, borrow-based categorical
+  access (`T: AsRef<str>`), allocation-free missing detection, and integer-coded
+  Cramér's V — `profile_str_matrix` 100 000 × 20 drops from 269 ms to 132 ms.
+
+For the full details and performance tables, see the [canonical changelog](https://github.com/genc-murat/datarust/blob/main/crates/datarust/CHANGELOG.md).
+
 ## 0.6.5
 
 - Restored enforceable Rust 1.70 compatibility by pinning MSRV-compatible

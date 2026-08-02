@@ -17,25 +17,28 @@ pub fn is_missing(s: &str) -> bool {
     if t.is_empty() {
         return true;
     }
-    matches!(
-        t.to_ascii_lowercase().as_str(),
-        "na" | "n/a" | "null" | "nan" | "none" | "-" | "?"
-    )
+    t.eq_ignore_ascii_case("na")
+        || t.eq_ignore_ascii_case("n/a")
+        || t.eq_ignore_ascii_case("null")
+        || t.eq_ignore_ascii_case("nan")
+        || t.eq_ignore_ascii_case("none")
+        || t == "-"
+        || t == "?"
 }
 
 /// Infers the type of a single column from its raw string cells.
 ///
 /// Empty/missing cells are skipped; the column is numeric only when **every**
 /// non-missing cell parses as `f64`.
-pub fn infer_column(cells: &[String]) -> ColumnType {
-    let any_non_missing = cells.iter().any(|c| !is_missing(c));
+pub fn infer_column<T: AsRef<str>>(cells: &[T]) -> ColumnType {
+    let any_non_missing = cells.iter().any(|c| !is_missing(c.as_ref()));
     if !any_non_missing {
         // Treat an all-empty column as categorical (nothing numeric to summarise).
         return ColumnType::Categorical;
     }
     let all_numeric = cells
         .iter()
-        .all(|c| is_missing(c) || c.trim().parse::<f64>().is_ok());
+        .all(|c| is_missing(c.as_ref()) || c.as_ref().trim().parse::<f64>().is_ok());
     if all_numeric {
         ColumnType::Numeric
     } else {
@@ -47,10 +50,11 @@ pub fn infer_column(cells: &[String]) -> ColumnType {
 /// [`f64::NAN`]. Non-missing cells that fail to parse are also emitted as
 /// `NaN`; callers that need strict parsing should validate with
 /// [`infer_column`] first.
-pub fn parse_numeric_column(cells: &[String]) -> Vec<f64> {
+pub fn parse_numeric_column<T: AsRef<str>>(cells: &[T]) -> Vec<f64> {
     cells
         .iter()
         .map(|c| {
+            let c = c.as_ref();
             if is_missing(c) {
                 f64::NAN
             } else {

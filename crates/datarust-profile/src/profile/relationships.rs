@@ -1,7 +1,7 @@
 //! Pairwise relationship statistics: Pearson correlation, Cramér's V, and point-biserial correlation.
 
 use crate::infer;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// A square symmetric correlation or association matrix between named variables.
 #[derive(Debug, Clone, PartialEq)]
@@ -39,9 +39,9 @@ pub struct Relationships {
 
 impl Relationships {
     /// Computes relationships across numeric columns and string/categorical columns.
-    pub fn compute(
+    pub fn compute<T: AsRef<str>>(
         numeric_cols: &[(&str, &[f64])],
-        categorical_cols: &[(&str, &[String])],
+        categorical_cols: &[(&str, &[T])],
     ) -> Option<Self> {
         let pearson = compute_pearson(numeric_cols);
         let cramers_v = compute_cramers_v(categorical_cols);
@@ -86,8 +86,40 @@ fn compute_pearson(cols: &[(&str, &[f64])]) -> Option<CorrelationMatrix> {
     Some(CorrelationMatrix { labels, values })
 }
 
+/// Encodes a categorical column into compact integer level codes so that
+/// pairwise Cramér's V can be computed with `usize` keys instead of hashing
+/// string tuples for every row of every column pair.
+struct CodedColumn<'a> {
+    /// Distinct non-missing trimmed levels, in first-seen order.
+    levels: Vec<&'a str>,
+    /// Per-row level code; `usize::MAX` marks a missing/empty cell.
+    codes: Vec<usize>,
+}
+
+/// Builds a [`CodedColumn`] from raw string cells in one pass.
+fn encode_column<'a, T: AsRef<str> + 'a>(cells: &'a [T]) -> CodedColumn<'a> {
+    let mut map: HashMap<&'a str, usize> = HashMap::new();
+    let mut levels: Vec<&'a str> = Vec::new();
+    let mut codes = Vec::with_capacity(cells.len());
+    for cell in cells {
+        let cell = cell.as_ref();
+        if infer::is_missing(cell) {
+            codes.push(usize::MAX);
+            continue;
+        }
+        let trimmed = cell.trim();
+        let next = levels.len();
+        let code = *map.entry(trimmed).or_insert_with(|| {
+            levels.push(trimmed);
+            next
+        });
+        codes.push(code);
+    }
+    CodedColumn { levels, codes }
+}
+
 /// Computes Cramér's V matrix for categorical columns.
-fn compute_cramers_v(cols: &[(&str, &[String])]) -> Option<CorrelationMatrix> {
+fn compute_cramers_v<T: AsRef<str>>(cols: &[(&str, &[T])]) -> Option<CorrelationMatrix> {
     if cols.len() < 2 {
         return None;
     }
@@ -96,6 +128,8 @@ fn compute_cramers_v(cols: &[(&str, &[String])]) -> Option<CorrelationMatrix> {
         return None;
     }
 
+    let encoded: Vec<CodedColumn> = cols.iter().map(|(_, values)| encode_column(values)).collect();
+
     let p = cols.len();
     let labels: Vec<String> = cols.iter().map(|(name, _)| name.to_string()).collect();
     let mut values = vec![vec![0.0; p]; p];
@@ -103,7 +137,7 @@ fn compute_cramers_v(cols: &[(&str, &[String])]) -> Option<CorrelationMatrix> {
     for i in 0..p {
         values[i][i] = 1.0;
         for j in (i + 1)..p {
-            let v = calculate_cramers_v_pair(cols[i].1, cols[j].1);
+            let v = cramers_v_from_codes(&encoded[i], &encoded[j]);
             values[i][j] = v;
             values[j][i] = v;
         }
@@ -112,71 +146,88 @@ fn compute_cramers_v(cols: &[(&str, &[String])]) -> Option<CorrelationMatrix> {
     Some(CorrelationMatrix { labels, values })
 }
 
-/// Computes Cramér's V for two categorical columns.
-fn calculate_cramers_v_pair(col_a: &[String], col_b: &[String]) -> f64 {
-    let n_rows = col_a.len().min(col_b.len());
-    if n_rows == 0 {
-        return 0.0;
-    }
+/// Computes Cramér's V between two pre-encoded columns.
+///
+/// Only rows where both columns are present contribute. The chi-squared
+/// statistic is computed with the `Σ O²/E − N` identity, which sums over every
+/// cell of the contingency table without materialising the empty ones. Small
+/// tables (typical for categorical profiling) use a flat array; large tables
+/// fall back to a hash map keyed by `usize`.
+fn cramers_v_from_codes(a: &CodedColumn, b: &CodedColumn) -> f64 {
+    let n = a.codes.len().min(b.codes.len());
+    let a_r = a.levels.len();
+    let a_c = b.levels.len();
+    let mut total = 0usize;
+    let mut row_totals = vec![0usize; a_r];
+    let mut col_totals = vec![0usize; a_c];
 
-    // Build contingency table ignoring missing values in either column
-    let mut counts: HashMap<(&str, &str), usize> = HashMap::new();
-    let mut row_levels: HashSet<&str> = HashSet::new();
-    let mut col_levels: HashSet<&str> = HashSet::new();
-    let mut total_valid = 0usize;
+    let flat_limit = 1 << 16;
+    let mut flat: Option<Vec<usize>> =
+        if a_r * a_c <= flat_limit { Some(vec![0; a_r * a_c]) } else { None };
+    let mut counts: HashMap<usize, usize> = HashMap::new();
 
-    for i in 0..n_rows {
-        let cell_a = &col_a[i];
-        let cell_b = &col_b[i];
-        if infer::is_missing(cell_a) || infer::is_missing(cell_b) {
+    for i in 0..n {
+        let ri = a.codes[i];
+        let ci = b.codes[i];
+        if ri == usize::MAX || ci == usize::MAX {
             continue;
         }
-        let a_str = cell_a.trim();
-        let b_str = cell_b.trim();
-        row_levels.insert(a_str);
-        col_levels.insert(b_str);
-        *counts.entry((a_str, b_str)).or_insert(0) += 1;
-        total_valid += 1;
+        row_totals[ri] += 1;
+        col_totals[ci] += 1;
+        let key = ri * a_c + ci;
+        match flat.as_mut() {
+            Some(t) => t[key] += 1,
+            None => *counts.entry(key).or_insert(0) += 1,
+        }
+        total += 1;
     }
 
-    let r = row_levels.len();
-    let c = col_levels.len();
-
-    if total_valid == 0 || r <= 1 || c <= 1 {
+    if total == 0 {
+        return 0.0;
+    }
+    // Distinct levels restricted to rows where both columns are present.
+    let r = row_totals.iter().filter(|&&t| t > 0).count();
+    let c = col_totals.iter().filter(|&&t| t > 0).count();
+    if r <= 1 || c <= 1 {
         return 0.0;
     }
 
-    // Row totals and Col totals
-    let mut row_totals: HashMap<&str, usize> = HashMap::new();
-    let mut col_totals: HashMap<&str, usize> = HashMap::new();
-
-    for (&(r_val, c_val), &cnt) in &counts {
-        *row_totals.entry(r_val).or_insert(0) += cnt;
-        *col_totals.entry(c_val).or_insert(0) += cnt;
-    }
-
-    // Chi-squared calculation
+    let n_f = total as f64;
     let mut chi2 = 0.0;
-    let n_f64 = total_valid as f64;
-
-    for &r_val in &row_levels {
-        let r_tot = *row_totals.get(r_val).unwrap_or(&0) as f64;
-        for &c_val in &col_levels {
-            let c_tot = *col_totals.get(c_val).unwrap_or(&0) as f64;
-            let expected = (r_tot * c_tot) / n_f64;
-            if expected > 0.0 {
-                let observed = *counts.get(&(r_val, c_val)).unwrap_or(&0) as f64;
-                let diff = observed - expected;
-                chi2 += (diff * diff) / expected;
+    match flat {
+        Some(t) => {
+            for (key, &obs) in t.iter().enumerate() {
+                if obs == 0 {
+                    continue;
+                }
+                let ri = key / a_c;
+                let ci = key % a_c;
+                let expected = row_totals[ri] as f64 * col_totals[ci] as f64 / n_f;
+                if expected > 0.0 {
+                    let obs_f = obs as f64;
+                    chi2 += obs_f * obs_f / expected;
+                }
+            }
+        }
+        None => {
+            for (&key, &obs) in &counts {
+                let ri = key / a_c;
+                let ci = key % a_c;
+                let expected = row_totals[ri] as f64 * col_totals[ci] as f64 / n_f;
+                if expected > 0.0 {
+                    let obs_f = obs as f64;
+                    chi2 += obs_f * obs_f / expected;
+                }
             }
         }
     }
+    chi2 -= n_f;
 
     let min_dim = (r - 1).min(c - 1) as f64;
     if min_dim == 0.0 {
         0.0
     } else {
-        let v = (chi2 / (n_f64 * min_dim)).sqrt();
+        let v = (chi2 / (n_f * min_dim)).sqrt();
         if v.is_nan() {
             0.0
         } else {
@@ -186,9 +237,9 @@ fn calculate_cramers_v_pair(col_a: &[String], col_b: &[String]) -> f64 {
 }
 
 /// Computes point-biserial correlation between binary categorical columns and numeric columns.
-fn compute_point_biserial(
+fn compute_point_biserial<T: AsRef<str>>(
     numeric_cols: &[(&str, &[f64])],
-    categorical_cols: &[(&str, &[String])],
+    categorical_cols: &[(&str, &[T])],
 ) -> Vec<PointBiserialEntry> {
     let mut entries = Vec::new();
 
@@ -196,6 +247,7 @@ fn compute_point_biserial(
         // Collect unique non-missing values in categorical column
         let mut unique_vals: Vec<&str> = Vec::new();
         for val in *cat_values {
+            let val = val.as_ref();
             if infer::is_missing(val) {
                 continue;
             }
@@ -219,6 +271,7 @@ fn compute_point_biserial(
         let binary_encoded: Vec<f64> = cat_values
             .iter()
             .map(|cell| {
+                let cell = cell.as_ref();
                 if infer::is_missing(cell) {
                     f64::NAN
                 } else if cell.trim() == val_0 {

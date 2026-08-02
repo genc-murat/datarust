@@ -212,9 +212,12 @@ impl ColumnProfile {
     }
 
     /// Builds a profile from raw string cells, inferring the column type.
-    pub(crate) fn from_strings(name: String, cells: &[String]) -> Self {
+    pub(crate) fn from_strings<T: AsRef<str>>(name: String, cells: &[T]) -> Self {
         let count = cells.len();
-        let missing_count = cells.iter().filter(|c| infer::is_missing(c)).count();
+        let missing_count = cells
+            .iter()
+            .filter(|c| infer::is_missing(c.as_ref()))
+            .count();
         let missing_fraction = if count == 0 {
             0.0
         } else {
@@ -250,10 +253,11 @@ impl ColumnProfile {
 }
 
 /// Tallies the non-missing cells of a categorical column.
-fn compute_categorical(cells: &[String]) -> Option<CategoricalStats> {
+fn compute_categorical<T: AsRef<str>>(cells: &[T]) -> Option<CategoricalStats> {
     let mut counts: HashMap<&str, usize> = HashMap::new();
     let mut order: Vec<&str> = Vec::new();
     for cell in cells {
+        let cell = cell.as_ref();
         if infer::is_missing(cell) {
             continue;
         }

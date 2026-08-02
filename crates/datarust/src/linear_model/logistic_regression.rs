@@ -396,28 +396,41 @@ impl LogisticRegression {
                 w[i] = wi;
                 z[i] = eta + (y[i] - p_i) / wi;
             }
-            // Build weighted design X_w (row i scaled by sqrt(w_i)) and solve
-            // (X_wᵀ X_w) β = X_wᵀ (sqrt(w) ⊙ z)  ==  (Xᵀ W X) β = Xᵀ W z.
-            let mut xw_flat = vec![0.0; n * p];
+            // Solve (Xᵀ W X) β = Xᵀ W z. Build the weighted Gram matrix and
+            // right-hand side directly by rank-1 accumulation over the rows —
+            // one cache-friendly pass instead of materialising the weighted
+            // design matrix, transposing it, and running the general matmul.
+            // Only the lower triangle of G is accumulated (half the work) and
+            // mirrored afterwards so the eigen pseudo-inverse sees a full
+            // symmetric matrix.
+            let mut g = vec![0.0_f64; p * p];
+            let mut rhs = vec![0.0_f64; p];
             for i in 0..n {
-                let sw = w[i].sqrt();
+                let wi = w[i];
+                let row = &design[i * p..(i + 1) * p];
+                let wz = wi * z[i];
+                // Xᵀ W z
+                for (r, &xj) in rhs.iter_mut().zip(row.iter()) {
+                    *r += wz * xj;
+                }
+                // Xᵀ W X, lower triangle only.
                 for j in 0..p {
-                    xw_flat[i * p + j] = design[i * p + j] * sw;
+                    let wxj = wi * row[j];
+                    let gj = &mut g[j * p..(j + 1) * p];
+                    for (slot, &xjp) in gj.iter_mut().take(j + 1).zip(row.iter()) {
+                        *slot += wxj * xjp;
+                    }
                 }
             }
-            let xw = Matrix::from_flat(n, p, xw_flat)?;
-            let xtw = xw.transpose();
-            let xtwx = xtw.matmul(&xw)?; // p×p
-            let wz: Vec<f64> = (0..n).map(|i| w[i].sqrt() * z[i]).collect();
-            let wz_col = Matrix::from_flat(n, 1, wz)?;
-            let xtwz = xtw.matmul(&wz_col)?; // p×1
-            let rhs = xtwz.as_slice().to_vec();
+            for j in 0..p {
+                for jp in (j + 1)..p {
+                    g[j * p + jp] = g[jp * p + j];
+                }
+            }
 
             let new_beta = match self.solver {
-                LogisticSolver::Cholesky => cholesky::solve_spd_system(xtwx.as_slice(), p, &rhs),
-                LogisticSolver::Svd => {
-                    super::linear_regression::solve_via_eig_pinv(xtwx.as_slice(), &rhs, p)
-                }
+                LogisticSolver::Cholesky => cholesky::solve_spd_system(&g, p, &rhs),
+                LogisticSolver::Svd => super::linear_regression::solve_via_eig_pinv(&g, &rhs, p),
             }?;
             // Check convergence by max coordinate change.
             let max_delta = beta
@@ -529,26 +542,39 @@ impl LogisticRegression {
 
             // Hessian H (km1*p × km1*p), block structure:
             //   H[(c,p),(c',p')] = Σ_i x_ip * x_ip' * P_ic * (δ_{cc'} − P_ic')
-            // Build the dense matrix.
+            // Each (c, c') block is a symmetric rank-1-sum; accumulate only the
+            // lower triangle of every block and mirror the blocks afterwards.
             let d = km1 * p;
             let mut hess = vec![0.0_f64; d * d];
             for i in 0..n {
                 let row = &design[i * p..(i + 1) * p];
                 for c in 0..km1 {
+                    let pc = probs[i * k + c];
                     for cp in 0..km1 {
-                        let coef = probs[i * k + c]
-                            * ((if c == cp { 1.0 } else { 0.0 }) - probs[i * k + cp]);
+                        let coef = pc * ((if c == cp { 1.0 } else { 0.0 }) - probs[i * k + cp]);
                         if coef.abs() < 1e-15 {
                             continue;
                         }
-                        // Outer product row ⊗ row scaled by coef, into block (c, cp).
                         let block_row = c * p;
                         let block_col = cp * p;
                         for j in 0..p {
-                            for jp in 0..p {
-                                hess[(block_row + j) * d + (block_col + jp)] +=
-                                    row[j] * row[jp] * coef;
+                            let wxj = row[j] * coef;
+                            for jp in 0..=j {
+                                hess[(block_row + j) * d + (block_col + jp)] += wxj * row[jp];
                             }
+                        }
+                    }
+                }
+            }
+            // Mirror the lower triangle of each symmetric block.
+            for c in 0..km1 {
+                for cp in 0..km1 {
+                    let block_row = c * p;
+                    let block_col = cp * p;
+                    for j in 0..p {
+                        for jp in (j + 1)..p {
+                            hess[(block_row + jp) * d + (block_col + j)] =
+                                hess[(block_row + j) * d + (block_col + jp)];
                         }
                     }
                 }

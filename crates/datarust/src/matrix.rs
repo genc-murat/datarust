@@ -648,6 +648,14 @@ impl StrMatrix {
         self.data.iter().map(|r| r[j].clone()).collect()
     }
 
+    /// Returns column `j` as a vector of string slices borrowing from the matrix.
+    ///
+    /// Unlike [`column`](Self::column), this does not allocate or copy the cell
+    /// strings, which is faster when the column is only inspected.
+    pub fn column_refs(&self, j: usize) -> Vec<&str> {
+        self.data.iter().map(|r| r[j].as_str()).collect()
+    }
+
     /// Returns the row at index `i` as a slice.
     pub fn row(&self, i: usize) -> &[String] {
         &self.data[i]

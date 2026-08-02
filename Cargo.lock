@@ -264,7 +264,10 @@ dependencies = [
 name = "datarust-profile"
 version = "0.3.0"
 dependencies = [
+ "clap",
+ "criterion",
  "datarust",
+ "half",
  "serde",
  "serde_json",
 ]

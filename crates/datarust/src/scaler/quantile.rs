@@ -182,7 +182,7 @@ impl Transformer for QuantileTransformer {
         let n_q = self.n_quantiles.min(x.nrows());
         for j in 0..ncols {
             let mut col = x.col(j);
-            col.sort_by(|a, b| a.total_cmp(b));
+            col.sort_unstable_by(|a, b| a.total_cmp(b));
             refs_all.push(Self::compute_references(&col, n_q.max(1)));
         }
         self.references = refs_all;
@@ -203,11 +203,18 @@ impl Transformer for QuantileTransformer {
             });
         }
         x.validate_finite()?;
-        let mut out = vec![vec![0.0; x.ncols()]; x.nrows()];
-        for (i, out_row) in out.iter_mut().enumerate() {
-            for (j, cell) in out_row.iter_mut().enumerate() {
-                let percentile = Self::transform_value(x.get(i, j), &self.references[j])?;
-                *cell = match self.output_distribution {
+        let n_rows = x.nrows();
+        let n_cols = x.ncols();
+        // Column-major traversal keeps `references[j]` hot in cache across the
+        // whole inner row loop, and the per-column result vector is written
+        // sequentially before a single transpose into the row-major output.
+        let mut col_major: Vec<Vec<f64>> = vec![vec![0.0; n_rows]; n_cols];
+        for (j, target) in col_major.iter_mut().enumerate() {
+            let col = x.col(j);
+            let refs = &self.references[j];
+            for (i, &v) in col.iter().enumerate() {
+                let percentile = Self::transform_value(v, refs)?;
+                target[i] = match self.output_distribution {
                     OutputDistribution::Uniform => percentile.clamp(0.0, 1.0),
                     OutputDistribution::Normal => {
                         // Clamp percentile away from 0 and 1 to avoid infinite
@@ -216,6 +223,12 @@ impl Transformer for QuantileTransformer {
                         inv_normal_cdf(clamped)
                     }
                 };
+            }
+        }
+        let mut out = vec![vec![0.0; n_cols]; n_rows];
+        for (j, col_out) in col_major.iter().enumerate() {
+            for (i, &v) in col_out.iter().enumerate() {
+                out[i][j] = v;
             }
         }
         Matrix::new(out)

@@ -248,6 +248,35 @@ impl KMeans {
             .sum()
     }
 
+    /// Index of the centroid nearest to `row`, with ties broken toward the
+    /// lowest index (matching the previous `min_by` semantics).
+    ///
+    /// Uses the precomputed squared norms of the row and each centroid via
+    /// `‖x‖² - 2·x·c + ‖c‖²`, turning the inner loop into a pure FMA dot
+    /// product.
+    #[inline]
+    fn nearest_centroid(
+        row: &[f64],
+        row_norm: f64,
+        centers: &[Vec<f64>],
+        center_norms: &[f64],
+    ) -> usize {
+        let mut best = 0usize;
+        let mut best_d = f64::INFINITY;
+        for (c, ctr) in centers.iter().enumerate() {
+            let mut dot = 0.0;
+            for (a, b) in row.iter().zip(ctr.iter()) {
+                dot += a * b;
+            }
+            let d = row_norm + center_norms[c] - 2.0 * dot;
+            if d < best_d {
+                best_d = d;
+                best = c;
+            }
+        }
+        best
+    }
+
     /// Pick `n_clusters` initial centroids using the given strategy.
     fn init_centroids(&self, x: &Matrix, n: usize, p: usize, rng: &mut Rng) -> Vec<Vec<f64>> {
         match self.init {
@@ -316,18 +345,16 @@ impl KMeans {
         let mut labels = vec![0usize; n];
         let mut centroid_shift_sq = f64::MAX;
         let mut iter = 0;
+        let xnorms: Vec<f64> = (0..n).map(|i| x.row(i).iter().map(|v| v * v).sum()).collect();
+        let mut cnorms: Vec<f64> = centers
+            .iter()
+            .map(|c| c.iter().map(|v| v * v).sum())
+            .collect();
 
         while iter < self.max_iter && centroid_shift_sq > self.tol {
             // Assignment step: each point to its nearest centroid.
             for (label, i) in labels.iter_mut().zip(0..n) {
-                let row = x.row(i);
-                let (best_idx, _) = centers
-                    .iter()
-                    .enumerate()
-                    .map(|(c, ctr)| (c, Self::sq_dist(row, ctr)))
-                    .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                    .unwrap_or((0, 0.0));
-                *label = best_idx;
+                *label = Self::nearest_centroid(x.row(i), xnorms[i], &centers, &cnorms);
             }
 
             // Update step: recompute centroids as the mean of their members.
@@ -335,8 +362,10 @@ impl KMeans {
             let mut counts = vec![0usize; self.n_clusters];
             for (i, &label) in labels.iter().enumerate() {
                 counts[label] += 1;
-                for (j, center) in new_centers[label].iter_mut().enumerate() {
-                    *center += x.get(i, j);
+                let row = x.row(i);
+                let center = &mut new_centers[label];
+                for (j, &v) in row.iter().enumerate() {
+                    center[j] += v;
                 }
             }
             for (c, center) in new_centers.iter_mut().enumerate() {
@@ -348,6 +377,7 @@ impl KMeans {
                     // Empty cluster: keep the old centroid.
                     center.copy_from_slice(&centers[c]);
                 }
+                cnorms[c] = center.iter().map(|v| v * v).sum();
             }
 
             // Convergence: squared Frobenius norm of centroid shift.
@@ -463,17 +493,20 @@ impl Clusterer for KMeans {
         }
         x.validate_finite()?;
         let n = x.nrows();
+        let xnorms: Vec<f64> = (0..n).map(|i| x.row(i).iter().map(|v| v * v).sum()).collect();
+        let cnorms: Vec<f64> = self
+            .cluster_centers_
+            .iter()
+            .map(|c| c.iter().map(|v| v * v).sum())
+            .collect();
         let mut out = vec![0usize; n];
         for (i, slot) in out.iter_mut().enumerate() {
-            let row = x.row(i);
-            let (best_idx, _) = self
-                .cluster_centers_
-                .iter()
-                .enumerate()
-                .map(|(c, ctr)| (c, Self::sq_dist(row, ctr)))
-                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                .unwrap_or((0, 0.0));
-            *slot = best_idx;
+            *slot = Self::nearest_centroid(
+                x.row(i),
+                xnorms[i],
+                &self.cluster_centers_,
+                &cnorms,
+            );
         }
         Ok(out)
     }

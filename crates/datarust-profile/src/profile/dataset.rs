@@ -5,6 +5,7 @@ use datarust::{stats, Matrix, StrMatrix};
 use super::column::{ColumnProfile, FiveNumber, PrecomputedStats};
 use crate::error::{ProfileError, Result};
 use crate::infer;
+use std::collections::HashSet;
 
 /// Rough memory estimate for one column, in bytes, based on cell count and type.
 fn column_bytes(column_type: crate::types::ColumnType, count: usize) -> usize {
@@ -119,7 +120,8 @@ impl DatasetProfile {
             .iter()
             .map(|(n, v)| (n.as_str(), v.as_slice()))
             .collect();
-        let relationships = Relationships::compute(&num_refs, &[]);
+        let empty_cat: Vec<(&str, &[&str])> = Vec::new();
+        let relationships = Relationships::compute(&num_refs, &empty_cat);
 
         let duplicate_rows = count_duplicate_numeric(m);
         Ok(Self::finish(
@@ -151,10 +153,10 @@ impl DatasetProfile {
         let mut columns = Vec::with_capacity(cols);
         let mut memory_bytes = 0usize;
         let mut numeric_data: Vec<(String, Vec<f64>)> = Vec::new();
-        let mut categorical_data: Vec<(String, Vec<String>)> = Vec::new();
+        let mut categorical_data: Vec<(String, Vec<&str>)> = Vec::new();
 
         for (j, name) in resolved.iter().enumerate().take(cols) {
-            let cells = m.column(j);
+            let cells = m.column_refs(j);
             let profile = ColumnProfile::from_strings(name.clone(), &cells);
             memory_bytes += column_bytes(profile.column_type, rows);
             match profile.column_type {
@@ -173,7 +175,7 @@ impl DatasetProfile {
             .iter()
             .map(|(n, v)| (n.as_str(), v.as_slice()))
             .collect();
-        let cat_refs: Vec<(&str, &[String])> = categorical_data
+        let cat_refs: Vec<(&str, &[&str])> = categorical_data
             .iter()
             .map(|(n, v)| (n.as_str(), v.as_slice()))
             .collect();
@@ -239,7 +241,7 @@ impl DatasetProfile {
         let mut columns = Vec::with_capacity(cols);
         let mut memory_bytes = 0usize;
         let mut numeric_data: Vec<(String, Vec<f64>)> = Vec::new();
-        let mut categorical_data: Vec<(String, Vec<String>)> = Vec::new();
+        let mut categorical_data: Vec<(String, Vec<&str>)> = Vec::new();
 
         if let Some(nm) = numeric {
             for (j, name) in names.iter().enumerate().take(n_numeric) {
@@ -251,7 +253,7 @@ impl DatasetProfile {
         }
         if let Some(cm) = categorical {
             for (offset, j) in (n_numeric..cols).enumerate() {
-                let cells = cm.column(offset);
+                let cells = cm.column_refs(offset);
                 let profile = ColumnProfile::from_strings(names[j].clone(), &cells);
                 memory_bytes += column_bytes(profile.column_type, rows);
                 match profile.column_type {
@@ -271,7 +273,7 @@ impl DatasetProfile {
             .iter()
             .map(|(n, v)| (n.as_str(), v.as_slice()))
             .collect();
-        let cat_refs: Vec<(&str, &[String])> = categorical_data
+        let cat_refs: Vec<(&str, &[&str])> = categorical_data
             .iter()
             .map(|(n, v)| (n.as_str(), v.as_slice()))
             .collect();
@@ -322,33 +324,41 @@ impl DatasetProfile {
 fn count_duplicate_numeric(m: &Matrix) -> usize {
     let rows = m.nrows();
     let cols = m.ncols();
-    let mut seen: Vec<Vec<f64>> = Vec::with_capacity(rows);
+    let mut seen: HashSet<Vec<u64>> = HashSet::with_capacity(rows.min(1 << 20));
     let mut dupes = 0usize;
     for i in 0..rows {
-        let row: Vec<f64> = (0..cols).map(|j| m.get(i, j)).collect();
-        if seen.iter().any(|r| r == &row) {
+        // Rows containing NaN never equal anything under `f64`'s `PartialEq`
+        // (NaN != NaN), so they are skipped entirely. `-0.0` and `0.0` are
+        // equal under `PartialEq`, so both are canonicalized to the same bits.
+        let mut row = Vec::with_capacity(cols);
+        let mut has_nan = false;
+        for j in 0..cols {
+            let v = m.get(i, j);
+            if v.is_nan() {
+                has_nan = true;
+                break;
+            }
+            row.push(if v == 0.0 { 0 } else { v.to_bits() });
+        }
+        if has_nan {
+            continue;
+        }
+        if !seen.insert(row) {
             dupes += 1;
-        } else {
-            seen.push(row);
         }
     }
-    // Dedup-by-difference: duplicate_rows counts rows beyond the first
-    // occurrence. The loop above already does that correctly.
-    let _ = rows; // suppress unused warning path
     dupes
 }
 
 fn count_duplicate_str(m: &StrMatrix) -> usize {
     let rows = m.nrows();
     let cols = m.ncols();
-    let mut seen: Vec<Vec<String>> = Vec::with_capacity(rows);
+    let mut seen: HashSet<Vec<&str>> = HashSet::with_capacity(rows.min(1 << 20));
     let mut dupes = 0usize;
     for i in 0..rows {
-        let row: Vec<String> = (0..cols).map(|j| m.get(i, j).to_string()).collect();
-        if seen.iter().any(|r| r == &row) {
+        let row: Vec<&str> = (0..cols).map(|j| m.get(i, j)).collect();
+        if !seen.insert(row) {
             dupes += 1;
-        } else {
-            seen.push(row);
         }
     }
     dupes
@@ -356,18 +366,28 @@ fn count_duplicate_str(m: &StrMatrix) -> usize {
 
 fn count_duplicate_table(numeric: &Matrix, categorical: &StrMatrix) -> usize {
     let rows = numeric.nrows();
-    let mut seen: Vec<(Vec<f64>, Vec<String>)> = Vec::with_capacity(rows);
+    let mut seen: HashSet<(Vec<u64>, Vec<&str>)> =
+        HashSet::with_capacity(rows.min(1 << 20));
     let mut dupes = 0usize;
     for i in 0..rows {
-        let nr: Vec<f64> = (0..numeric.ncols()).map(|j| numeric.get(i, j)).collect();
-        let cr: Vec<String> = (0..categorical.ncols())
-            .map(|j| categorical.get(i, j).to_string())
+        let mut nr: Vec<u64> = Vec::with_capacity(numeric.ncols());
+        let mut has_nan = false;
+        for j in 0..numeric.ncols() {
+            let v = numeric.get(i, j);
+            if v.is_nan() {
+                has_nan = true;
+                break;
+            }
+            nr.push(if v == 0.0 { 0 } else { v.to_bits() });
+        }
+        if has_nan {
+            continue;
+        }
+        let cr: Vec<&str> = (0..categorical.ncols())
+            .map(|j| categorical.get(i, j))
             .collect();
-        let row = (nr, cr);
-        if seen.iter().any(|r| r == &row) {
+        if !seen.insert((nr, cr)) {
             dupes += 1;
-        } else {
-            seen.push(row);
         }
     }
     dupes

@@ -89,19 +89,21 @@ impl KnnImputer {
     }
 
     /// Squared Euclidean distance between two rows, considering only features
-    /// where both are not NaN.  Returns the distance scaled by
-    /// `n_features / n_observed` and the number of co-observed features.
-    fn nan_euclidean_sq(a: &[f64], b: &[f64]) -> Option<(f64, usize)> {
+    /// where both are not NaN. `obs` lists the features observed in the target
+    /// row (precomputed once per row), so only the reference value needs a NaN
+    /// check. Returns the distance scaled by `n_features / n_observed` and the
+    /// number of co-observed features.
+    fn nan_euclidean_sq(a: &[f64], b: &[f64], obs: &[usize]) -> Option<(f64, usize)> {
         let n = a.len();
         let mut sq_sum = 0.0;
         let mut n_obs = 0;
-        for (&va, &vb) in a.iter().zip(b.iter()) {
-            if va.is_nan() || vb.is_nan() {
-                continue;
+        for &i in obs {
+            let vb = b[i];
+            if !vb.is_nan() {
+                let d = a[i] - vb;
+                sq_sum += d * d;
+                n_obs += 1;
             }
-            let d = va - vb;
-            sq_sum += d * d;
-            n_obs += 1;
         }
         if n_obs == 0 {
             return None;
@@ -110,22 +112,32 @@ impl KnnImputer {
         Some((sq_sum * scale, n_obs))
     }
 
-    fn find_neighbors(&self, row: &[f64]) -> Result<Vec<(f64, usize)>> {
-        let ref_matrix = self.validate_fitted_state()?;
-        let ref_rows = ref_matrix.rows_ref();
-        #[cfg(feature = "rayon")]
-        let mut distances: Vec<(f64, usize)> = ref_rows
-            .par_iter()
+    /// Core neighbor search. The reference matrix is borrowed as row slices, so
+    /// it is never copied, and it must be validated exactly once per
+    /// `transform` call by the caller.
+    fn find_neighbors_from(
+        ref_matrix: &Matrix,
+        row: &[f64],
+        n_neighbors: usize,
+    ) -> Result<Vec<(f64, usize)>> {
+        let obs: Vec<usize> = row
+            .iter()
             .enumerate()
-            .filter_map(|(idx, ref_row)| {
-                Self::nan_euclidean_sq(row, ref_row).map(|(d, _)| (d, idx))
+            .filter(|(_, v)| !v.is_nan())
+            .map(|(i, _)| i)
+            .collect();
+        #[cfg(feature = "rayon")]
+        let mut distances: Vec<(f64, usize)> = (0..ref_matrix.nrows())
+            .into_par_iter()
+            .filter_map(|idx| {
+                Self::nan_euclidean_sq(row, ref_matrix.row(idx), &obs).map(|(d, _)| (d, idx))
             })
             .collect();
         #[cfg(not(feature = "rayon"))]
-        let mut distances: Vec<(f64, usize)> = Vec::with_capacity(ref_rows.len());
+        let mut distances: Vec<(f64, usize)> = Vec::with_capacity(ref_matrix.nrows());
         #[cfg(not(feature = "rayon"))]
-        for (idx, ref_row) in ref_rows.iter().enumerate() {
-            if let Some((d, _)) = Self::nan_euclidean_sq(row, ref_row) {
+        for idx in 0..ref_matrix.nrows() {
+            if let Some((d, _)) = Self::nan_euclidean_sq(row, ref_matrix.row(idx), &obs) {
                 distances.push((d, idx));
             }
         }
@@ -134,30 +146,37 @@ impl KnnImputer {
                 "row has no co-observed features with any reference row".into(),
             ));
         }
-        distances.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let k = self.n_neighbors.min(distances.len());
+        // Only the k nearest neighbors are needed, so partial selection beats a
+        // full sort; the aggregation is order-independent.
+        let k = n_neighbors.min(distances.len());
+        if k < distances.len() {
+            distances.select_nth_unstable_by(k, |a, b| a.0.total_cmp(&b.0));
+        }
         Ok(distances[..k].to_vec())
     }
 
-    fn impute_row(&self, row: &[f64], neighbors: &[(f64, usize)]) -> Result<Vec<f64>> {
-        let ref_matrix = self.validate_fitted_state()?;
-        let ref_rows = ref_matrix.rows_ref();
+    fn impute_row_from(
+        ref_matrix: &Matrix,
+        row: &[f64],
+        neighbors: &[(f64, usize)],
+        weights: KnnWeights,
+    ) -> Vec<f64> {
         let mut out = row.to_vec();
 
         if neighbors.is_empty() {
-            return Ok(out);
+            return out;
         }
 
         for (j, val) in out.iter_mut().enumerate() {
             if !val.is_nan() {
                 continue;
             }
-            match self.weights {
+            match weights {
                 KnnWeights::Uniform => {
                     let mut s = 0.0;
                     let mut cnt = 0;
                     for (_, idx) in neighbors {
-                        let v = ref_rows[*idx][j];
+                        let v = ref_matrix.row(*idx)[j];
                         if !v.is_nan() {
                             s += v;
                             cnt += 1;
@@ -169,7 +188,7 @@ impl KnnImputer {
                     let mut s = 0.0;
                     let mut wsum = 0.0;
                     for (d, idx) in neighbors {
-                        let v = ref_rows[*idx][j];
+                        let v = ref_matrix.row(*idx)[j];
                         if !v.is_nan() {
                             let w = 1.0 / d.max(1e-12);
                             s += v * w;
@@ -180,7 +199,7 @@ impl KnnImputer {
                 }
             }
         }
-        Ok(out)
+        out
     }
 }
 
@@ -237,8 +256,10 @@ impl Transformer for KnnImputer {
         let mut out = Vec::with_capacity(x.nrows());
         for row in x.iter_rows() {
             if row.iter().any(|v| v.is_nan()) {
-                let neighbors = self.find_neighbors(row)?;
-                let imputed = self.impute_row(row, &neighbors)?;
+                // `ref_matrix` is validated once above; the per-row helpers
+                // borrow it directly without re-validating or copying it.
+                let neighbors = Self::find_neighbors_from(ref_matrix, row, self.n_neighbors)?;
+                let imputed = Self::impute_row_from(ref_matrix, row, &neighbors, self.weights);
                 out.push(imputed);
             } else {
                 out.push(row.to_vec());

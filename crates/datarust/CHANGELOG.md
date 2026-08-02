@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **PowerTransformer lambda search.** The log-likelihood jacobian term is
+  lambda-independent and is now precomputed once per column instead of once per
+  candidate lambda; mean and variance are fused into a single Welford pass (no
+  temporary `Vec`), and the golden-section refinement was shortened from 60 to
+  40 iterations (the 0.4-wide bracket still shrinks to ~5e-10).
+- **QuantileTransformer `transform` is column-major.** Each column's references
+  stay cache-hot across the whole row loop, the per-column result vector is
+  written sequentially, and a single transpose follows; `fit` uses
+  `sort_unstable_by` instead of `sort_by`.
+- **Quantile order statistics via introselect.** `column_quantiles_select`
+  deduplicates the requested order-statistic indices and runs
+  `select_nth_unstable_by` on each distinct one instead of a full sort, falling
+  back to a full `total_cmp` sort when more than 32 indices are needed. Results
+  are bit-identical to the previous sort path.
+- **KNN imputer hot path.** The squared-NaN-Euclidean distance only checks the
+  reference value for `NaN` (the target row's observed features are precomputed
+  once per row); the neighbor search and imputation borrow row slices directly
+  from the fitted reference matrix instead of copying it per row, and the
+  fitted state is validated once per `transform` instead of per row. Neighbor
+  selection uses a partial `select_nth_unstable_by` instead of a full sort.
+- **KMeans assignment via squared norms.** The nearest-centroid loop uses the
+  `‖x‖² − 2·x·c + ‖c‖²` identity, turning the inner loop into a pure FMA dot
+  product, with row and centroid squared norms precomputed; the update step
+  reads row slices instead of `get(i, j)`.
+- **IRLS Gram and multinomial Hessian accumulate in place.** The weighted Gram
+  matrix `XᵀWX` and the Hessian blocks are built by rank-1 accumulation over the
+  rows (lower triangle only, then mirrored), replacing the materialised
+  weighted design matrix plus transpose plus general matmul.
+
+### Performance
+
+Measured on Apple M5 Pro (18 cores, arm64), Rust 1.96 release, criterion with
+`--warm-up-time 0.5 --measurement-time 1.5 --sample-size 10`, median
+`fit_transform` time on deterministic xorshift64 data, single-threaded default
+build:
+
+| Workload | Before | After | Improvement |
+|---|---:|---:|---:|
+| PowerTransformer `fit_transform` 1 000 × 20 | 36.4 ms | 20.3 ms | **1.8×** |
+| PowerTransformer `fit_transform` 100 × 5 | 880 µs | 507 µs | **1.7×** |
+| QuantileTransformer `fit_transform` 10 000 × 100 | 27.7 ms | 23.1 ms | **1.2×** |
+| `column_quantiles_many_flat` 100 000 × 100 | 144.7 ms | 86.0 ms | **1.7×** |
+| `column_quantiles_many_flat` 10 000 × 100 | 11.3 ms | 7.6 ms | **1.5×** |
+| KnnImputer `fit_transform` 1 000 × 20 | 72.9 ms | 18.1 ms | **4.0×** |
+| KnnImputer `fit_transform` 500 × 10 | 8.7 ms | 1.03 ms | **8.5×** |
+| KMeans `fit_predict` 5 000 × 20 × 10 | 33.0 ms | 30.8 ms | 1.07× |
+| KMeans `predict` 5 000 × 20 × 10 | 193 µs | 183 µs | 1.06× |
+| LogisticRegression `fit` 50 000 × 100 | 3.86 s | 1.56 s | **2.5×** |
+
 ## [0.6.5] - 2026-07-27
 
 This patch completes the pre-v0.7 persistence hardening and makes the declared

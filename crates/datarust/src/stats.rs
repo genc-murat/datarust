@@ -612,13 +612,53 @@ pub fn column_min_max_flat(data: &[f64], rows: usize, cols: usize) -> (Vec<f64>,
     (min, max)
 }
 
-/// Multiple quantiles of each column computed from a single sort per column.
+/// Computes exact quantiles of a single (unsorted) column.
 ///
-/// For each column the values are gathered and sorted **once**, then every
-/// requested quantile is read off the same sorted buffer via linear
-/// interpolation. This replaces the previous pattern of calling
-/// [`quantile_column`] (or [`median_column`]) separately for each quantile,
-/// which re-sorted the same column data redundantly.
+/// With few distinct order statistics the column is introselected with
+/// `select_nth_unstable_by` instead of fully sorted; results are bit-identical
+/// to the full-sort path because both use the same `total_cmp` order. When
+/// many quantiles are requested the full sort remains cheaper.
+fn column_quantiles_select(col: &mut [f64], qs: &[f64]) -> Vec<f64> {
+    let n = col.len();
+    let mut idx: Vec<usize> = Vec::with_capacity(2 * qs.len());
+    for &q in qs {
+        let pos = q * (n - 1) as f64;
+        idx.push(pos.floor() as usize);
+        idx.push(pos.ceil() as usize);
+    }
+    idx.sort_unstable();
+    idx.dedup();
+    if idx.len() > 32 {
+        col.sort_by(|a, b| a.total_cmp(b));
+        return qs.iter()
+            .map(|&q| quantile(col, q).expect("non-empty column with q in [0,1]"))
+            .collect();
+    }
+    for &k in idx.iter() {
+        col.select_nth_unstable_by(k, |a, b| a.total_cmp(b));
+    }
+    qs.iter()
+        .map(|&q| {
+            let pos = q * (n - 1) as f64;
+            let lo = pos.floor() as usize;
+            let hi = pos.ceil() as usize;
+            if lo == hi {
+                col[lo]
+            } else {
+                let frac = pos - lo as f64;
+                col[lo] * (1.0 - frac) + col[hi] * frac
+            }
+        })
+        .collect()
+}
+
+/// Multiple quantiles of each column computed from a single selection per column.
+///
+/// For each column the values are gathered once, then every requested quantile
+/// is read off the same working buffer via linear interpolation. This replaces
+/// the previous pattern of calling [`quantile_column`] (or [`median_column`])
+/// separately for each quantile, which re-sorted the same column data
+/// redundantly.
 ///
 /// `qs` must be in `[0, 1]`; an empty `qs` yields an empty `Vec` per column.
 /// The result has shape `qs.len() × cols` (one row per requested quantile).
@@ -639,14 +679,11 @@ pub fn column_quantiles_many(data: &[Vec<f64>], qs: &[f64]) -> Result<Vec<Vec<f6
     let iter = (0..cols).into_par_iter();
     #[cfg(not(feature = "rayon"))]
     let iter = 0..cols;
-    // For each column: sort once, then read off every requested quantile.
+    // For each column: select/sort once, then read off every requested quantile.
     let per_col: Vec<Vec<f64>> = iter
         .map(|j| {
             let mut col: Vec<f64> = data.iter().map(|r| r[j]).collect();
-            col.sort_by(|a, b| a.total_cmp(b));
-            qs.iter()
-                .map(|&q| quantile(&col, q).expect("non-empty column with q in [0,1]"))
-                .collect()
+            column_quantiles_select(&mut col, qs)
         })
         .collect();
     // Transpose per_col (cols × nqs) into out (nqs × cols).
@@ -660,9 +697,9 @@ pub fn column_quantiles_many(data: &[Vec<f64>], qs: &[f64]) -> Result<Vec<Vec<f6
 
 /// Flat-storage counterpart of [`column_quantiles_many`].
 ///
-/// Each column is gathered from the contiguous `data` buffer once, sorted once,
-/// and every requested quantile is read off the same sorted buffer. Result
-/// shape is `qs.len() × cols`.
+/// Each column is gathered from the contiguous `data` buffer once, its order
+/// statistics are introselected once, and every requested quantile is read off
+/// the same working buffer. Result shape is `qs.len() × cols`.
 pub fn column_quantiles_many_flat(
     data: &[f64],
     rows: usize,
@@ -687,10 +724,7 @@ pub fn column_quantiles_many_flat(
     let per_col: Vec<Vec<f64>> = iter
         .map(|j| {
             let mut col: Vec<f64> = (0..rows).map(|i| data[i * cols + j]).collect();
-            col.sort_by(|a, b| a.total_cmp(b));
-            qs.iter()
-                .map(|&q| quantile(&col, q).expect("non-empty column with q in [0,1]"))
-                .collect()
+            column_quantiles_select(&mut col, qs)
         })
         .collect();
     for col_vals in per_col {

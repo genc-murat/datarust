@@ -132,18 +132,31 @@ impl PowerTransformer {
 
     /// Log-likelihood for a column given a candidate lambda.
     /// Returns the value to be maximized.
-    fn neg_log_likelihood(col: &[f64], lam: f64, method: PowerMethod) -> f64 {
+    ///
+    /// The jacobian term is lambda-independent and passed in from
+    /// [`Self::jacobian_term`]. Mean and variance are fused into a single
+    /// Welford pass over the transformed values, avoiding a temporary Vec.
+    fn neg_log_likelihood(col: &[f64], lam: f64, method: PowerMethod, jacobian: f64) -> f64 {
         let n = col.len() as f64;
-        let transformed: Vec<f64> = col
-            .iter()
-            .map(|&v| Self::transform_one(v, lam, method))
-            .collect();
-        let mean: f64 = transformed.iter().sum::<f64>() / n;
-        let variance: f64 = transformed.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
+        let mut mean = 0.0;
+        let mut m2 = 0.0;
+        let mut count = 0.0;
+        for &v in col {
+            let t = Self::transform_one(v, lam, method);
+            count += 1.0;
+            let delta = t - mean;
+            mean += delta / count;
+            m2 += delta * (t - mean);
+        }
+        let variance = m2 / n;
         // Log-likelihood (ignoring constants):
-        // L = -(n/2) * ln(sigma^2) + (lambda - 1) * sum(log(|x| + 1)) [Yeo-Johnson]
-        // or (lambda - 1) * sum(log(x)) [Box-Cox]
-        let jacobian = match method {
+        // L = -(n/2) * ln(sigma^2) + (lambda - 1) * jacobian
+        -(n / 2.0) * variance.ln() + (lam - 1.0) * jacobian
+    }
+
+    /// The lambda-independent `Σ ln` term of the log-likelihood.
+    fn jacobian_term(col: &[f64], method: PowerMethod) -> f64 {
+        match method {
             PowerMethod::BoxCox => col.iter().map(|&v| v.abs().ln()).sum::<f64>(),
             PowerMethod::YeoJohnson => col
                 .iter()
@@ -155,13 +168,14 @@ impl PowerTransformer {
                     }
                 })
                 .sum::<f64>(),
-        };
-        -(n / 2.0) * variance.ln() + (lam - 1.0) * jacobian
+        }
     }
 
     /// Find optimal lambda via golden-section search in [-5, 5].
     fn optimal_lambda(col: &[f64], method: PowerMethod) -> f64 {
-        let neg_lik = |lam: f64| -Self::neg_log_likelihood(col, lam, method);
+        let jacobian = Self::jacobian_term(col, method);
+        let neg_lik =
+            |lam: f64| -Self::neg_log_likelihood(col, lam, method, jacobian);
 
         // Coarse grid search first.
         let grid: Vec<f64> = (-50..=50).map(|i| i as f64 / 10.0).collect();
@@ -175,11 +189,13 @@ impl PowerTransformer {
             }
         }
 
-        // Refine with golden-section search around the best.
+        // Refine with golden-section search around the best. 40 iterations
+        // shrink the 0.4-wide bracket to ~5e-10, far below the required lambda
+        // precision.
         let mut lo = best_lam - 0.2;
         let mut hi = best_lam + 0.2;
         let phi = (5.0_f64.sqrt() - 1.0) / 2.0;
-        for _ in 0..60 {
+        for _ in 0..40 {
             let mid1 = hi - phi * (hi - lo);
             let mid2 = lo + phi * (hi - lo);
             if neg_lik(mid1) < neg_lik(mid2) {

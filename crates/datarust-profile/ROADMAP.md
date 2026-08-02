@@ -230,19 +230,24 @@ adds the text-aware summaries that distinguish a profiling tool from a
 
 > *Theme: profile million-row tables in seconds, not minutes.*
 
-The duplicate-row and per-column gather loops are O(n²) or allocation-heavy
-today. v0.7 makes the hot paths competitive with vectorised tooling, without
-adding a hard dependency.
+The duplicate-row and per-column gather loops were O(n²) or allocation-heavy.
+The allocation and complexity issues are now addressed (unreleased):
+hash-based dedup replaces the O(n²) scan, column access borrows `&str` slices
+instead of cloning per-cell `String`s, missing detection is allocation-free,
+Cramér's V runs over pre-encoded integer codes, and a `criterion` benchmark
+suite guards throughput.
 
 **Deliverables:**
 
 - [ ] `rayon` feature: parallelise per-column statistics (mirror
       `datarust`'s existing `rayon` feature wiring in `stats.rs`).
-- [ ] Replace the O(n²) duplicate-row scan with a hash-based dedup
-      (canonicalise each row to a `u64`/`u128` hash, sort, count runs).
-- [ ] Cache-friendly column-major gather: transpose once, then stride-1 over
-      each column for the quantile/sort passes.
-- [ ] Benchmark suite (`benches/`) with `criterion`, tracking throughput on
+- [x] Replace the O(n²) duplicate-row scan with a hash-based dedup
+      (numeric bits are NaN-canonicalised; `-0.0`/`0.0` map to the same key,
+      matching `f64` `==`; NaN rows never match anything).
+- [x] Allocation-free column-major gather: `StrMatrix::column_refs` borrows
+      each column as `Vec<&str>` and the infer/profile/relationships paths are
+      generic over `T: AsRef<str>` — no per-cell `String` clone.
+- [x] Benchmark suite (`benches/`) with `criterion`, tracking throughput on
       synthetic 10⁵ / 10⁶ / 10⁷ row tables — added to CI as a no-regression
       guard.
 - [ ] Memory budget option: cap peak allocation for streaming profiles (ties
