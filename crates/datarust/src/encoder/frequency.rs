@@ -85,10 +85,12 @@ impl FrequencyEncoder {
         let n = x.nrows();
         let mut mappings = Vec::with_capacity(ncols);
         for j in 0..ncols {
-            let col = x.column(j);
-            let mut counts: HashMap<String, f64> = HashMap::new();
-            for cat in &col {
-                *counts.entry(cat.clone()).or_insert(0.0) += 1.0;
+            let col = x.column_refs(j);
+            // Borrowed keys while counting; owned Strings are materialized once
+            // per unique category at the end, instead of cloning every cell.
+            let mut counts: HashMap<&str, f64> = HashMap::new();
+            for &cat in &col {
+                *counts.entry(cat).or_insert(0.0) += 1.0;
             }
             if self.normalized {
                 let inv = 1.0 / n as f64;
@@ -96,6 +98,8 @@ impl FrequencyEncoder {
                     *v *= inv;
                 }
             }
+            let counts: HashMap<String, f64> =
+                counts.into_iter().map(|(k, v)| (k.to_owned(), v)).collect();
             mappings.push(counts);
         }
         self.mappings = mappings;

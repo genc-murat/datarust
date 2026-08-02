@@ -117,13 +117,15 @@ impl OrdinalEncoder {
                 let mut cat_lists = Vec::with_capacity(ncols);
                 let mut cat_indices = Vec::with_capacity(ncols);
                 for j in 0..ncols {
-                    let col = x.column(j);
-                    let mut set: std::collections::BTreeSet<String> =
+                    let col = x.column_refs(j);
+                    // Borrowed keys: only the unique categories are materialized
+                    // as owned Strings at the end, instead of cloning every cell.
+                    let mut set: std::collections::BTreeSet<&str> =
                         std::collections::BTreeSet::new();
-                    for s in &col {
-                        set.insert(s.clone());
+                    for s in col {
+                        set.insert(s);
                     }
-                    let list: Vec<String> = set.into_iter().collect();
+                    let list: Vec<String> = set.into_iter().map(str::to_owned).collect();
                     let idx: HashMap<String, usize> = list
                         .iter()
                         .enumerate()

@@ -224,10 +224,28 @@ impl StratifiedKFold {
             fold.sort_unstable();
         }
 
-        Ok(folds.into_iter().map(move |test_idx| {
-            let test_set: std::collections::HashSet<usize> = test_idx.iter().copied().collect();
-            let train: Vec<usize> = (0..n).filter(|i| !test_set.contains(i)).collect();
-            (train, test_idx)
+        // Compute each fold's training complement with a single reusable boolean
+        // mask, instead of building a `HashSet` per fold and scanning all `n`
+        // samples with hash lookups (O(n·k) hash traffic and k allocations).
+        // The mask is marked, scanned once for the complement, and reset, so
+        // the whole split is one allocation per fold (the `train` `Vec`).
+        let mask = vec![false; n];
+        Ok(folds.into_iter().scan(mask, move |mask, test_idx| {
+            for &i in &test_idx {
+                mask[i] = true;
+            }
+            // Pre-size the complement: the geometric growth of a plain `Vec`
+            // would copy the accumulated prefix ~log2(n) times per fold.
+            let mut train = Vec::with_capacity(n - test_idx.len());
+            for (i, &in_test) in mask.iter().enumerate() {
+                if !in_test {
+                    train.push(i);
+                }
+            }
+            for &i in &test_idx {
+                mask[i] = false;
+            }
+            Some((train, test_idx))
         }))
     }
 }

@@ -107,12 +107,14 @@ impl OneHotEncoder {
         self.n_output_cols
     }
 
-    fn build_categories(col: &[String]) -> Vec<String> {
-        let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for s in col {
-            set.insert(s.clone());
+    fn build_categories(col: &[&str]) -> Vec<String> {
+        // Borrowed keys: only the unique categories are materialized as owned
+        // Strings at the end, instead of cloning every cell of the column.
+        let mut set: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for &s in col {
+            set.insert(s);
         }
-        set.into_iter().collect()
+        set.into_iter().map(str::to_owned).collect()
     }
 
     fn kept_categories(&self, col_idx: usize) -> &[String] {
@@ -226,7 +228,7 @@ impl OneHotEncoder {
         let mut category_index = Vec::with_capacity(ncols);
         let mut total = 0;
         for j in 0..ncols {
-            let col = x.column(j);
+            let col = x.column_refs(j);
             let cats = Self::build_categories(&col);
             let idx: HashMap<String, usize> = cats
                 .iter()
@@ -297,18 +299,23 @@ impl OneHotEncoder {
         let (n_out, offsets) = self.compute_offsets();
         let nrows = x.nrows();
 
-        let mut row_triplets: Vec<Vec<(usize, usize, f64)>> = vec![vec![]; nrows];
+        // Per-row output column indices only (every stored value is 1.0).
+        // `encode_one` visits input columns in ascending `j` order and the
+        // output offsets are cumulative, so each row's columns are already
+        // strictly increasing with no duplicates — the per-row re-sort and
+        // dedup that `SparseMatrix::from_triplets` would do are unnecessary.
+        let mut row_cols: Vec<Vec<usize>> = vec![vec![]; nrows];
 
         #[cfg(feature = "rayon")]
         {
             use rayon::prelude::*;
-            row_triplets
+            row_cols
                 .par_iter_mut()
                 .enumerate()
-                .try_for_each(|(i, trip)| {
+                .try_for_each(|(i, cols)| {
                     for j in 0..x.ncols() {
                         if let Some(col) = self.encode_one(x.get(i, j), j, &offsets)? {
-                            trip.push((i, col, 1.0));
+                            cols.push(col);
                         }
                     }
                     Ok::<(), DatarustError>(())
@@ -317,21 +324,29 @@ impl OneHotEncoder {
 
         #[cfg(not(feature = "rayon"))]
         {
-            for (i, trip) in row_triplets.iter_mut().enumerate() {
+            for (i, cols) in row_cols.iter_mut().enumerate() {
                 for j in 0..x.ncols() {
                     if let Some(col) = self.encode_one(x.get(i, j), j, &offsets)? {
-                        trip.push((i, col, 1.0));
+                        cols.push(col);
                     }
                 }
             }
         }
 
-        let mut triplets: Vec<(usize, usize, f64)> =
-            Vec::with_capacity(row_triplets.iter().map(|t| t.len()).sum());
-        for t in row_triplets {
-            triplets.extend(t);
+        // Flatten the per-row columns directly into CSR arrays.
+        let nnz: usize = row_cols.iter().map(Vec::len).sum();
+        let mut indptr = Vec::with_capacity(nrows + 1);
+        let mut indices = Vec::with_capacity(nnz);
+        indptr.push(0);
+        for cols in row_cols {
+            indices.extend(cols);
+            indptr.push(indices.len());
         }
-        SparseMatrix::from_triplets(nrows, n_out, &triplets)
+        let data = vec![1.0; nnz];
+        // `SparseMatrix::new` re-validates the CSR invariants (strictly
+        // increasing per-row indices, in-range columns), which hold by
+        // construction above.
+        SparseMatrix::new(nrows, n_out, indptr, indices, data)
     }
 
     /// Convenience: fit then transform into sparse output.

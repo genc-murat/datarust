@@ -823,7 +823,11 @@ fn covariance_centered_flat_scalar(
             // cov[a][b] still receives one term per row in row order), so the
             // lower triangle is bit-identical to the previous full loop.
             let row = &mut cov[a];
-            for (slot, &xb) in row.iter_mut().take(a + 1).zip(&x_centered[base..base + a + 1]) {
+            for (slot, &xb) in row
+                .iter_mut()
+                .take(a + 1)
+                .zip(&x_centered[base..base + a + 1])
+            {
                 *slot += xi * xb;
             }
         }

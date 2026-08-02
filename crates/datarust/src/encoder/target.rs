@@ -122,10 +122,12 @@ impl TargetEncoder {
         let mut mappings = Vec::with_capacity(ncols);
         let mut global_means = Vec::with_capacity(ncols);
         for j in 0..ncols {
-            let col = x.column(j);
-            let mut sums: HashMap<String, (f64, f64)> = HashMap::new();
-            for (cat, &target) in col.iter().zip(y.iter()) {
-                let e = sums.entry(cat.clone()).or_insert((0.0, 0.0));
+            let col = x.column_refs(j);
+            // Borrowed keys while accumulating; owned Strings are materialized
+            // once per unique category, instead of cloning every cell.
+            let mut sums: HashMap<&str, (f64, f64)> = HashMap::new();
+            for (&cat, &target) in col.iter().zip(y.iter()) {
+                let e = sums.entry(cat).or_insert((0.0, 0.0));
                 e.0 += target;
                 e.1 += 1.0;
             }
@@ -134,7 +136,7 @@ impl TargetEncoder {
                 let mean_c = sum / count;
                 let smoothed =
                     (count * mean_c + self.smoothing * global_mean) / (count + self.smoothing);
-                map.insert(cat, smoothed);
+                map.insert(cat.to_owned(), smoothed);
             }
             mappings.push(map);
             global_means.push(global_mean);

@@ -104,8 +104,9 @@ impl QuantileTransformer {
             .collect()
     }
 
-    /// Transform a single value through the empirical CDF.
-    fn transform_value(value: f64, refs: &[f64]) -> Result<f64> {
+    /// Transform a single value through the empirical CDF. `buckets` is the
+    /// column's pre-partitioned reference lookup (see [`QuantileBuckets`]).
+    fn transform_value(value: f64, refs: &[f64], buckets: &QuantileBuckets) -> Result<f64> {
         if value.is_nan() {
             return Err(DatarustError::InvalidInput(
                 "QuantileTransformer: NaN encountered in input".into(),
@@ -126,9 +127,83 @@ impl QuantileTransformer {
         if value >= refs[n - 1] {
             return Ok(1.0);
         }
-        // Binary search for position.
-        let mut lo = 0usize;
-        let mut hi = n;
+        Ok(buckets.percentile(refs, value))
+    }
+}
+
+/// Uniform-value buckets over a column's sorted reference array.
+///
+/// A plain `transform_value` locates the interpolation interval with a full
+/// `log2(n_quantiles)` binary search over the whole reference. Because the
+/// references are sorted, the value range `[refs[0], refs[n-1]]` can instead
+/// be pre-partitioned into [`BUCKETS`] uniform *value* spans; each value then
+/// maps to its span in O(1) and only a handful of references need to be
+/// searched. The found interval — and therefore the interpolated percentile —
+/// is identical to the full-array search.
+struct QuantileBuckets {
+    /// `refs[0]` — the lower edge of bucket 0.
+    min: f64,
+    /// `BUCKETS / (refs[n-1] - refs[0])` — bucket index per unit of value.
+    inv_width: f64,
+    /// `starts[b]` is the first reference index `>= min + b·width`;
+    /// `starts[BUCKETS]` is `n` (sentinel). Non-decreasing, length `BUCKETS + 1`.
+    starts: Vec<usize>,
+}
+
+impl QuantileBuckets {
+    /// Number of uniform value spans. With the default 1000 quantiles this
+    /// leaves ~2 references per span on evenly distributed data.
+    const BUCKETS: usize = 512;
+
+    fn new(refs: &[f64]) -> Self {
+        let n = refs.len();
+        if n == 0 {
+            return Self {
+                min: 0.0,
+                inv_width: 0.0,
+                starts: vec![0; Self::BUCKETS + 1],
+            };
+        }
+        let min = refs[0];
+        let span = refs[n - 1] - min;
+        let inv_width = if span > 0.0 {
+            Self::BUCKETS as f64 / span
+        } else {
+            0.0
+        };
+        let mut starts = Vec::with_capacity(Self::BUCKETS + 1);
+        starts.push(0);
+        let mut idx = 0usize;
+        for b in 1..=Self::BUCKETS {
+            let edge = min + span * (b as f64) / Self::BUCKETS as f64;
+            while idx < n && refs[idx] < edge {
+                idx += 1;
+            }
+            starts.push(idx);
+        }
+        // The last edge is `refs[n-1]` itself; force the sentinel so the final
+        // bucket's window reaches the end of the array.
+        *starts.last_mut().unwrap() = n;
+        Self {
+            min,
+            inv_width,
+            starts,
+        }
+    }
+
+    /// Percentile of `value`, which must satisfy
+    /// `refs[0] < value < refs[n-1]`. Same result as a full-array binary
+    /// search, but the search only scans the few references in the value's
+    /// bucket window.
+    #[inline]
+    fn percentile(&self, refs: &[f64], value: f64) -> f64 {
+        let n = refs.len();
+        let bucket = (((value - self.min) * self.inv_width) as usize).min(Self::BUCKETS - 1);
+        let mut lo = self.starts[bucket];
+        let mut hi = self.starts[bucket + 1];
+        // First index in [lo, hi] whose reference exceeds `value`; defaults to
+        // `hi` when the whole window is `<= value` (then `refs[hi] > value` by
+        // the bucket invariant, since `value` is below the bucket's upper edge).
         while lo < hi {
             let mid = (lo + hi) / 2;
             if refs[mid] <= value {
@@ -148,7 +223,7 @@ impl QuantileTransformer {
             (value - refs[lower]) / denom
         };
         // Map to percentile in [0, 1].
-        Ok(lower as f64 / (n - 1) as f64 + frac / (n - 1) as f64)
+        lower as f64 / (n - 1) as f64 + frac / (n - 1) as f64
     }
 }
 
@@ -205,16 +280,27 @@ impl Transformer for QuantileTransformer {
         x.validate_finite()?;
         let n_rows = x.nrows();
         let n_cols = x.ncols();
-        // Column-major traversal keeps `references[j]` hot in cache across the
-        // whole inner row loop, and the per-column result vector is written
-        // sequentially before a single transpose into the row-major output.
-        let mut col_major: Vec<Vec<f64>> = vec![vec![0.0; n_rows]; n_cols];
-        for (j, target) in col_major.iter_mut().enumerate() {
-            let col = x.col(j);
-            let refs = &self.references[j];
-            for (i, &v) in col.iter().enumerate() {
-                let percentile = Self::transform_value(v, refs)?;
-                target[i] = match self.output_distribution {
+        // Row-major traversal over the flat input: sequential reads and writes
+        // with no per-column gather and no nested-Vec transpose round-trip.
+        // Each column's reference array stays cache-hot inside the inner loop
+        // (n_quantiles × 8 bytes per column, all L2-resident).
+        let x_flat = x.as_slice();
+        // Pre-partition each column's reference array into uniform value spans
+        // once, so the per-value lookup below is O(1) + a handful of compares
+        // instead of a full log2(n_quantiles) binary search. The percentile
+        // results are bit-identical.
+        let buckets: Vec<QuantileBuckets> = self
+            .references
+            .iter()
+            .map(|r| QuantileBuckets::new(r))
+            .collect();
+        let mut out = vec![0.0_f64; n_rows * n_cols];
+        for i in 0..n_rows {
+            let base = i * n_cols;
+            for j in 0..n_cols {
+                let percentile =
+                    Self::transform_value(x_flat[base + j], &self.references[j], &buckets[j])?;
+                out[base + j] = match self.output_distribution {
                     OutputDistribution::Uniform => percentile.clamp(0.0, 1.0),
                     OutputDistribution::Normal => {
                         // Clamp percentile away from 0 and 1 to avoid infinite
@@ -225,13 +311,7 @@ impl Transformer for QuantileTransformer {
                 };
             }
         }
-        let mut out = vec![vec![0.0; n_cols]; n_rows];
-        for (j, col_out) in col_major.iter().enumerate() {
-            for (i, &v) in col_out.iter().enumerate() {
-                out[i][j] = v;
-            }
-        }
-        Matrix::new(out)
+        Matrix::from_flat(n_rows, n_cols, out)
     }
 
     fn is_fitted(&self) -> bool {
@@ -414,5 +494,134 @@ mod tests {
         assert!(approx(inv_normal_cdf(0.975), 1.9599, 0.01));
         // probit(0.025) ≈ -1.96
         assert!(approx(inv_normal_cdf(0.025), -1.9599, 0.01));
+    }
+
+    /// Reference: the pre-bucketing full-array binary search that
+    /// `QuantileBuckets` must reproduce bit-for-bit.
+    fn full_search_percentile(value: f64, refs: &[f64]) -> f64 {
+        let n = refs.len();
+        let mut lo = 0usize;
+        let mut hi = n;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if refs[mid] <= value {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let lower = lo - 1;
+        let upper = lo;
+        let denom = refs[upper] - refs[lower];
+        let frac = if denom.abs() < f64::EPSILON {
+            0.5
+        } else {
+            (value - refs[lower]) / denom
+        };
+        lower as f64 / (n - 1) as f64 + frac / (n - 1) as f64
+    }
+
+    #[test]
+    fn buckets_match_full_search_bit_identical() {
+        // Evenly spaced references (the benchmark shape).
+        let even: Vec<f64> = (0..1000).map(|i| i as f64 * 0.01).collect();
+        // References with heavy duplicate runs (constant spans collapse).
+        let dup: Vec<f64> = (0..1000)
+            .map(|i| {
+                let r = i / 25; // 25-way duplicates
+                r as f64 * 0.5
+            })
+            .collect();
+        // Skewed references: dense in [0, 1], sparse tail to 1000.
+        let mut skewed: Vec<f64> = (0..900).map(|i| i as f64 / 900.0).collect();
+        skewed.extend((0..100).map(|i| 1.0 + i as f64 * 10.0));
+        // Single-spot references (span == 0).
+        let flat: Vec<f64> = vec![7.0; 50];
+
+        for refs in [even, dup, skewed, flat] {
+            let buckets = QuantileBuckets::new(&refs);
+            let n = refs.len();
+            let min = refs[0];
+            let max = refs[n - 1];
+            // `percentile` requires `min < value < max`; a degenerate span has
+            // no such values and is handled entirely by `transform_value`'s
+            // clamp guards (every value is `<= min` or `>= max`), so only probe
+            // non-degenerate spans here.
+            if min >= max {
+                continue;
+            }
+            // Sweep values strictly inside (min, max) plus a few exact-hit
+            // probes. The endpoints are excluded: `transform_value` clamps
+            // them (0.0 / 1.0) before the bucket path, so `percentile` never
+            // sees them.
+            for k in 1..2000 {
+                let t = k as f64 / 2000.0;
+                let value = min + (max - min) * t;
+                let got = buckets.percentile(&refs, value);
+                let want = full_search_percentile(value, &refs);
+                assert_eq!(
+                    got.to_bits(),
+                    want.to_bits(),
+                    "value {value} refs[0]={} refs[{}]={}",
+                    min,
+                    n - 1,
+                    max
+                );
+            }
+            // Probe exact reference values (the comparison boundary).
+            for &r in refs.iter() {
+                if r > min && r < max {
+                    let got = buckets.percentile(&refs, r);
+                    let want = full_search_percentile(r, &refs);
+                    assert_eq!(got.to_bits(), want.to_bits(), "exact ref {r}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn degenerate_span_clamps_through_guards() {
+        // All references equal: the transform must not reach the bucket path
+        // (there is no interior value), and must not underflow on `lo - 1`.
+        let x = Matrix::new(vec![vec![7.0], vec![7.0], vec![7.0]]).unwrap();
+        let mut qt = QuantileTransformer::new(3).unwrap();
+        qt.fit(&x).unwrap();
+        let out = qt.transform(&x).unwrap();
+        for i in 0..3 {
+            assert!(approx(out.get(i, 0), 0.0, 1e-9));
+        }
+    }
+
+    #[test]
+    fn transform_matches_full_search_end_to_end() {
+        // Fit on realistic data, then confirm transform output equals the
+        // full-search reference for every cell.
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            (state.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64 * 2.0
+                - 1.0
+        };
+        let data: Vec<f64> = (0..2000).map(|_| next()).collect();
+        let x = Matrix::from_flat(100, 20, data).unwrap();
+        let mut qt = QuantileTransformer::new(1000).unwrap();
+        qt.fit(&x).unwrap();
+        let out = qt.transform(&x).unwrap();
+        for i in 0..100 {
+            for j in 0..20 {
+                let v = x.get(i, j);
+                let refs = &qt.references[j];
+                let expected = if v <= refs[0] {
+                    0.0
+                } else if v >= refs[refs.len() - 1] {
+                    1.0
+                } else {
+                    full_search_percentile(v, refs)
+                };
+                assert_eq!(out.get(i, j).to_bits(), expected.to_bits());
+            }
+        }
     }
 }
