@@ -7,6 +7,13 @@ use crate::error::{ProfileError, Result};
 use crate::infer;
 use std::collections::HashSet;
 
+/// Borrows column `j` of a [`StrMatrix`] as string slices, avoiding the
+/// per-cell `String` clone of `StrMatrix::column`. Kept local so the published
+/// package only relies on the stable `datarust` 0.6 API (`get`/`nrows`).
+fn borrow_column(m: &StrMatrix, j: usize) -> Vec<&str> {
+    (0..m.nrows()).map(|i| m.get(i, j)).collect()
+}
+
 /// Rough memory estimate for one column, in bytes, based on cell count and type.
 fn column_bytes(column_type: crate::types::ColumnType, count: usize) -> usize {
     match column_type {
@@ -156,7 +163,7 @@ impl DatasetProfile {
         let mut categorical_data: Vec<(String, Vec<&str>)> = Vec::new();
 
         for (j, name) in resolved.iter().enumerate().take(cols) {
-            let cells = m.column_refs(j);
+            let cells = borrow_column(m, j);
             let profile = ColumnProfile::from_strings(name.clone(), &cells);
             memory_bytes += column_bytes(profile.column_type, rows);
             match profile.column_type {
@@ -253,7 +260,7 @@ impl DatasetProfile {
         }
         if let Some(cm) = categorical {
             for (offset, j) in (n_numeric..cols).enumerate() {
-                let cells = cm.column_refs(offset);
+                let cells = borrow_column(cm, offset);
                 let profile = ColumnProfile::from_strings(names[j].clone(), &cells);
                 memory_bytes += column_bytes(profile.column_type, rows);
                 match profile.column_type {

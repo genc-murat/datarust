@@ -14,8 +14,10 @@ include = [
     "/src/**",
     "/tests/**",
     "/examples/**",
+    "/benches/**",
     "/Cargo.toml",
     "/README.md",
+    "/CHANGELOG.md",
     "/LICENSE",
     "/ROADMAP.md",
 ]
