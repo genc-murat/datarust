@@ -459,26 +459,34 @@ pub fn mode(data: &[f64]) -> Option<f64> {
     if data.is_empty() {
         return None;
     }
-    let mut counts: HashMap<u64, (usize, f64)> = HashMap::new();
-    for &x in data {
-        let key = x.to_bits();
-        let entry = counts.entry(key).or_insert((0, x));
-        entry.0 += 1;
-        entry.1 = x;
-    }
-    let mut best: Option<(usize, f64)> = None;
-    for (_, (cnt, val)) in counts {
-        match best {
-            None => best = Some((cnt, val)),
-            Some((bc, bv)) => {
-                if cnt > bc || (cnt == bc && val < bv) {
-                    best = Some((cnt, val));
-                }
+    // Sort-then-scan: one copy + one sort, then find the longest run of equal
+    // bit patterns. This is dramatically faster than hash-map counting on
+    // large mostly-distinct columns (e.g. imputing continuous features), where
+    // the old `HashMap<u64, …>` grew to one entry per distinct value. Ties are
+    // broken by the smallest value because the scan keeps the first (sorted)
+    // value that achieves the maximum run length.
+    let mut sorted = data.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let mut best_val = sorted[0];
+    let mut best_len = 1usize;
+    let mut run_val = sorted[0];
+    let mut run_len = 1usize;
+    for &x in &sorted[1..] {
+        if x.to_bits() == run_val.to_bits() {
+            run_len += 1;
+        } else {
+            if run_len > best_len {
+                best_len = run_len;
+                best_val = run_val;
             }
+            run_val = x;
+            run_len = 1;
         }
     }
-    // data is non-empty (checked above), so `best` is always Some.
-    best.map(|(_, v)| v)
+    if run_len > best_len {
+        best_val = run_val;
+    }
+    Some(best_val)
 }
 
 /// Sum of each column.
@@ -997,6 +1005,57 @@ pub fn correlation_matrix(data: &[Vec<f64>]) -> Vec<Vec<f64>> {
     corr
 }
 
+/// Pearson correlation matrix (`p × p`) from flat row-major data.
+///
+/// This is the flat-storage counterpart of [`correlation_matrix`]: it accepts
+/// a contiguous row-major buffer of shape `rows × cols` instead of a nested
+/// `Vec<Vec<f64>>`. Column means, centering, and the covariance accumulation
+/// all stream over contiguous memory, which is substantially faster than the
+/// nested variant on wide tables (where gathering each column across scattered
+/// rows dominates). The `matrixmultiply` feature accelerates the covariance
+/// product automatically, just like the nested path.
+///
+/// ```rust
+/// use datarust::stats::correlation_matrix_flat;
+///
+/// // Three rows, two columns; column 1 = 2 × column 0 → r = 1.
+/// let flat = vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0];
+/// let corr = correlation_matrix_flat(&flat, 3, 2);
+/// assert!((corr[0][1] - 1.0).abs() < 1e-12);
+/// ```
+pub fn correlation_matrix_flat(data: &[f64], rows: usize, cols: usize) -> Vec<Vec<f64>> {
+    if rows == 0 || cols == 0 {
+        return vec![];
+    }
+    let means = column_mean_flat(data, rows, cols);
+    let mut centered = vec![0.0; rows * cols];
+    for i in 0..rows {
+        let base = i * cols;
+        for (j, m) in means.iter().enumerate() {
+            centered[base + j] = data[base + j] - m;
+        }
+    }
+    let cov = covariance_centered_flat(&centered, rows, cols, 1);
+    let std: Vec<f64> = (0..cols).map(|j| cov[j][j].sqrt()).collect();
+    let mut corr = vec![vec![0.0; cols]; cols];
+    for i in 0..cols {
+        for j in i..cols {
+            let v = if std[i] == 0.0 || std[j] == 0.0 {
+                if i == j {
+                    1.0
+                } else {
+                    0.0
+                }
+            } else {
+                cov[i][j] / (std[i] * std[j])
+            };
+            corr[i][j] = v;
+            corr[j][i] = v;
+        }
+    }
+    corr
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1374,5 +1433,35 @@ mod tests {
         assert!((corr[0][1]).abs() < 1e-9);
         assert!((corr[1][0]).abs() < 1e-9);
         assert!((corr[1][1] - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn correlation_matrix_flat_matches_nested() {
+        let rows = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![2.0, 4.0, 6.0],
+            vec![3.0, 6.0, 9.0],
+        ];
+        let flat: Vec<f64> = rows.iter().flatten().copied().collect();
+        let nested = correlation_matrix(&rows);
+        let flat_out = correlation_matrix_flat(&flat, 3, 3);
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!((nested[i][j] - flat_out[i][j]).abs() < 1e-12);
+            }
+        }
+        assert!(correlation_matrix_flat(&[], 0, 0).is_empty());
+        assert_eq!(correlation_matrix_flat(&flat, 3, 1).len(), 1);
+    }
+
+    #[test]
+    fn mode_matches_small_distinct_and_negative_zero() {
+        // Continuous mostly-distinct values: all tied at count 1 -> smallest.
+        let v = vec![5.0, 1.0, 4.0, 2.0, 3.0];
+        assert!((mode(&v).unwrap() - 1.0).abs() < 1e-12);
+        // Explicit negative zero is a distinct bit pattern from +0.0.
+        let with_nz = vec![-0.0, 0.0, -0.0];
+        assert_eq!(mode(&with_nz).unwrap().to_bits(), (-0.0f64).to_bits());
+        assert!(mode(&[f64::NAN, f64::NAN]).unwrap().is_nan());
     }
 }

@@ -323,10 +323,15 @@ fn bench_logistic_regression(c: &mut Criterion) {
                 let s = x.as_slice();
                 let base = i * cols;
                 let dot: f64 = (0..cols).map(|j| s[base + j] * (j as f64 + 1.0)).sum();
-                if dot > 0.0 {
-                    1.0
+                // Flip ~10% of the labels deterministically so the data is not
+                // perfectly separable. IRLS on exactly separable data diverges
+                // and burns all `max_iter` Newton steps at O(n·p²) each, which
+                // is not representative of real fits.
+                let base_label = if dot > 0.0 { 1.0 } else { 0.0 };
+                if i % 10 == 0 {
+                    1.0 - base_label
                 } else {
-                    0.0
+                    base_label
                 }
             })
             .collect();
@@ -717,6 +722,228 @@ fn bench_select_k_best(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_correlation_matrix(c: &mut Criterion) {
+    use datarust::stats;
+    let mut group = c.benchmark_group("correlation_matrix_flat");
+    for (rows, cols) in [(10_000, 50), (10_000, 100), (100_000, 20)] {
+        let x = make_matrix(rows, cols);
+        let flat = x.as_slice().to_vec();
+        group.bench_with_input(
+            BenchmarkId::new("pearson", format!("{rows}x{cols}")),
+            &flat,
+            |bencher, flat| bencher.iter(|| stats::correlation_matrix_flat(flat, rows, cols)),
+        );
+    }
+    group.finish();
+}
+
+fn bench_extra_scalers(c: &mut Criterion) {
+    let mut group = c.benchmark_group("extra_scalers");
+    for (rows, cols) in [(1_000, 50), (10_000, 100)] {
+        let x = make_matrix(rows, cols);
+        group.bench_with_input(
+            BenchmarkId::new("maxabs_fit_transform", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| {
+                bencher.iter_batched(
+                    MaxAbsScaler::new,
+                    |mut s| s.fit_transform(x),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("normalizer_l2_fit_transform", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| {
+                bencher.iter_batched(
+                    || Normalizer::new(Norm::L2),
+                    |mut n| n.fit_transform(x),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("binarizer_fit_transform", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| {
+                bencher.iter_batched(
+                    Binarizer::new,
+                    |mut b| b.fit_transform(x),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_kbins_uniform(c: &mut Criterion) {
+    let mut group = c.benchmark_group("kbins_uniform");
+    for (rows, cols) in [(1_000, 50), (10_000, 100)] {
+        let x = make_matrix(rows, cols);
+        group.bench_with_input(
+            BenchmarkId::new("fit_transform", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| {
+                bencher.iter_batched(
+                    || KBinsDiscretizer::new(10).unwrap().strategy(BinStrategy::Uniform),
+                    |mut kb| kb.fit_transform(x),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_variance_threshold(c: &mut Criterion) {
+    use datarust::selection::VarianceThreshold;
+    let mut group = c.benchmark_group("variance_threshold");
+    for (rows, cols) in [(10_000, 50), (50_000, 50)] {
+        let x = make_matrix(rows, cols);
+        group.bench_with_input(
+            BenchmarkId::new("fit_transform", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| {
+                bencher.iter_batched(
+                    || VarianceThreshold::new(0.0).unwrap(),
+                    |mut vt| vt.fit_transform(x),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_regularized_predict(c: &mut Criterion) {
+    use datarust::linear_model::{Lasso, Ridge};
+    use datarust::traits::Predictor;
+
+    let mut group = c.benchmark_group("regularized_predict");
+    for (rows, cols) in [(10_000, 50), (50_000, 100)] {
+        let x = make_matrix(rows, cols);
+        let y: Vec<f64> = (0..rows)
+            .map(|i| ((i as f64) * cols as f64).sin() * 10.0 + (i as f64))
+            .collect();
+
+        let mut ridge = Ridge::new().with_alpha(1.0);
+        ridge.fit(&x, &y).unwrap();
+        group.bench_with_input(
+            BenchmarkId::new("ridge_predict", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| bencher.iter(|| ridge.predict(x)),
+        );
+
+        let mut lasso = Lasso::new().with_alpha(0.1).with_max_iter(200);
+        lasso.fit(&x, &y).unwrap();
+        group.bench_with_input(
+            BenchmarkId::new("lasso_predict", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| bencher.iter(|| lasso.predict(x)),
+        );
+    }
+    group.finish();
+}
+
+fn bench_stats_mode(c: &mut Criterion) {
+    use datarust::stats;
+    let mut group = c.benchmark_group("stats_mode");
+    for n in [10_000, 50_000] {
+        // Mostly-distinct continuous values: the worst case for `mode`, which
+        // drives the SimpleImputer MostFrequent strategy.
+        let col = make_matrix(n, 1).as_slice().to_vec();
+        group.bench_with_input(
+            BenchmarkId::new("mode", n),
+            &col,
+            |bencher, col| bencher.iter(|| stats::mode(col)),
+        );
+    }
+    group.finish();
+}
+
+fn bench_matrix_column_gather(c: &mut Criterion) {
+    let mut group = c.benchmark_group("matrix_column_gather");
+    for (rows, cols) in [(10_000, 100), (100_000, 20)] {
+        let x = make_matrix(rows, cols);
+        group.bench_with_input(
+            BenchmarkId::new("col_all", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| bencher.iter(|| (0..cols).map(|j| x.col(j)).collect::<Vec<_>>()),
+        );
+    }
+    group.finish();
+}
+
+fn bench_pipeline_imputer(c: &mut Criterion) {
+    use datarust::imputer::{ImputeStrategy, SimpleImputer};
+
+    let mut group = c.benchmark_group("pipeline_imputer");
+    for (rows, cols) in [(10_000, 50), (50_000, 20)] {
+        let mut flat = make_matrix(rows, cols).as_slice().to_vec();
+        // Punch ~10% NaNs deterministically.
+        let mut state: u64 = 0x1234_5678;
+        for v in flat.iter_mut() {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            if (state >> 32) % 10 == 0 {
+                *v = f64::NAN;
+            }
+        }
+        let x = Matrix::from_flat(rows, cols, flat).unwrap();
+        group.bench_with_input(
+            BenchmarkId::new("impute_then_scale", format!("{rows}x{cols}")),
+            &x,
+            |bencher, x| {
+                bencher.iter_batched(
+                    || {
+                        Pipeline::new()
+                            .push(
+                                "imputer",
+                                TransformerKind::SimpleImputer(SimpleImputer::new(
+                                    ImputeStrategy::Mean,
+                                )),
+                            )
+                            .push(
+                                "scaler",
+                                TransformerKind::StandardScaler(StandardScaler::new()),
+                            )
+                    },
+                    |mut pipe| pipe.fit_transform(x),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_cross_val(c: &mut Criterion) {
+    use datarust::linear_model::LinearRegression;
+    use datarust::metrics::regression::r2_score;
+    use datarust::model_selection::{cross_val_score, KFold};
+
+    let mut group = c.benchmark_group("cross_val");
+    for (rows, cols) in [(1_000, 10), (5_000, 20)] {
+        let x = make_matrix(rows, cols);
+        let y: Vec<f64> = (0..rows)
+            .map(|i| ((i as f64) * cols as f64).sin() * 10.0 + (i as f64))
+            .collect();
+        let cv = KFold::new().with_n_splits(5);
+        let model = LinearRegression::new();
+        group.bench_with_input(
+            BenchmarkId::new("linear_5fold", format!("{rows}x{cols}")),
+            &(&x, &y, &cv, &model),
+            |bencher, (x, y, cv, model)| {
+                bencher.iter(|| cross_val_score(*model, x, y, cv, r2_score))
+            },
+        );
+    }
+    group.finish();
+}
+
 fn bench_metrics(c: &mut Criterion) {
     use datarust::metrics::classification::{accuracy_score, roc_auc_score};
     use datarust::metrics::regression::{mean_squared_error, r2_score};
@@ -777,5 +1004,14 @@ criterion_group!(
     bench_simple_imputer,
     bench_select_k_best,
     bench_metrics,
+    bench_correlation_matrix,
+    bench_extra_scalers,
+    bench_kbins_uniform,
+    bench_variance_threshold,
+    bench_regularized_predict,
+    bench_stats_mode,
+    bench_matrix_column_gather,
+    bench_pipeline_imputer,
+    bench_cross_val,
 );
 criterion_main!(benches);

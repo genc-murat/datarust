@@ -12,10 +12,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Silhouette Score allocations.** Eliminated $O(N)$ inner-loop vector allocations in `silhouette_score`, significantly improving execution time.
 - **Simple Imputer speedup.** Refactored `compute_fill` to iterate directly over the flat matrix slice and calculate `MostFrequent` using zero-copy iterations.
 - **Select K Best memory usage.** Fixed double heap allocation during `transform` by constructing the final matrix directly into a flat vector using `Matrix::from_flat`.
+- **`stats::mode` sort-then-scan.** The 1-D mode replaces hash-map counting
+  (one heap entry per distinct value) with a single-copy `total_cmp` sort plus
+  a longest-run scan. This is dramatically faster on large mostly-distinct
+  columns and drives the `SimpleImputer` `MostFrequent` strategy; ties still
+  break to the smallest value and empty input still returns `None`.
+- **Logistic regression benchmark realism.** The benchmark target now flips
+  ~10% of labels deterministically, so IRLS converges instead of diverging on
+  exactly separable data; the 50 000 × 100 fit dropped from ~1.56 s to ~190 ms
+  and the benchmark now measures a representative converged fit.
 
 ### Added
 
 - **Extensive Benchmarks.** Added comprehensive benchmark coverage for `silhouette_score`, `SimpleImputer`, `SelectKBest`, and various `metrics` components.
+- **`stats::correlation_matrix_flat`.** Flat row-major counterpart of
+  `correlation_matrix` that streams the mean/center/covariance passes over
+  contiguous memory and automatically uses the GEMM-backed covariance when the
+  `matrixmultiply` feature is enabled.
+- **Benchmark coverage for a wider API surface.** New benchmark groups:
+  `correlation_matrix_flat` (isolates the wide-table Pearson kernel),
+  `extra_scalers` (MaxAbsScaler / Normalizer / Binarizer), `kbins_uniform`,
+  `variance_threshold`, `regularized_predict` (Ridge/Lasso `predict`),
+  `stats_mode`, `matrix_column_gather`, `pipeline_imputer`
+  (SimpleImputer → StandardScaler), and `cross_val` (5-fold linear regression).
 
 
 - **PowerTransformer lambda search.** The log-likelihood jacobian term is
@@ -66,6 +85,11 @@ build:
 | KMeans `fit_predict` 5 000 × 20 × 10 | 33.0 ms | 30.8 ms | 1.07× |
 | KMeans `predict` 5 000 × 20 × 10 | 193 µs | 183 µs | 1.06× |
 | LogisticRegression `fit` 50 000 × 100 | 3.86 s | 1.56 s | **2.5×** |
+
+Additional quick-mode measurements (criterion `--quick`, same Apple Silicon
+machine): `SimpleImputer` `MostFrequent` `fit_transform` 50 000 × 20 dropped
+from 32.9 ms to 17.0 ms (**1.9×**), and `stats::mode` on a 50 000-element
+mostly-distinct column now runs in ~0.52 ms.
 
 ## [0.6.5] - 2026-07-27
 

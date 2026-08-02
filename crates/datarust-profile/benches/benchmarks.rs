@@ -82,6 +82,91 @@ fn bench_profile_str_matrix(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_relationships(c: &mut Criterion) {
+    use datarust_profile::Relationships;
+    let mut group = c.benchmark_group("relationships");
+    // Wide numeric-only table: isolates the Pearson O(p²·n) kernel that every
+    // profile runs under the hood.
+    for (rows, cols) in [(10_000, 50), (10_000, 100)] {
+        let m = make_matrix(rows, cols);
+        let cols_vec: Vec<Vec<f64>> = (0..cols).map(|j| m.col(j)).collect();
+        let names: Vec<String> = (0..cols).map(|j| format!("c{j}")).collect();
+        let mut refs: Vec<(&str, &[f64])> = Vec::with_capacity(cols);
+        for (j, c) in cols_vec.iter().enumerate() {
+            refs.push((names[j].as_str(), c.as_slice()));
+        }
+        group.bench_with_input(
+            BenchmarkId::new("pearson_wide", format!("{rows}x{cols}")),
+            &refs,
+            |bencher, refs| {
+                bencher.iter(|| Relationships::compute(refs, &[] as &[(&str, &[&str])]))
+            },
+        );
+    }
+    // Mixed numeric + categorical: exercises Pearson + Cramér's V.
+    for (rows, n_cols, c_cols) in [(10_000, 20, 20)] {
+        let num = make_matrix(rows, n_cols);
+        let cat = make_str_matrix(rows, c_cols);
+        let num_cols: Vec<Vec<f64>> = (0..n_cols).map(|j| num.col(j)).collect();
+        let num_names: Vec<String> = (0..n_cols).map(|j| format!("n{j}")).collect();
+        let mut num_refs: Vec<(&str, &[f64])> = Vec::with_capacity(n_cols);
+        for (j, c) in num_cols.iter().enumerate() {
+            num_refs.push((num_names[j].as_str(), c.as_slice()));
+        }
+        let cat_cols: Vec<Vec<&str>> = (0..c_cols)
+            .map(|j| (0..rows).map(|i| cat.get(i, j)).collect())
+            .collect();
+        let cat_names: Vec<String> = (0..c_cols).map(|j| format!("k{j}")).collect();
+        let mut cat_refs: Vec<(&str, &[&str])> = Vec::with_capacity(c_cols);
+        for (j, c) in cat_cols.iter().enumerate() {
+            cat_refs.push((cat_names[j].as_str(), c.as_slice()));
+        }
+        group.bench_with_input(
+            BenchmarkId::new("mixed", format!("{rows}x{n_cols}+{c_cols}")),
+            &(&num_refs, &cat_refs),
+            |bencher, (num_refs, cat_refs)| {
+                bencher.iter(|| Relationships::compute(num_refs, cat_refs))
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_profile_table_wide(c: &mut Criterion) {
+    let mut group = c.benchmark_group("profile_table_wide");
+    for (rows, n_cols, c_cols) in [(10_000, 30, 30), (50_000, 20, 20)] {
+        let numeric = make_matrix(rows, n_cols);
+        let categorical = make_str_matrix(rows, c_cols);
+        let names: Vec<String> = (0..n_cols + c_cols).map(|j| format!("col{j}")).collect();
+        group.bench_with_input(
+            BenchmarkId::new("mixed_table", format!("{rows}x{}+{}", n_cols, c_cols)),
+            &(&numeric, &categorical, &names),
+            |bencher, (num, cat, names)| {
+                bencher.iter_batched(
+                    || (),
+                    |_| profile_table(Some(num), Some(cat), names).unwrap(),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_report_html(c: &mut Criterion) {
+    let mut group = c.benchmark_group("report_html");
+    for (rows, cols) in [(10_000, 20), (100_000, 20)] {
+        let x = make_matrix(rows, cols);
+        let profile = profile_matrix(&x, None).unwrap();
+        group.bench_with_input(
+            BenchmarkId::new("to_html", format!("{rows}x{cols}")),
+            &profile,
+            |bencher, profile| bencher.iter(|| datarust_profile::report::to_html(profile)),
+        );
+    }
+    group.finish();
+}
+
 fn bench_quality_checks(c: &mut Criterion) {
     let mut group = c.benchmark_group("quality_checks");
     for (rows, cols) in [(10_000, 20), (100_000, 20)] {
@@ -102,5 +187,8 @@ criterion_group!(
     bench_profile_table,
     bench_profile_str_matrix,
     bench_quality_checks,
+    bench_relationships,
+    bench_profile_table_wide,
+    bench_report_html,
 );
 criterion_main!(benches);
