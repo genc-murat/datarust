@@ -1344,6 +1344,42 @@ comparison harness requires numpy/scipy in the environment; the Rust harness
 (`cargo run --release --features matrixmultiply --example bench_compare_rust`) is
 reproducible on any machine.
 
+### Scalar vs `matrixmultiply` kernels
+
+The kernel-level table below isolates what the optional `matrixmultiply` feature buys
+inside the numeric hot paths — medians from the criterion suite
+(`cargo bench -p datarust --bench benchmarks -- --warm-up-time 0.5 --measurement-time 1.5 --sample-size 10`),
+single-threaded release build on the same Apple M5 Pro hardware as above. `+GEMM` is the
+same build with `features = ["matrixmultiply"]`; `Speedup` is `scalar / +GEMM`. Each time
+carries its own unit (ms / µs / ns).
+
+| Benchmark | Size | scalar | +GEMM | Speedup |
+|---|---|---:|---:|---:|
+| `matrix_matmul` | 100 × 100 | 106 µs | **38.2 µs** | **2.8×** |
+| `matrix_matmul` | 50 × 50 | 14.9 µs | **5.85 µs** | 2.5× |
+| `matrix_matmul` | 10 × 10 | 290 ns | **162 ns** | 1.8× |
+| `correlation_matrix_flat` (Pearson) | 10 000 × 100 | 6.07 ms | **4.12 ms** | 1.5× |
+| `correlation_matrix_flat` | 10 000 × 50 | 1.98 ms | **1.25 ms** | 1.6× |
+| `correlation_matrix_flat` | 100 000 × 20 | 5.32 ms | **2.93 ms** | **1.8×** |
+| `linear_regression` fit | 100 000 × 100 | 147 ms | **54.3 ms** | **2.7×** |
+| `linear_regression` fit | 10 000 × 50 | 4.33 ms | **1.75 ms** | 2.5× |
+| `linear_regression` fit | 1 000 × 10 | 73.3 µs | **27.9 µs** | 2.6× |
+| `linear_regression` predict | any | ≈ | ≈ | ~1.0× |
+| `truncated_svd` | 1000 × 50 → 10 comps | 1.75 ms | **914 µs** | **1.9×** |
+| `truncated_svd` | 500 × 30 → 5 comps | 356 µs | **183 µs** | 1.9× |
+| `pca` | 200 × 20 → 5 comps | 109 µs | **92.8 µs** | 1.2× |
+| `pca` | 50 × 10 → 3 comps | 21.3 µs | 19.9 µs | 1.1× |
+
+**Where the GEMM pays off.** The classic matmul kernels win most: `Matrix::matmul`
+**2.5–2.8×**, `LinearRegression` fit **2.5–2.7×**, `TruncatedSVD` **~1.9×**. Predict
+paths are memory-bound matvecs and barely move (~1.0×). Pearson no longer needs GEMM for
+wide tables — the lower-triangle scalar covariance puts the kernel at **6.1 ms** for
+10 000 × 100, with GEMM adding ~1.5× on top; the sibling `datarust-profile` crate shows
+the same effect: wide `profile_matrix` (10 000 × 100) is **31.6 ms scalar vs 30.5 ms
++GEMM**, because Pearson is no longer its dominant cost. PCA barely moves at these small
+sizes (GEMM overhead dominates a 20 × 20 covariance) and shines on larger matrices — see
+the 50 000 × 200 PCA note above.
+
 ### Reading the results
 
 **Where datarust wins decisively:**

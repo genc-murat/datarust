@@ -40,6 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Pearson/Cramér's V table), `profile_table_wide` (up to 60-column mixed
   tables), and `report_html` (HTML report rendering).
 
+### Docs
+
+- **Performance documentation.** The datarust README "Scalar vs
+  `matrixmultiply` kernels" table and the mdBook `performance` page now
+  document the profile-crate wide-table numbers: `relationships` Pearson
+  10 000 × 100 is ~6.7 ms scalar vs ~5.0 ms +GEMM, and wide `profile_matrix`
+  10 000 × 100 is ~31.6 ms scalar vs ~30.5 ms +GEMM — Pearson is no longer the
+  dominant cost of wide profiling, so the `matrixmultiply` feature adds little
+  there.
+
 ### Performance
 
 Measured on Apple M5 Pro (18 cores, arm64), Rust 1.96 release, criterion with

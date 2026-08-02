@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ~10% of labels deterministically, so IRLS converges instead of diverging on
   exactly separable data; the 50 000 × 100 fit dropped from ~1.56 s to ~190 ms
   and the benchmark now measures a representative converged fit.
+- **README and book Performance documentation.** The README "Performance:
+  datarust vs scikit-learn" section and the mdBook `performance` page now
+  include a "Scalar vs `matrixmultiply` kernels" table that isolates the GEMM
+  feature's effect on the numeric hot paths (stable criterion medians with
+  `--warm-up-time 0.5 --measurement-time 1.5 --sample-size 10` on the same
+  Apple M5 Pro, scalar build vs `matrixmultiply`): `Matrix::matmul` 2.5–2.8×,
+  `LinearRegression` fit 2.5–2.7×, `TruncatedSVD` ~1.9×, Pearson 1.5–1.8×,
+  predict paths ~1.0×.
 
 ### Added
 

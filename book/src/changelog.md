@@ -22,6 +22,18 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
   are accumulated in place (rank-1 sums, lower triangle only) instead of via a
   materialised weighted design matrix and general matmul — `fit` 50 000 × 100
   drops from 3.86 s to 1.56 s (2.5×).
+- **`stats::mode`:** sort-then-scan replaces hash-map counting (one heap entry
+  per distinct value) — `SimpleImputer` `MostFrequent` 50 000 × 20 drops from
+  32.9 ms to 17.0 ms (1.9×).
+- **Wide-table Pearson:** the new `stats::correlation_matrix_flat` streams the
+  mean/center/covariance passes over contiguous memory, and the scalar
+  covariance accumulates only the lower triangle — `correlation_matrix_flat`
+  10 000 × 100 drops from 38.7 ms to 6.7 ms (5.8×); `datarust-profile`'s wide
+  `profile_matrix` 10 000 × 100 drops from ~63 ms to ~31 ms.
+- **Performance docs:** the Performance page and README now include a "Scalar
+  vs `matrixmultiply` kernels" table with stable criterion medians
+  (`--warm-up-time 0.5 --measurement-time 1.5 --sample-size 10`) isolating the
+  GEMM feature's effect on matmul-heavy kernels.
 - **datarust-profile:** hash-based row deduplication, borrow-based categorical
   access (`T: AsRef<str>`), allocation-free missing detection, and integer-coded
   Cramér's V — `profile_str_matrix` 100 000 × 20 drops from 269 ms to 132 ms.
