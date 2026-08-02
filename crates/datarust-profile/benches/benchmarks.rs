@@ -27,7 +27,11 @@ fn make_str_matrix(rows: usize, cols: usize) -> StrMatrix {
 /// for `cardinality == rows`), for high-cardinality categorical workloads.
 fn make_str_matrix_cardinality(rows: usize, cols: usize, cardinality: usize) -> StrMatrix {
     let data: Vec<Vec<String>> = (0..rows)
-        .map(|i| (0..cols).map(|j| format!("id_{}_{}", j, i % cardinality)).collect())
+        .map(|i| {
+            (0..cols)
+                .map(|j| format!("id_{}_{}", j, i % cardinality))
+                .collect()
+        })
         .collect();
     StrMatrix::new(data).unwrap()
 }
