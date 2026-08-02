@@ -197,6 +197,15 @@ impl QuantileBuckets {
     /// bucket window.
     #[inline]
     fn percentile(&self, refs: &[f64], value: f64) -> f64 {
+        // Very narrow, finite ranges (for example subnormal data near zero)
+        // make `BUCKETS / span` overflow to infinity. Converting that to a
+        // bucket index would put every value in the final bucket, whose search
+        // window does not contain the value's actual interval. Fall back to
+        // the original full-range search in that case.
+        if !self.inv_width.is_finite() {
+            return Self::percentile_full(refs, value);
+        }
+
         let n = refs.len();
         let bucket = (((value - self.min) * self.inv_width) as usize).min(Self::BUCKETS - 1);
         let mut lo = self.starts[bucket];
@@ -223,6 +232,32 @@ impl QuantileBuckets {
             (value - refs[lower]) / denom
         };
         // Map to percentile in [0, 1].
+        lower as f64 / (n - 1) as f64 + frac / (n - 1) as f64
+    }
+
+    /// Full-array binary-search fallback used when a bucket scale cannot be
+    /// represented as a finite `f64`.
+    #[inline]
+    fn percentile_full(refs: &[f64], value: f64) -> f64 {
+        let n = refs.len();
+        let mut lo = 0usize;
+        let mut hi = n;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if refs[mid] <= value {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let lower = lo - 1;
+        let upper = lo;
+        let denom = refs[upper] - refs[lower];
+        let frac = if denom.abs() < f64::EPSILON {
+            0.5
+        } else {
+            (value - refs[lower]) / denom
+        };
         lower as f64 / (n - 1) as f64 + frac / (n - 1) as f64
     }
 }
@@ -589,6 +624,28 @@ mod tests {
         let out = qt.transform(&x).unwrap();
         for i in 0..3 {
             assert!(approx(out.get(i, 0), 0.0, 1e-9));
+        }
+    }
+
+    #[test]
+    fn buckets_fall_back_for_subnormal_spans() {
+        // A finite span below `BUCKETS / f64::MAX` makes the reciprocal bucket
+        // width overflow to infinity. The fallback must preserve the original
+        // full-array binary-search result instead of treating every value as
+        // part of the final bucket.
+        let data: Vec<f64> = (0..1000).map(|i| i as f64 * 1e-320).collect();
+        let x = Matrix::from_flat(1000, 1, data.clone()).unwrap();
+        let mut qt = QuantileTransformer::new(1000).unwrap();
+        qt.fit(&x).unwrap();
+
+        let refs = &qt.references[0];
+        let buckets = QuantileBuckets::new(refs);
+        assert!(!buckets.inv_width.is_finite());
+
+        let out = qt.transform(&x).unwrap();
+        for i in [1usize, 10, 100, 500, 998] {
+            let expected = full_search_percentile(data[i], refs);
+            assert_eq!(out.get(i, 0).to_bits(), expected.to_bits(), "row {i}");
         }
     }
 
