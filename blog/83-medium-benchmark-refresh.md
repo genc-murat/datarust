@@ -65,12 +65,14 @@ With the fixes in, I ran the entire suite — 47 `datarust` groups plus the `dat
 
 | Benchmark | Before | After |
 |---|---:|---:|
-| `onehot_sparse` transform_sparse 50 000 × 20 | 18.3 ms | **16.8 ms** |
+| `onehot_sparse` transform_sparse 50 000 × 20 | 18.3 ms | 18.6 ms (noise) |
 | `onehot_sparse` fit_transform_sparse 50 000 × 20 | 33.2 ms | **32.9 ms** |
 | `strmatrix_column` column_refs 100 000 × 20 | 8.89 ms | **8.12 ms** |
 | `stats_nested` quantiles 100 000 × 20 | 18.5 ms | **16.2 ms** |
 | `label_encoder` fit_transform 10 000 × 10 | 578 µs | **558 µs** |
 | `scaler_transform` quantile 100 000 × 20 | 23.4 ms | **14.6 ms** |
+
+The lone non-improvement is the `transform_sparse` row, and it's noise, not a regression: 18.3 ms was the measurement taken right after the CSR fix landed, and the full-suite run re-measured 18.6 ms — a 1.6% drift, so the production tables now show 18.6 ms.
 
 The `strmatrix_column` row is worth a second look: **`column` (clone) is 72.0 ms vs `column_refs` (borrow) 8.12 ms — a ~9× gap at 100 000 × 20.** That's the tax the encoders used to pay, now isolated as its own benchmark so it can't silently come back.
 
@@ -78,11 +80,11 @@ The `matrixmultiply` kernel table was also refreshed in the same session — sca
 
 | Kernel | scalar | +GEMM | Speedup |
 |---|---:|---:|---:|
-| `matrix_matmul` 50 × 50 | 20.2 µs | **5.48 µs** | **3.7×** |
-| `matrix_matmul` 100 × 100 | 104 µs | **37.6 µs** | **2.8×** |
-| `linear_regression` fit 10 000 × 50 | 5.87 ms | **1.74 ms** | **3.4×** |
-| `truncated_svd` 1000 × 50 → 10 comps | 1.80 ms | **949 µs** | **1.9×** |
-| Pearson 10 000 × 100 | 5.98 ms | **4.05 ms** | 1.5× |
+| `matrix_matmul` 50 × 50 | 14.3 µs | **5.32 µs** | **2.7×** |
+| `matrix_matmul` 100 × 100 | 103 µs | **37.0 µs** | **2.8×** |
+| `linear_regression` fit 10 000 × 50 | 4.35 ms | **1.69 ms** | **2.6×** |
+| `truncated_svd` 1000 × 50 → 10 comps | 1.76 ms | **886 µs** | **2.0×** |
+| Pearson 10 000 × 100 | 5.97 ms | **3.94 ms** | 1.5× |
 
 ## The sklearn table, finally re-runnable
 
@@ -102,7 +104,7 @@ The `datarust-profile` numbers moved too (cramér's V 2.12 → 2.04 ms, point-bi
 The refresh confirmed the earlier analysis rather than overturning it. The four fixes this pass were the last of the *allocation* class of bottlenecks — the ones where the code was doing real work, plus a tax on top. What's left is algorithmic:
 
 - **PCA is the remaining sklearn gap** — LAPACK's full SVD via shared-library BLAS is a hard target for a from-scratch Jacobi sweep. The `matrixmultiply` feature and the opt-in randomized SVD both close it further for the shapes where it matters.
-- **The GEMM feature is confirmed as a matmul story** — 2.7–3.7× across matmul kernels and fits, ~1.0× on memory-bound predict paths. Nothing changed about that conclusion; it just has fresh numbers.
+- **The GEMM feature is confirmed as a matmul story** — 1.8–2.8× across matmul kernels and fits, ~1.0× on memory-bound predict paths. Nothing changed about that conclusion; it just has fresh numbers.
 
 And the pass I thought was finished wasn't quite: the refresh flagged `QuantileTransformer::transform` as the last per-value outlier, and that turned out to be fixable too. Each value paid a full `log₂(1000)` binary search over the column's reference array; the transform now pre-partitions that array into 512 uniform value spans (built once per call) so a value lands in O(1) and only a handful of entries need scanning — **23.4 ms → 14.6 ms at 100 000 × 20** (1.6×, ~7.3 ns/value, bit-identical output). The table above already reflects it.
 

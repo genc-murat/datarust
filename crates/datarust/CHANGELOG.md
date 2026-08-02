@@ -55,7 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over the whole reference. The found interval — and therefore the interpolated
   percentile — is bit-identical (a parity test sweeps duplicates, skew, and
   exact-reference hits against the full search). At 100 000 × 20 the transform
-  dropped from 23.4 ms to 14.6 ms (~7.3 ns/value).
+  dropped from 23.4 ms to 14.6 ms (~7.3 ns/value), and `fit_transform` at
+  10 000 × 100 drops from 24.1 ms to ~17.5 ms as a result (the bucket lookup
+  speeds up the transform inside `fit_transform`).
 - **`OneHotEncoder::transform_sparse` builds CSR directly.** The sparse
   transform now collects per-row output column indices and flattens them
   straight into the CSR `indptr`/`indices`/`data` arrays (values are always
@@ -78,8 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   include a "Scalar vs `matrixmultiply` kernels" table that isolates the GEMM
   feature's effect on the numeric hot paths (stable criterion medians with
   `--warm-up-time 0.5 --measurement-time 1.5 --sample-size 10` on the same
-  Apple M5 Pro, scalar build vs `matrixmultiply`): `Matrix::matmul` 2.8–3.7×,
-  `LinearRegression` fit 2.7–3.4×, `TruncatedSVD` ~1.9×, Pearson 1.5–1.8×,
+  Apple M5 Pro, scalar build vs `matrixmultiply`): `Matrix::matmul` 1.8–2.8×,
+  `LinearRegression` fit 2.6–2.7×, `TruncatedSVD` ~2.0×, Pearson 1.5–1.9×,
   predict paths ~1.0×.
 - **Fresh sklearn comparison table.** The "datarust vs scikit-learn" table in
   the README and mdBook `performance` page was re-run end-to-end (Rust

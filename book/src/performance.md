@@ -50,23 +50,23 @@ carries its own unit (ms / µs / ns).
 
 | Benchmark | Size | scalar | +GEMM | Speedup |
 |---|---|---:|---:|---:|
-| `matrix_matmul` | 100 × 100 | 104 µs | **37.6 µs** | **2.8×** |
-| `matrix_matmul` | 50 × 50 | 20.2 µs | **5.48 µs** | **3.7×** |
-| `matrix_matmul` | 10 × 10 | 280 ns | **158 ns** | 1.8× |
-| `correlation_matrix_flat` (Pearson) | 10 000 × 100 | 5.98 ms | **4.05 ms** | 1.5× |
-| `correlation_matrix_flat` | 10 000 × 50 | 1.91 ms | **1.25 ms** | 1.5× |
-| `correlation_matrix_flat` | 100 000 × 20 | 5.22 ms | **2.89 ms** | **1.8×** |
-| `linear_regression` fit | 100 000 × 100 | 147 ms | **54.1 ms** | **2.7×** |
-| `linear_regression` fit | 10 000 × 50 | 5.87 ms | **1.74 ms** | **3.4×** |
-| `linear_regression` fit | 1 000 × 10 | 74.1 µs | **27.5 µs** | 2.7× |
+| `matrix_matmul` | 100 × 100 | 103 µs | **37.0 µs** | **2.8×** |
+| `matrix_matmul` | 50 × 50 | 14.3 µs | **5.32 µs** | **2.7×** |
+| `matrix_matmul` | 10 × 10 | 272 ns | **151 ns** | 1.8× |
+| `correlation_matrix_flat` (Pearson) | 10 000 × 100 | 5.97 ms | **3.94 ms** | 1.5× |
+| `correlation_matrix_flat` | 10 000 × 50 | 1.96 ms | **1.22 ms** | **1.6×** |
+| `correlation_matrix_flat` | 100 000 × 20 | 5.33 ms | **2.84 ms** | **1.9×** |
+| `linear_regression` fit | 100 000 × 100 | 147 ms | **53.2 ms** | **2.7×** |
+| `linear_regression` fit | 10 000 × 50 | 4.35 ms | **1.69 ms** | **2.6×** |
+| `linear_regression` fit | 1 000 × 10 | 72.4 µs | **26.3 µs** | **2.7×** |
 | `linear_regression` predict | any | ≈ | ≈ | ~1.0× |
-| `truncated_svd` | 1000 × 50 → 10 comps | 1.80 ms | **949 µs** | **1.9×** |
-| `truncated_svd` | 500 × 30 → 5 comps | 376 µs | **199 µs** | **1.9×** |
-| `pca` | 200 × 20 → 5 comps | 109 µs | **93.2 µs** | 1.2× |
-| `pca` | 50 × 10 → 3 comps | 21.1 µs | 19.8 µs | 1.1× |
+| `truncated_svd` | 1000 × 50 → 10 comps | 1.76 ms | **886 µs** | **2.0×** |
+| `truncated_svd` | 500 × 30 → 5 comps | 355 µs | **175 µs** | **2.0×** |
+| `pca` | 200 × 20 → 5 comps | 108 µs | **91.5 µs** | 1.2× |
+| `pca` | 50 × 10 → 3 comps | 21.0 µs | 19.3 µs | 1.1× |
 
-The GEMM pays off most on matmul-heavy kernels — `Matrix::matmul` **2.8–3.7×**,
-`LinearRegression` fit **2.7–3.4×**, `TruncatedSVD` **~1.9×** — while predict paths are
+The GEMM pays off most on matmul-heavy kernels — `Matrix::matmul` **1.8–2.8×**,
+`LinearRegression` fit **2.6–2.7×**, `TruncatedSVD` **~2.0×** — while predict paths are
 memory-bound matvecs and barely move (~1.0×). Pearson no longer needs GEMM for wide
 tables (the lower-triangle scalar covariance puts the kernel at **6.0 ms** for
 10 000 × 100); PCA barely moves at these small sizes and shines on larger matrices.
@@ -135,7 +135,7 @@ remaining classification metrics, the splitters, and string-column gathering:
 | `scaler_transform` standard/minmax/robust transform | 100 000 × 20 | ~1.72 ms |
 | `scaler_transform` standard/minmax/robust inverse | 100 000 × 20 | ~1.45 ms |
 | `scaler_transform` quantile_transform | 100 000 × 20 | **14.6 ms** |
-| `onehot_sparse` transform_sparse | 50 000 × 20 | 16.8 ms |
+| `onehot_sparse` transform_sparse | 50 000 × 20 | 18.6 ms |
 | `onehot_sparse` fit_transform_sparse | 50 000 × 20 | 32.9 ms |
 | `model_selection` kfold_5_shuffled | 100 000 | 210 µs |
 | `model_selection` stratified_kfold_5 | 100 000 | 1.86 ms |
@@ -161,7 +161,7 @@ at 100 000 rows (**−71%**), leaving the stratification setup itself as the
 remaining cost. `onehot_sparse`
 `transform_sparse` was 2× slower than the dense transform because it
 round-tripped through per-row triplet `Vec`s and `SparseMatrix::from_triplets`'
-per-row re-sort; it now builds the CSR arrays directly — 16.8 ms vs 14.3 ms
+per-row re-sort; it now builds the CSR arrays directly — 18.6 ms vs 14.3 ms
 dense at 50 000 × 20 (down from 27.6 ms), and `fit_transform_sparse` dropped
 from 78.3 ms to 32.9 ms.
 
