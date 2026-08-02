@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Silhouette Score allocations.** Eliminated $O(N)$ inner-loop vector allocations in `silhouette_score`, significantly improving execution time.
+- **Simple Imputer speedup.** Refactored `compute_fill` to iterate directly over the flat matrix slice and calculate `MostFrequent` using zero-copy iterations.
+- **Select K Best memory usage.** Fixed double heap allocation during `transform` by constructing the final matrix directly into a flat vector using `Matrix::from_flat`.
+
+### Added
+
+- **Extensive Benchmarks.** Added comprehensive benchmark coverage for `silhouette_score`, `SimpleImputer`, `SelectKBest`, and various `metrics` components.
+
+
 - **PowerTransformer lambda search.** The log-likelihood jacobian term is
   lambda-independent and is now precomputed once per column instead of once per
   candidate lambda; mean and variance are fused into a single Welford pass (no

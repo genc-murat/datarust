@@ -631,6 +631,123 @@ fn bench_knn_imputer(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_silhouette_score(c: &mut Criterion) {
+    use datarust::cluster::metrics::silhouette_score;
+    let mut group = c.benchmark_group("silhouette_score");
+    for (rows, cols, k) in [(1000, 10, 5), (5000, 20, 10)] {
+        let x = make_matrix(rows, cols);
+        let labels: Vec<usize> = (0..rows).map(|i| i % k).collect();
+        group.bench_with_input(
+            BenchmarkId::new("score", format!("{rows}x{cols}x{k}")),
+            &(&x, &labels),
+            |bencher, (x, labels)| bencher.iter(|| silhouette_score(x, labels).unwrap()),
+        );
+    }
+    group.finish();
+}
+
+fn bench_simple_imputer(c: &mut Criterion) {
+    use datarust::imputer::{ImputeStrategy, SimpleImputer};
+    let mut group = c.benchmark_group("simple_imputer");
+    for (rows, cols) in [(10_000, 20), (50_000, 20)] {
+        let mut flat = make_matrix(rows, cols).as_slice().to_vec();
+        // Punch ~10% NaNs
+        let mut state: u64 = 0x1234_5678;
+        for v in flat.iter_mut() {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            if (state >> 32) % 10 == 0 {
+                *v = f64::NAN;
+            }
+        }
+        let x = Matrix::from_flat(rows, cols, flat).unwrap();
+        for strategy in [
+            ImputeStrategy::Mean,
+            ImputeStrategy::Median,
+            ImputeStrategy::MostFrequent,
+            ImputeStrategy::Constant(0.0),
+        ] {
+            let s_name = format!("{:?}", strategy);
+            group.bench_with_input(
+                BenchmarkId::new(
+                    format!("fit_transform_{}", s_name.split('(').next().unwrap()),
+                    format!("{rows}x{cols}"),
+                ),
+                &x,
+                |bencher, x| {
+                    bencher.iter_batched(
+                        || SimpleImputer::new(strategy.clone()),
+                        |mut imp| imp.fit_transform(x),
+                        BatchSize::SmallInput,
+                    )
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
+fn bench_select_k_best(c: &mut Criterion) {
+    use datarust::selection::{ScoreFunc, SelectKBest};
+    let mut group = c.benchmark_group("select_k_best");
+    for (rows, cols) in [(10_000, 50), (50_000, 50)] {
+        let x = make_matrix(rows, cols);
+        let labels: Vec<String> = (0..rows).map(|i| format!("class_{}", i % 3)).collect();
+        for (name, func) in [
+            ("f_classif", ScoreFunc::FClassif),
+            ("mutual_info", ScoreFunc::MutualInformation),
+        ] {
+            group.bench_with_input(
+                BenchmarkId::new(format!("fit_transform_{}", name), format!("{rows}x{cols}")),
+                &(&x, &labels),
+                |bencher, (x, y)| {
+                    bencher.iter_batched(
+                        || SelectKBest::new(func, 10).unwrap(),
+                        |mut skb| {
+                            skb.fit_with_labels(x, y).unwrap();
+                            skb.transform(x).unwrap()
+                        },
+                        BatchSize::SmallInput,
+                    )
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
+fn bench_metrics(c: &mut Criterion) {
+    use datarust::metrics::classification::{accuracy_score, roc_auc_score};
+    use datarust::metrics::regression::{mean_squared_error, r2_score};
+    let mut group = c.benchmark_group("metrics");
+    for rows in [10_000, 100_000] {
+        let y_true: Vec<f64> = (0..rows).map(|i| (i % 2) as f64).collect();
+        let y_pred: Vec<f64> = (0..rows).map(|i| ((i + 1) % 2) as f64).collect();
+        group.bench_with_input(
+            BenchmarkId::new("r2_score", rows),
+            &(&y_true, &y_pred),
+            |bencher, (t, p)| bencher.iter(|| r2_score(t, p).unwrap()),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("mean_squared_error", rows),
+            &(&y_true, &y_pred),
+            |bencher, (t, p)| bencher.iter(|| mean_squared_error(t, p, true).unwrap()),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("accuracy_score", rows),
+            &(&y_true, &y_pred),
+            |bencher, (t, p)| bencher.iter(|| accuracy_score(t, p).unwrap()),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("roc_auc_score", rows),
+            &(&y_true, &y_pred),
+            |bencher, (t, p)| bencher.iter(|| roc_auc_score(t, p).unwrap()),
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_matrix_matmul,
@@ -656,5 +773,9 @@ criterion_group!(
     bench_matrix_ops,
     bench_sparse_matrix,
     bench_knn_imputer,
+    bench_silhouette_score,
+    bench_simple_imputer,
+    bench_select_k_best,
+    bench_metrics,
 );
 criterion_main!(benches);

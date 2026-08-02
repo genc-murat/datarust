@@ -79,13 +79,14 @@ impl SimpleImputer {
 
     #[allow(clippy::needless_range_loop)]
     fn compute_fill(x: &Matrix, strategy: &ImputeStrategy) -> Result<Vec<f64>> {
-        let data = x.rows_ref();
         let cols = x.ncols();
+        let rows = x.nrows();
+        let flat = x.as_slice();
         let mut fills = Vec::with_capacity(cols);
         for j in 0..cols {
-            let col: Vec<f64> = (0..x.nrows())
+            let col: Vec<f64> = (0..rows)
                 .filter_map(|i| {
-                    let v = data[i][j];
+                    let v = flat[i * cols + j];
                     if v.is_nan() {
                         None
                     } else {
@@ -113,10 +114,7 @@ impl SimpleImputer {
                     if col.is_empty() {
                         return Err(DatarustError::AllMissing(format!("column {}", j)));
                     }
-                    let mut c = col.clone();
-                    c.sort_by(|a, b| a.total_cmp(b));
-                    let single: Vec<Vec<f64>> = c.into_iter().map(|v| vec![v]).collect();
-                    stats::mode_column(&single)[0]
+                    stats::mode(&col).expect("column non-empty (checked above)")
                 }
                 ImputeStrategy::Constant(v) => *v,
             };

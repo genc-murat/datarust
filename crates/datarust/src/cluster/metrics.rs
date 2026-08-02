@@ -98,6 +98,10 @@ pub fn silhouette_score(x: &Matrix, labels: &[usize]) -> Result<f64> {
     let p = x.ncols();
     let data = x.as_slice();
 
+    // Pre-allocate to avoid O(N) heap allocations inside the loop
+    let mut cluster_sums = vec![0.0_f64; k];
+    let mut cluster_counts = vec![0usize; k];
+
     let mut total = 0.0_f64;
     for i in 0..n {
         let row_i = &data[i * p..(i + 1) * p];
@@ -113,8 +117,8 @@ pub fn silhouette_score(x: &Matrix, labels: &[usize]) -> Result<f64> {
         let mut sum_same = 0.0_f64;
         let mut count_same = 0usize;
         // b(i): for each other cluster, the mean distance; take the min.
-        let mut cluster_sums = vec![0.0_f64; k];
-        let mut cluster_counts = vec![0usize; k];
+        cluster_sums.fill(0.0_f64);
+        cluster_counts.fill(0usize);
         for j in 0..n {
             if i == j {
                 continue;

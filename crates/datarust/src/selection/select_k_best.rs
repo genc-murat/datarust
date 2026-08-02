@@ -182,14 +182,18 @@ impl Transformer for SelectKBest {
             .filter(|(_, &keep)| keep)
             .map(|(j, _)| j)
             .collect();
-        let mut out = vec![vec![0.0; kept.len()]; x.nrows()];
-        for (i, out_row) in out.iter_mut().enumerate() {
-            let x_row = x.row(i);
-            for (k, &j) in kept.iter().enumerate() {
-                out_row[k] = x_row[j];
+        let nrows = x.nrows();
+        let ncols = kept.len();
+        let mut flat = Vec::with_capacity(nrows * ncols);
+        let data = x.as_slice();
+        let p = x.ncols();
+        for i in 0..nrows {
+            let row_start = i * p;
+            for &j in &kept {
+                flat.push(data[row_start + j]);
             }
         }
-        Matrix::new(out)
+        Matrix::from_flat(nrows, ncols, flat)
     }
 
     fn is_fitted(&self) -> bool {
