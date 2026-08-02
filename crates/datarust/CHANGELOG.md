@@ -33,14 +33,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ~10% of labels deterministically, so IRLS converges instead of diverging on
   exactly separable data; the 50 000 × 100 fit dropped from ~1.56 s to ~190 ms
   and the benchmark now measures a representative converged fit.
+- **Encoder fit paths drop the per-cell clone.** `OneHotEncoder`,
+  `OrdinalEncoder`, `FrequencyEncoder`, and `TargetEncoder` now gather columns
+  through the borrowing `StrMatrix::column_refs` and only materialize owned
+  `String` keys for unique categories (or at the end of the per-column map),
+  instead of cloning every cell via `StrMatrix::column`. Ordering, counts, and
+  smoothed values are unchanged — the `fit_transform` gain is purely the
+  removed allocation churn (measured below).
+- **`QuantileTransformer::transform` streams row-major flat.** The transform
+  writes each value straight into a flat output buffer in row-major order
+  (sequential reads and writes over the input and output buffers) instead of
+  building a column-major nested `Vec` and transposing it into a row-major
+  nested `Vec` before flattening through `Matrix::new`. Output values are
+  bit-identical; the per-value binary search is unchanged. At 100 000 × 20 the
+  transform dropped from 28.3 ms to 22.9 ms.
+- **`QuantileTransformer::transform` buckets the reference lookup.** Each
+  column's sorted reference array is pre-partitioned into 512 uniform *value*
+  spans (built once per `transform` call, O(n_quantiles) per column); a value
+  maps to its span in O(1) and the interpolation interval is found inside that
+  span's handful of entries instead of a full `log₂(n_quantiles)` binary search
+  over the whole reference. The found interval — and therefore the interpolated
+  percentile — is bit-identical (a parity test sweeps duplicates, skew, and
+  exact-reference hits against the full search). At 100 000 × 20 the transform
+  dropped from 23.4 ms to 14.6 ms (~7.3 ns/value).
+- **`OneHotEncoder::transform_sparse` builds CSR directly.** The sparse
+  transform now collects per-row output column indices and flattens them
+  straight into the CSR `indptr`/`indices`/`data` arrays (values are always
+  1.0), skipping the per-row triplet `Vec`s and `SparseMatrix::from_triplets`'s
+  unnecessary per-row re-sort and dedup — `encode_one` visits input columns in
+  ascending order, so each row's columns are already strictly increasing. The
+  `SparseMatrix::new` invariant check still runs. `transform_sparse` at
+  50 000 × 20 dropped from 27.6 ms to 18.3 ms, and `fit_transform_sparse` from
+  78.3 ms to 33.2 ms (the latter also includes the encoder fit-path clone fix
+  above).
+- **`StratifiedKFold::split` reuses a boolean mask.** Each fold's training
+  complement is computed with a single reusable boolean mask (mark the test
+  positions, scan once for the complement, reset) instead of a per-fold
+  `HashSet` plus a full `0..n` scan with hash lookups — k hash sets and k·n
+  hash probes replaced by k mask passes. The complement `Vec` is pre-sized to
+  avoid the geometric-growth copies of a plain push loop. The emitted folds
+  are identical. `split` at 100 000 samples dropped from 6.31 ms to 1.82 ms.
 - **README and book Performance documentation.** The README "Performance:
   datarust vs scikit-learn" section and the mdBook `performance` page now
   include a "Scalar vs `matrixmultiply` kernels" table that isolates the GEMM
   feature's effect on the numeric hot paths (stable criterion medians with
   `--warm-up-time 0.5 --measurement-time 1.5 --sample-size 10` on the same
-  Apple M5 Pro, scalar build vs `matrixmultiply`): `Matrix::matmul` 2.5–2.8×,
-  `LinearRegression` fit 2.5–2.7×, `TruncatedSVD` ~1.9×, Pearson 1.5–1.8×,
+  Apple M5 Pro, scalar build vs `matrixmultiply`): `Matrix::matmul` 2.8–3.7×,
+  `LinearRegression` fit 2.7–3.4×, `TruncatedSVD` ~1.9×, Pearson 1.5–1.8×,
   predict paths ~1.0×.
+- **Fresh sklearn comparison table.** The "datarust vs scikit-learn" table in
+  the README and mdBook `performance` page was re-run end-to-end (Rust
+  `bench_compare_rust` under default/`rayon`/`matrixmultiply` plus
+  `compare_sklearn.py` with scikit-learn 1.6.1 / numpy 2.0.2 / scipy 1.13.1 on
+  the same Apple M5 Pro), replacing the stale pre-optimisation numbers: e.g.
+  `OneHotEncoder` 50 000 × 20 default build 89 → 54.7 ms (the encoder fit-path
+  clone fix), PCA 50 000 × 200 838 → 206 ms, and the previously-empty
+  `LinearRegression` sklearn column is now filled in (datarust `fit+predict`
+  50 000 × 200: 263 ms default, 91 ms with `matrixmultiply`, vs sklearn
+  118 ms).
 
 ### Added
 
@@ -59,6 +109,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cardinalities), `stats_nested` (nested-`Vec` `column_mean_var`,
   `column_quantiles_many`, and `mode_column`), `train_test_split`, and a
   `from_flat` case in `matrix_ops`.
+- **Production-path benchmark coverage.** Eight new groups covering the paths
+  that `fit_transform`-only benchmarks hid: `metrics_more` (confusion-matrix
+  family, log_loss, average precision), `logistic_predict_proba`,
+  `encoder_transform` (transform on fitted encoders), `polynomial_transform`,
+  `scaler_transform` (transform/inverse on fitted scalers), `onehot_sparse`,
+  `model_selection` (KFold/StratifiedKFold split), and `strmatrix_column`
+  (cloning `column` vs borrowing `column_refs`).
 
 
 - **PowerTransformer lambda search.** The log-likelihood jacobian term is
@@ -109,6 +166,15 @@ build:
 | KMeans `fit_predict` 5 000 × 20 × 10 | 33.0 ms | 30.8 ms | 1.07× |
 | KMeans `predict` 5 000 × 20 × 10 | 193 µs | 183 µs | 1.06× |
 | LogisticRegression `fit` 50 000 × 100 | 3.86 s | 1.56 s | **2.5×** |
+| OrdinalEncoder `fit_transform` 10 000 × 20 | ~20.7 ms | 3.60 ms | **5.7×** |
+| FrequencyEncoder `fit_transform` 10 000 × 20 | ~22.9 ms | 3.93 ms | **5.8×** |
+| TargetEncoder `fit_transform` 10 000 × 20 | ~11.8 ms | 4.16 ms | **2.8×** |
+| OneHotEncoder `fit_transform` 1 000 × 10 | ~0.64 ms | 0.23 ms | **2.8×** |
+| QuantileTransformer `transform` 100 000 × 20 | 28.3 ms | 22.9 ms | **1.2×** |
+| QuantileTransformer `transform` 100 000 × 20 (bucketed lookup) | 23.4 ms | 14.6 ms | **1.6×** |
+| OneHotEncoder `transform_sparse` 50 000 × 20 | 27.6 ms | 18.3 ms | **1.5×** |
+| OneHotEncoder `fit_transform_sparse` 50 000 × 20 | 78.3 ms | 33.2 ms | **2.4×** |
+| StratifiedKFold `split` 100 000 | 6.31 ms | 1.82 ms | **3.5×** |
 
 Additional quick-mode measurements (criterion `--quick`, same Apple Silicon
 machine): `SimpleImputer` `MostFrequent` `fit_transform` 50 000 × 20 dropped

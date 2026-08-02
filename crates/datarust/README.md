@@ -1295,39 +1295,39 @@ benefits from the `matrixmultiply` feature, shown in the notes below the table.
 
 | Workload | Size (rows × cols) | datarust default (ms) | datarust +rayon (ms) | sklearn (ms) | best ratio |
 |---|---|---:|---:|---:|---:|
-| StandardScaler | 1 000 × 10 | 0.023 | 0.016 | 0.280 | **17.5×** |
-| StandardScaler | 10 000 × 100 | 1.24 | 1.20 | 2.46 | 2.0× |
-| StandardScaler | 50 000 × 200 | 8.2 | 4.7 | 22.4 | **4.8×** |
-| MinMaxScaler | 1 000 × 10 | 0.025 | 0.014 | 0.202 | **14.4×** |
-| MinMaxScaler | 10 000 × 100 | 1.70 | 1.47 | 1.32 | 0.9× |
-| MinMaxScaler | 50 000 × 200 | 10.8 | 7.5 | 11.6 | **1.5×** |
-| RobustScaler | 1 000 × 10 | 0.17 | 0.13 | 0.768 | **5.8×** |
-| RobustScaler | 10 000 × 100 | 11.2 | 2.09 | 21.4 | **10×** |
-| RobustScaler | 50 000 × 200 | 123 | 14.0 | 193.5 | **13.8×** |
-| PCA (k = min(10, cols/2)) | 1 000 × 10 | 0.18 | 0.10 | 0.226 | 2.2× |
-| PCA | 10 000 × 100 | 45 | 41 | 1.39 | 0.03× |
-| PCA | 50 000 × 200 | 838 | 819 | 12.2 | 0.01× |
-| Pipeline (Standard→MinMax→Robust) | 1 000 × 10 | 0.20 | 0.21 | 1.02 | **4.9×** |
-| Pipeline | 10 000 × 100 | 13.2 | 4.1 | 25.2 | 6.1× |
-| Pipeline | 50 000 × 200 | 144 | 26.7 | 229.6 | **8.6×** |
-| OneHotEncoder (string) | 1 000 × 5 | 0.38 | 0.55 | 0.800 | 1.5× |
-| OneHotEncoder | 10 000 × 10 | 7.4 | 6.8 | 9.9 | 1.5× |
-| OneHotEncoder | 50 000 × 20 | 89 | 80 | 205 | **2.6×** |
-| ColumnTransformer (num + cat) | 1 000 × 5 | 0.026 | 0.026 | 4.6 | **179×** |
-| ColumnTransformer | 10 000 × 10 | 0.23 | 0.24 | 79.8 | **347×** |
-| ColumnTransformer | 50 000 × 20 | 1.31 | 1.32 | 812.8 | **620×** |
-| LinearRegression (fit+predict) | 1 000 × 10 | 0.16 | 0.16 | — | — |
-| LinearRegression | 10 000 × 100 | 14.4 | 14.4 | — | — |
-| LinearRegression | 50 000 × 200 | 258 | 258 | — | — |
+| StandardScaler | 1 000 × 10 | 0.031 | 0.030 | 0.270 | **8.9×** |
+| StandardScaler | 10 000 × 100 | 1.69 | 1.69 | 2.39 | 1.4× |
+| StandardScaler | 50 000 × 200 | 14.2 | 10.4 | 21.5 | 2.1× |
+| MinMaxScaler | 1 000 × 10 | 0.033 | 0.035 | 0.199 | **5.9×** |
+| MinMaxScaler | 10 000 × 100 | 1.75 | 1.88 | 1.32 | 0.8× |
+| MinMaxScaler | 50 000 × 200 | 17.7 | 13.4 | 11.4 | 0.8× |
+| RobustScaler | 1 000 × 10 | 0.11 | 0.18 | 0.722 | **6.3×** |
+| RobustScaler | 10 000 × 100 | 6.05 | 1.90 | 21.4 | **11×** |
+| RobustScaler | 50 000 × 200 | 68.7 | 14.7 | 193.8 | **13×** |
+| PCA (k = min(10, cols/2)) | 1 000 × 10 | 0.11 | 0.12 | 0.220 | 2.0× |
+| PCA | 10 000 × 100 | 14.0 | 14.1 | 1.35 | 0.10× |
+| PCA | 50 000 × 200 | 206 | 205 | 12.0 | 0.06× |
+| Pipeline (Standard→MinMax→Robust) | 1 000 × 10 | 0.16 | 0.27 | 0.921 | **5.7×** |
+| Pipeline | 10 000 × 100 | 9.57 | 5.04 | 28.0 | **5.6×** |
+| Pipeline | 50 000 × 200 | 101.5 | 39.9 | 227.5 | **5.7×** |
+| OneHotEncoder (string) | 1 000 × 5 | 0.21 | 0.40 | 0.780 | **3.8×** |
+| OneHotEncoder | 10 000 × 10 | 4.25 | 3.57 | 10.2 | **2.9×** |
+| OneHotEncoder | 50 000 × 20 | 54.7 | 45.0 | 179.8 | **4.0×** |
+| ColumnTransformer (num + cat) | 1 000 × 5 | 0.029 | 0.031 | 4.41 | **153×** |
+| ColumnTransformer | 10 000 × 10 | 0.31 | 0.31 | 77.9 | **255×** |
+| ColumnTransformer | 50 000 × 20 | 2.10 | 2.11 | 796.7 | **380×** |
+| LinearRegression (fit+predict) | 1 000 × 10 | 0.12 | 0.12 | 0.314 | 2.6× |
+| LinearRegression | 10 000 × 100 | 15.1 | 15.1 | 15.1 | 1.0× |
+| LinearRegression | 50 000 × 200 | 263 | 264 | 118 | 0.45× |
 
 **PCA with the `matrixmultiply` feature.** The default and `rayon` builds compute the
 covariance `Xcᵀ Xc` with a scalar loop; enabling the optional `matrixmultiply` feature
 dispatches the covariance **and** the transform/inverse matmuls to a tuned pure-Rust GEMM
 (no system BLAS), and a power-iteration + deflation path (`eigh_topk`) replaces the full
 Jacobi sweep when `n_components` is small. On 50 000 × 200 this cuts PCA from
-**838 ms → 104 ms** (8× faster), and on 10 000 × 100 from **45 ms → 9.3 ms** (4.8×). PCA
-remains slower than scikit-learn (which uses LAPACK's full SVD) — see "Where scikit-learn
-wins" below — but the gap narrowed from 85× to ~8×.
+**206 ms → 111 ms** (1.9× faster), and on 10 000 × 100 from **14.0 ms → 9.6 ms** (1.5×).
+PCA remains slower than scikit-learn (which uses LAPACK's full SVD) — see "Where
+scikit-learn wins" below — but the gap narrowed from ~17× to ~9×.
 
 **Randomized SVD (opt-in).** `PCA::solver(PCASolver::Randomized)` selects the
 Halko–Martinsson–Tropp randomized SVD, which is `O(n·p·(k+oversample))` instead of
@@ -1338,11 +1338,12 @@ edge case is being verified; `Auto` (the default) uses the exact eigensolver pat
 **LinearRegression with the `matrixmultiply` feature.** `fit` forms the normal-equation
 matrices `XᵀX` (p×p) and `Xᵀy` (p) via `Matrix::matmul`, then solves them with a pure-Rust
 Cholesky decomposition. Enabling `matrixmultiply` dispatches the matmul to a tuned GEMM,
-cutting `fit` from **258 ms → 84 ms** at 50 000 × 200 (3× faster) and **14.4 ms → 5.0 ms**
-at 10 000 × 100 (2.9× faster). sklearn timing is not shown here because the Python
-comparison harness requires numpy/scipy in the environment; the Rust harness
-(`cargo run --release --features matrixmultiply --example bench_compare_rust`) is
-reproducible on any machine.
+cutting `fit+predict` from **263 ms → 91 ms** at 50 000 × 200 (2.9× faster) and
+**15.1 ms → 5.5 ms** at 10 000 × 100 (2.7× faster). With the feature on, datarust's
+`fit+predict` at 50 000 × 200 (91 ms) edges out scikit-learn's 118 ms — the first row
+where datarust leads on a matmul-heavy workload. Reproduce with
+`cargo run --release --features matrixmultiply --example bench_compare_rust`
+and `python3 benches/compare_sklearn.py`.
 
 ### Scalar vs `matrixmultiply` kernels
 
@@ -1355,27 +1356,27 @@ carries its own unit (ms / µs / ns).
 
 | Benchmark | Size | scalar | +GEMM | Speedup |
 |---|---|---:|---:|---:|
-| `matrix_matmul` | 100 × 100 | 106 µs | **38.2 µs** | **2.8×** |
-| `matrix_matmul` | 50 × 50 | 14.9 µs | **5.85 µs** | 2.5× |
-| `matrix_matmul` | 10 × 10 | 290 ns | **162 ns** | 1.8× |
-| `correlation_matrix_flat` (Pearson) | 10 000 × 100 | 6.07 ms | **4.12 ms** | 1.5× |
-| `correlation_matrix_flat` | 10 000 × 50 | 1.98 ms | **1.25 ms** | 1.6× |
-| `correlation_matrix_flat` | 100 000 × 20 | 5.32 ms | **2.93 ms** | **1.8×** |
-| `linear_regression` fit | 100 000 × 100 | 147 ms | **54.3 ms** | **2.7×** |
-| `linear_regression` fit | 10 000 × 50 | 4.33 ms | **1.75 ms** | 2.5× |
-| `linear_regression` fit | 1 000 × 10 | 73.3 µs | **27.9 µs** | 2.6× |
+| `matrix_matmul` | 100 × 100 | 104 µs | **37.6 µs** | **2.8×** |
+| `matrix_matmul` | 50 × 50 | 20.2 µs | **5.48 µs** | **3.7×** |
+| `matrix_matmul` | 10 × 10 | 280 ns | **158 ns** | 1.8× |
+| `correlation_matrix_flat` (Pearson) | 10 000 × 100 | 5.98 ms | **4.05 ms** | 1.5× |
+| `correlation_matrix_flat` | 10 000 × 50 | 1.91 ms | **1.25 ms** | 1.5× |
+| `correlation_matrix_flat` | 100 000 × 20 | 5.22 ms | **2.89 ms** | **1.8×** |
+| `linear_regression` fit | 100 000 × 100 | 147 ms | **54.1 ms** | **2.7×** |
+| `linear_regression` fit | 10 000 × 50 | 5.87 ms | **1.74 ms** | **3.4×** |
+| `linear_regression` fit | 1 000 × 10 | 74.1 µs | **27.5 µs** | 2.7× |
 | `linear_regression` predict | any | ≈ | ≈ | ~1.0× |
-| `truncated_svd` | 1000 × 50 → 10 comps | 1.75 ms | **914 µs** | **1.9×** |
-| `truncated_svd` | 500 × 30 → 5 comps | 356 µs | **183 µs** | 1.9× |
-| `pca` | 200 × 20 → 5 comps | 109 µs | **92.8 µs** | 1.2× |
-| `pca` | 50 × 10 → 3 comps | 21.3 µs | 19.9 µs | 1.1× |
+| `truncated_svd` | 1000 × 50 → 10 comps | 1.80 ms | **949 µs** | **1.9×** |
+| `truncated_svd` | 500 × 30 → 5 comps | 376 µs | **199 µs** | **1.9×** |
+| `pca` | 200 × 20 → 5 comps | 109 µs | **93.2 µs** | 1.2× |
+| `pca` | 50 × 10 → 3 comps | 21.1 µs | 19.8 µs | 1.1× |
 
 **Where the GEMM pays off.** The classic matmul kernels win most: `Matrix::matmul`
-**2.5–2.8×**, `LinearRegression` fit **2.5–2.7×**, `TruncatedSVD` **~1.9×**. Predict
+**2.8–3.7×**, `LinearRegression` fit **2.7–3.4×**, `TruncatedSVD` **~1.9×**. Predict
 paths are memory-bound matvecs and barely move (~1.0×). Pearson no longer needs GEMM for
-wide tables — the lower-triangle scalar covariance puts the kernel at **6.1 ms** for
+wide tables — the lower-triangle scalar covariance puts the kernel at **6.0 ms** for
 10 000 × 100, with GEMM adding ~1.5× on top; the sibling `datarust-profile` crate shows
-the same effect: wide `profile_matrix` (10 000 × 100) is **31.6 ms scalar vs 30.5 ms
+the same effect: wide `profile_matrix` (10 000 × 100) is **30.2 ms scalar vs 28.6 ms
 +GEMM**, because Pearson is no longer its dominant cost. PCA barely moves at these small
 sizes (GEMM overhead dominates a 20 × 20 covariance) and shines on larger matrices — see
 the 50 000 × 200 PCA note above.
@@ -1389,24 +1390,73 @@ and document the operations added most recently. Each time carries its own unit.
 
 | Benchmark | Size | median |
 |---|---|---:|
-| `label_encoder` fit_transform | 10 000 × 10 | 578 µs |
-| `label_encoder` fit_transform | 100 000 × 10 | 5.79 ms |
-| `label_encoder` fit_transform | 100 000 × 10 000 classes | 9.42 ms |
-| `stats_nested` mean_var | 10 000 × 100 | 223 µs |
-| `stats_nested` quantiles | 10 000 × 100 | 8.32 ms |
-| `stats_nested` mode_column | 10 000 × 100 | 11.6 ms |
-| `stats_nested` mean_var | 100 000 × 20 | 711 µs |
-| `stats_nested` quantiles | 100 000 × 20 | 18.5 ms |
-| `stats_nested` mode_column | 100 000 × 20 | 27.6 ms |
-| `train_test_split` | 10 000 × 50 | 114 µs |
-| `train_test_split` | 100 000 × 20 | 763 µs |
-| `matrix_ops` from_flat | 10 000 × 50 | 48.3 µs |
-| `matrix_ops` from_flat | 100 000 × 20 | 214 µs |
+| `label_encoder` fit_transform | 10 000 × 10 | 558 µs |
+| `label_encoder` fit_transform | 100 000 × 10 | 5.67 ms |
+| `label_encoder` fit_transform | 100 000 × 10 000 classes | 9.17 ms |
+| `stats_nested` mean_var | 10 000 × 100 | 220 µs |
+| `stats_nested` quantiles | 10 000 × 100 | 7.90 ms |
+| `stats_nested` mode_column | 10 000 × 100 | 11.1 ms |
+| `stats_nested` mean_var | 100 000 × 20 | 705 µs |
+| `stats_nested` quantiles | 100 000 × 20 | 16.2 ms |
+| `stats_nested` mode_column | 100 000 × 20 | 27.7 ms |
+| `train_test_split` | 10 000 × 50 | 116 µs |
+| `train_test_split` | 100 000 × 20 | 784 µs |
+| `matrix_ops` from_flat | 10 000 × 50 | 49.0 µs |
+| `matrix_ops` from_flat | 100 000 × 20 | 216 µs |
 
 `stats_nested` mirrors the flat-storage kernels over `Vec<Vec<f64>>` inputs;
 `mode_column` shares `mode`'s sort-then-scan, so a 100 000 × 20 mostly-distinct table
-modes in **27.6 ms**. `matrix_ops/from_flat` (48 µs at 10 000 × 50) shows why flat
-construction is the fast path over nested `from_nested` (~284 µs).
+modes in **27.7 ms**. `matrix_ops/from_flat` (49 µs at 10 000 × 50) shows why flat
+construction is the fast path over nested `from_nested` (~289 µs).
+
+The next pass added eight groups covering the **production-time paths** that
+`fit_transform`-only benchmarks hid: `transform`/`inverse_transform` on fitted
+transformers, `predict_proba`, fitted-encoder transforms, sparse one-hot, the
+remaining classification metrics, the splitters, and string-column gathering.
+
+| Benchmark | Size | median |
+|---|---|---:|
+| `metrics_more` confusion_matrix | 100 000 | 1.25 ms |
+| `metrics_more` precision/recall/F1/kappa/MCC | 100 000 | ~1.24 ms |
+| `metrics_more` log_loss | 100 000 | 714 µs |
+| `metrics_more` average_precision_score | 100 000 | 1.70 ms |
+| `logistic_predict_proba` predict_proba_binary | 50 000 × 100 | 6.14 ms |
+| `logistic_predict_proba` predict_proba_multiclass | 10 000 × 50 | 715 µs |
+| `encoder_transform` onehot_transform | 50 000 × 20 | 14.3 ms |
+| `encoder_transform` ordinal/frequency/target transform | 50 000 × 20 | ~9.3 ms |
+| `polynomial_transform` transform | 10 000 × 5, d3 | 876 µs |
+| `scaler_transform` standard/minmax/robust transform | 100 000 × 20 | ~1.72 ms |
+| `scaler_transform` standard/minmax/robust inverse | 100 000 × 20 | ~1.45 ms |
+| `scaler_transform` quantile_transform | 100 000 × 20 | **14.6 ms** |
+| `onehot_sparse` transform_sparse | 50 000 × 20 | 16.8 ms |
+| `onehot_sparse` fit_transform_sparse | 50 000 × 20 | 32.9 ms |
+| `model_selection` kfold_5_shuffled | 100 000 | 210 µs |
+| `model_selection` stratified_kfold_5 | 100 000 | 1.86 ms |
+| `strmatrix_column` column_clone | 100 000 × 20 | 72.0 ms |
+| `strmatrix_column` column_refs | 100 000 × 20 | 8.12 ms |
+
+Three rows are the current bottlenecks. **`QuantileTransformer.transform` is
+still the per-value outlier — ~7.3 ns per value** (14.6 ms at 100 000 × 20,
+down from 23.4 ms) against ~0.85 ns for the linear scalers: each value maps
+into one of 512 pre-partitioned value spans over the 1 000-point reference and
+interpolates inside that span's handful of entries — O(1) plus a few compares
+instead of a full log₂(1000) binary search, with bit-identical output. The
+remaining cost is the per-value interpolation itself (the nested-Vec transpose
+round-trips are gone; the transform now streams the flat buffer row-major).
+**`StrMatrix::column` (clone) is ~8× slower than the borrowing `column_refs`**
+(72.0 ms vs 8.12 ms at 100 000 × 20) — all four categorical encoders used to
+pay this clone tax in their fit paths, and switching them to `column_refs` made
+`fit_transform` **60–83% faster** (ordinal/frequency fit at 10 000 × 20: ~21 ms
+→ ~3.6–3.9 ms, with transform unchanged). **`StratifiedKFold.split`** used to
+rebuild each fold's train set with a per-fold `HashSet` scan of every sample; a
+reusable boolean mask (mark → scan → reset) cut it from 6.31 ms to **1.86 ms**
+at 100 000 rows (**−71%**), leaving the stratification setup itself as the
+remaining cost. `onehot_sparse`
+`transform_sparse` was 2× slower than the dense transform because it
+round-tripped through per-row triplet `Vec`s and `SparseMatrix::from_triplets`'
+per-row re-sort; it now builds the CSR arrays directly — 16.8 ms vs 14.3 ms
+dense at 50 000 × 20 (down from 27.6 ms), and `fit_transform_sparse` dropped
+from 78.3 ms to 32.9 ms.
 
 For the sibling `datarust-profile` crate, the criterion suite adds
 `cramers_v_high_cardinality`, `point_biserial`, `profile_str_high_cardinality`, and
@@ -1416,34 +1466,35 @@ serde-gated `report_json` groups — the mdBook `performance` page lists their m
 
 **Where datarust wins decisively:**
 
-- **Mixed numeric + categorical composition.** `ColumnTransformer` is **160–590×**
+- **Mixed numeric + categorical composition.** `ColumnTransformer` is **153–380×**
   faster than scikit-learn's on large inputs. This is the headline result and reflects
   the cost of sklearn's per-column Python dispatch, dtype coercion, and
   `ColumnTransformer`'s object-array marshalling on mixed-type inputs.
-- **String / categorical encoding.** `OneHotEncoder` is ~1.5–2.6× faster because
+- **String / categorical encoding.** `OneHotEncoder` is ~2.9–4.0× faster because
   datarust operates on a native `StrMatrix` directly — no Python object-array overhead,
   no GIL.
 - **Numeric scalers with `rayon`.** Once the data is large enough to amortise thread
-  spawn, `StandardScaler`/`RobustScaler`/`Pipeline` all beat sklearn by **4.8–13.8×** at
+  spawn, `StandardScaler`/`RobustScaler`/`Pipeline` all beat sklearn by **2.1–13×** at
   50 000 × 200. The single-pass Welford statistics and contiguous flat storage close
   the gap that numpy's vectorised kernels used to dominate.
 - **Small data and startup latency.** At 1 000 × 10, datarust is faster on every
-  workload — up to **17.5×** on `StandardScaler` (the rayon path now falls back to the
-  scalar loop below 4 096 rows, avoiding thread-pool overhead on tiny inputs). There is
-  no Python interpreter to spin up and no joblib/numpy import cost — relevant for
-  embedded, batch-on-many-small-files, or request-scoped inference paths.
+  workload — up to **8.9×** on `StandardScaler` and **153×** on `ColumnTransformer` (the
+  rayon path now falls back to the scalar loop below 4 096 rows, avoiding thread-pool
+  overhead on tiny inputs). There is no Python interpreter to spin up and no joblib/numpy
+  import cost — relevant for embedded, batch-on-many-small-files, or request-scoped
+  inference paths.
 
 **Where scikit-learn still wins:**
 
 - **PCA on tall-and-wide data (without the `matrixmultiply` feature).** sklearn's `PCA`
-  is still faster when comparing default builds (0.01× at 50 000 × 200). It calls into
+  is still faster when comparing default builds (0.06× at 50 000 × 200). It calls into
   LAPACK's full SVD via a shared-library BLAS; datarust implements the covariance
   eigendecomposition with a from-scratch Jacobi sweep. With the `matrixmultiply` feature
-  the gap narrows from 85× to ~8×, and `PCA::solver(PCASolver::Randomized)` (randomized
+  the gap narrows from ~17× to ~9×, and `PCA::solver(PCASolver::Randomized)` (randomized
   SVD, the same algorithm sklearn's `svd_solver='randomized'` uses) closes it further for
   low-rank inputs. For PCA on large dense matrices as the hot path, sklearn remains the
   fastest option today.
-- **MinMaxScaler at medium width.** At 10 000 × 100 the two are roughly tied (0.9×);
+- **MinMaxScaler at medium width.** At 10 000 × 100 the two are roughly tied (0.8×);
   numpy's contiguous buffer and autovectorisation win narrowly on this particular shape.
   At both smaller and larger sizes datarust leads.
 

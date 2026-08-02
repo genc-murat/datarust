@@ -37,6 +37,25 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
 - **datarust-profile:** hash-based row deduplication, borrow-based categorical
   access (`T: AsRef<str>`), allocation-free missing detection, and integer-coded
   Cramér's V — `profile_str_matrix` 100 000 × 20 drops from 269 ms to 132 ms.
+- **Encoder fit paths:** the four categorical encoders now gather columns
+  through the borrowing `StrMatrix::column_refs` instead of cloning every cell
+  — `fit_transform` 10 000 × 20 drops from ~20.7 ms to 3.60 ms (ordinal, 5.7×).
+- **QuantileTransformer `transform`:** streams the flat buffer row-major (no
+  nested-Vec transpose round-trip) — 100 000 × 20 drops from 28.3 ms to
+  22.9 ms; the reference lookup is then pre-partitioned into 512 uniform value
+  spans so each value skips the full binary search — 23.4 ms to 14.6 ms
+  (1.6×), bit-identical output.
+- **OneHotEncoder sparse transform:** builds the CSR arrays directly instead of
+  per-row triplets plus a re-sort — `transform_sparse` 50 000 × 20 drops from
+  27.6 ms to 18.3 ms; `fit_transform_sparse` from 78.3 ms to 33.2 ms.
+- **StratifiedKFold:** each fold's training complement uses a reusable boolean
+  mask instead of a per-fold `HashSet` scan — `split` 100 000 drops from
+  6.31 ms to 1.82 ms (3.5×).
+- **Fresh sklearn comparison:** the "datarust vs scikit-learn" table was
+  re-run end-to-end (scikit-learn 1.6.1 / numpy 2.0.2 / scipy 1.13.1) —
+  OneHotEncoder 50 000 × 20 default 89 → 54.7 ms, PCA 50 000 × 200 838 →
+  206 ms, and the `LinearRegression` column is now filled in (263 ms default /
+  91 ms with `matrixmultiply` vs sklearn 118 ms).
 
 For the full details and performance tables, see the [canonical changelog](https://github.com/genc-murat/datarust/blob/main/crates/datarust/CHANGELOG.md).
 
