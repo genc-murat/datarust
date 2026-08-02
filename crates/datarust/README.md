@@ -1380,6 +1380,38 @@ the same effect: wide `profile_matrix` (10 000 × 100) is **31.6 ms scalar vs 30
 sizes (GEMM overhead dominates a 20 × 20 covariance) and shines on larger matrices — see
 the 50 000 × 200 PCA note above.
 
+### Criterion microbenchmark coverage
+
+The criterion suite (`cargo bench -p datarust --bench benchmarks`) covers the whole
+API surface. The medians below are from the **default** (zero-dependency) build with
+`--warm-up-time 0.5 --measurement-time 1.5 --sample-size 10` on the same Apple M5 Pro
+and document the operations added most recently. Each time carries its own unit.
+
+| Benchmark | Size | median |
+|---|---|---:|
+| `label_encoder` fit_transform | 10 000 × 10 | 578 µs |
+| `label_encoder` fit_transform | 100 000 × 10 | 5.79 ms |
+| `label_encoder` fit_transform | 100 000 × 10 000 classes | 9.42 ms |
+| `stats_nested` mean_var | 10 000 × 100 | 223 µs |
+| `stats_nested` quantiles | 10 000 × 100 | 8.32 ms |
+| `stats_nested` mode_column | 10 000 × 100 | 11.6 ms |
+| `stats_nested` mean_var | 100 000 × 20 | 711 µs |
+| `stats_nested` quantiles | 100 000 × 20 | 18.5 ms |
+| `stats_nested` mode_column | 100 000 × 20 | 27.6 ms |
+| `train_test_split` | 10 000 × 50 | 114 µs |
+| `train_test_split` | 100 000 × 20 | 763 µs |
+| `matrix_ops` from_flat | 10 000 × 50 | 48.3 µs |
+| `matrix_ops` from_flat | 100 000 × 20 | 214 µs |
+
+`stats_nested` mirrors the flat-storage kernels over `Vec<Vec<f64>>` inputs;
+`mode_column` shares `mode`'s sort-then-scan, so a 100 000 × 20 mostly-distinct table
+modes in **27.6 ms**. `matrix_ops/from_flat` (48 µs at 10 000 × 50) shows why flat
+construction is the fast path over nested `from_nested` (~284 µs).
+
+For the sibling `datarust-profile` crate, the criterion suite adds
+`cramers_v_high_cardinality`, `point_biserial`, `profile_str_high_cardinality`, and
+serde-gated `report_json` groups — the mdBook `performance` page lists their medians.
+
 ### Reading the results
 
 **Where datarust wins decisively:**

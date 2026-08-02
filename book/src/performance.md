@@ -82,6 +82,60 @@ tables (the lower-triangle scalar covariance puts the kernel at **6.1 ms** for
 
 - **PCA on tall-and-wide data** (without the `matrixmultiply` feature). sklearn calls into LAPACK's full SVD via shared-library BLAS; datarust uses a from-scratch Jacobi sweep. With `matrixmultiply` the gap narrows from 85× to ~8×, and `PCASolver::Randomized` closes it further for low-rank inputs.
 
+## Criterion microbenchmark suite
+
+Alongside the sklearn comparison, the criterion suite
+(`cargo bench -p datarust --bench benchmarks` and
+`cargo bench -p datarust-profile --bench benchmarks`) covers the whole API
+surface. The medians below are from the **default** (zero-dependency) build with
+`--warm-up-time 0.5 --measurement-time 1.5 --sample-size 10` on the same Apple M5
+Pro, and document the operations added most recently. Each time carries its own
+unit.
+
+### datarust
+
+| Benchmark | Size | median |
+|---|---|---:|
+| `label_encoder` fit_transform | 10 000 × 10 | 578 µs |
+| `label_encoder` fit_transform | 100 000 × 10 | 5.79 ms |
+| `label_encoder` fit_transform | 100 000 × 10 000 classes | 9.42 ms |
+| `stats_nested` mean_var | 10 000 × 100 | 223 µs |
+| `stats_nested` quantiles | 10 000 × 100 | 8.32 ms |
+| `stats_nested` mode_column | 10 000 × 100 | 11.6 ms |
+| `stats_nested` mean_var | 100 000 × 20 | 711 µs |
+| `stats_nested` quantiles | 100 000 × 20 | 18.5 ms |
+| `stats_nested` mode_column | 100 000 × 20 | 27.6 ms |
+| `train_test_split` | 10 000 × 50 | 114 µs |
+| `train_test_split` | 100 000 × 20 | 763 µs |
+| `matrix_ops` from_flat | 10 000 × 50 | 48.3 µs |
+| `matrix_ops` from_flat | 100 000 × 20 | 214 µs |
+
+The `stats_nested` group mirrors the flat-storage kernels over `Vec<Vec<f64>>`
+inputs; `mode_column` shares `mode`'s sort-then-scan, so a 100 000 × 20
+mostly-distinct table modes in **27.6 ms**. `matrix_ops/from_flat` (48 µs at
+10 000 × 50) shows why flat construction is the fast path over the nested
+`from_nested` (~284 µs for the same shape).
+
+### datarust-profile
+
+| Benchmark | Size | median |
+|---|---|---:|
+| `cramers_v_high_cardinality` | 10 000 × 10, 100 levels | 2.12 ms |
+| `cramers_v_high_cardinality` | 10 000 × 10, 1 000 levels | 6.19 ms |
+| `point_biserial` | 10 000 × 20 num + 20 bin | 12.3 ms |
+| `point_biserial` | 50 000 × 10 num + 10 bin | 21.8 ms |
+| `profile_str_high_cardinality` | 10 000 × 20 | 84.9 ms |
+| `profile_str_high_cardinality` | 50 000 × 10 | 135 ms |
+| `report_json` to_json | 10 000 × 20 | 38.8 µs |
+| `report_json` to_json | 100 000 × 20 | 38.7 µs |
+
+The high-cardinality groups pin down the worst cases of wide-table profiling:
+near-unique identifier columns (10 000 × 20) take ~85 ms end-to-end — dominated
+by duplicate detection and per-column categorical tallies — and Cramér's V over
+1 000-level columns costs ~6 ms per 10-column table. `report_json` scales with
+the **column** count, not the row count (the profile is column-summarized), so
+10 000 × 20 and 100 000 × 20 serialize in the same ~39 µs.
+
 ## Reproduce the benchmarks
 
 The harness lives in `examples/bench_compare_rust.rs` (Rust side) and `benches/compare_sklearn.py` (Python side). Run on your own hardware:

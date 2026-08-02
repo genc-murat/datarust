@@ -33,12 +33,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scalar covariance path inside `datarust` now accumulates only the lower
   triangle (flop-halving, bit-identical), further accelerating wide-table
   Pearson.
+- **Allocation-free point-biserial.** `calculate_point_biserial` replaces the
+  per-(categorical, numeric)-pair `group_0` / `group_1` / `all_y` `Vec`s with
+  two fused scalar passes (counts and sums, then the pooled variance),
+  eliminating the allocation churn that dominated wide-table profiles with many
+  binary columns. Results are unchanged — same accumulation order, ddof, and
+  filtering of non-binary / non-finite pairs.
 
 ### Added
 
 - **New benchmarks.** `relationships` (wide numeric Pearson plus a mixed
   Pearson/Cramér's V table), `profile_table_wide` (up to 60-column mixed
   tables), and `report_html` (HTML report rendering).
+- **More benchmarks.** `cramers_v_high_cardinality` (Cramér's V over 100/1 000
+  level columns, hitting the hash-map contingency path),
+  `point_biserial` (binary × numeric pairwise), `profile_str_high_cardinality`
+  (near-unique identifier columns), and serde-gated `report_json`
+  (`JsonReport` → `to_json`).
 
 ### Docs
 
@@ -49,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   10 000 × 100 is ~31.6 ms scalar vs ~30.5 ms +GEMM — Pearson is no longer the
   dominant cost of wide profiling, so the `matrixmultiply` feature adds little
   there.
+- **Microbenchmark medians documented.** The mdBook `performance` page and the
+  datarust README now list criterion medians for the new groups:
+  `cramers_v_high_cardinality` 10 000 × 10 × 1 000 levels ≈ 6.2 ms,
+  `point_biserial` 10 000 × (20 num + 20 bin) ≈ 12.3 ms,
+  `profile_str_high_cardinality` 10 000 × 20 ≈ 85 ms, and `report_json`
+  ≈ 39 µs regardless of row count (JSON output scales with the column count,
+  since the profile is column-summarized).
 
 ### Performance
 

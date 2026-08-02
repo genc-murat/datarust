@@ -306,41 +306,54 @@ fn compute_point_biserial<T: AsRef<str>>(
 }
 
 /// Calculates point-biserial correlation between a 0/1 indicator vector and a numeric vector.
+///
+/// Computed with two allocation-free passes: one to count/sum each group and
+/// one for the pooled variance. The previous version materialised `group_0`,
+/// `group_1` and `all_y` `Vec`s for every (categorical, numeric) pair, which
+/// dominated the profile cost on wide tables with many binary columns.
 fn calculate_point_biserial(binary: &[f64], numeric: &[f64]) -> Option<f64> {
     let n = binary.len().min(numeric.len());
     if n == 0 {
         return None;
     }
 
-    // Filter out pairs where either value is NaN or missing
-    let mut group_0 = Vec::new();
-    let mut group_1 = Vec::new();
-
+    // Pass 1: counts and sums, filtering pairs where either value is missing
+    // or the indicator is neither 0 nor 1 (mirrors the old group pushes).
+    let (mut n0, mut n1, mut sum0, mut sum1) = (0usize, 0usize, 0.0, 0.0);
     for i in 0..n {
         let b = binary[i];
         let y = numeric[i];
         if b.is_finite() && y.is_finite() {
             if b == 0.0 {
-                group_0.push(y);
+                n0 += 1;
+                sum0 += y;
             } else if b == 1.0 {
-                group_1.push(y);
+                n1 += 1;
+                sum1 += y;
             }
         }
     }
 
-    let n0 = group_0.len();
-    let n1 = group_1.len();
     let total_n = n0 + n1;
-
     if n0 == 0 || n1 == 0 || total_n < 3 {
         return None;
     }
 
-    let m0 = datarust::stats::mean(&group_0);
-    let m1 = datarust::stats::mean(&group_1);
+    let m0 = sum0 / n0 as f64;
+    let m1 = sum1 / n1 as f64;
+    let m_all = (sum0 + sum1) / total_n as f64;
 
-    let all_y: Vec<f64> = group_0.iter().chain(group_1.iter()).copied().collect();
-    let s_y = datarust::stats::std(&all_y, 1);
+    // Pass 2: pooled sample variance (ddof = 1) over the same pairs.
+    let mut ss = 0.0;
+    for i in 0..n {
+        let b = binary[i];
+        let y = numeric[i];
+        if b.is_finite() && y.is_finite() && (b == 0.0 || b == 1.0) {
+            let d = y - m_all;
+            ss += d * d;
+        }
+    }
+    let s_y = (ss / (total_n - 1) as f64).sqrt();
 
     if s_y == 0.0 {
         return Some(0.0);

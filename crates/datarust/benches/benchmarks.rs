@@ -564,6 +564,13 @@ fn bench_matrix_ops(c: &mut Criterion) {
             &m,
             |bencher, m| bencher.iter(|| m.select_columns(&sel)),
         );
+
+        let flat = make_matrix(rows, cols).as_slice().to_vec();
+        group.bench_with_input(
+            BenchmarkId::new("from_flat", format!("{rows}x{cols}")),
+            &flat,
+            |bencher, f| bencher.iter(|| Matrix::from_flat(rows, cols, f.clone()).unwrap()),
+        );
     }
     group.finish();
 }
@@ -975,8 +982,75 @@ fn bench_metrics(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_label_encoder(c: &mut Criterion) {
+    use datarust::encoder::LabelEncoder;
+    let mut group = c.benchmark_group("label_encoder");
+    for (rows, cardinality) in [(10_000, 10), (100_000, 10), (100_000, 10_000)] {
+        let labels: Vec<String> = (0..rows)
+            .map(|i| format!("class_{}", i % cardinality))
+            .collect();
+        group.bench_with_input(
+            BenchmarkId::new("fit_transform", format!("{rows}x{cardinality}")),
+            &labels,
+            |bencher, labels| {
+                bencher.iter_batched(
+                    LabelEncoder::new,
+                    |mut le| le.fit_transform(labels.iter().cloned()),
+                    BatchSize::SmallInput,
+                )
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_stats_nested(c: &mut Criterion) {
+    use datarust::stats;
+    let mut group = c.benchmark_group("stats_nested");
+    let qs = [0.0, 0.25, 0.5, 0.75, 1.0];
+    for (rows, cols) in [(10_000, 100), (100_000, 20)] {
+        let nested: Vec<Vec<f64>> = (0..rows)
+            .map(|i| (0..cols).map(|j| ((i * cols + j) as f64).sin()).collect())
+            .collect();
+        group.bench_with_input(
+            BenchmarkId::new("mean_var", format!("{rows}x{cols}")),
+            &nested,
+            |bencher, n| bencher.iter(|| stats::column_mean_var(n, 1)),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("quantiles", format!("{rows}x{cols}")),
+            &nested,
+            |bencher, n| bencher.iter(|| stats::column_quantiles_many(n, &qs).unwrap()),
+        );
+        group.bench_with_input(
+            BenchmarkId::new("mode_column", format!("{rows}x{cols}")),
+            &nested,
+            |bencher, n| bencher.iter(|| stats::mode_column(n)),
+        );
+    }
+    group.finish();
+}
+
+fn bench_train_test_split(c: &mut Criterion) {
+    use datarust::model_selection::train_test_split;
+    let mut group = c.benchmark_group("train_test_split");
+    for (rows, cols) in [(10_000, 50), (100_000, 20)] {
+        let x = make_matrix(rows, cols);
+        let y: Vec<f64> = (0..rows).map(|i| (i % 2) as f64).collect();
+        group.bench_with_input(
+            BenchmarkId::new("split", format!("{rows}x{cols}")),
+            &(&x, &y),
+            |bencher, (x, y)| bencher.iter(|| train_test_split(x, y)),
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
+    bench_label_encoder,
+    bench_stats_nested,
+    bench_train_test_split,
     bench_matrix_matmul,
     bench_matrix_transpose,
     bench_standard_scaler,

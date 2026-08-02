@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a longest-run scan. This is dramatically faster on large mostly-distinct
   columns and drives the `SimpleImputer` `MostFrequent` strategy; ties still
   break to the smallest value and empty input still returns `None`.
+- **`stats::mode_column` sort-then-scan.** The columnar `mode_column` now uses
+  the same single-sort-plus-longest-run scan as `mode` (shared via a private
+  `mode_sorted` helper) instead of a `HashMap<u64, …>` with one heap entry per
+  distinct value — dramatically faster on large mostly-distinct columns, with
+  identical tie-breaking (smallest value wins) and empty-column `NaN`
+  semantics.
 - **Lower-triangle flat covariance.** `covariance_centered_flat_scalar`
   accumulates only the lower triangle of `XcᵀXc` and mirrors it into the upper
   triangle, roughly halving the multiply-adds of the scalar (default-build)
@@ -49,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `variance_threshold`, `regularized_predict` (Ridge/Lasso `predict`),
   `stats_mode`, `matrix_column_gather`, `pipeline_imputer`
   (SimpleImputer → StandardScaler), and `cross_val` (5-fold linear regression).
+- **More benchmark coverage.** New groups `label_encoder` (fit_transform across
+  cardinalities), `stats_nested` (nested-`Vec` `column_mean_var`,
+  `column_quantiles_many`, and `mode_column`), `train_test_split`, and a
+  `from_flat` case in `matrix_ops`.
 
 
 - **PowerTransformer lambda search.** The log-likelihood jacobian term is

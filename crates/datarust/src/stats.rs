@@ -1,7 +1,5 @@
 //! Column-wise statistics, covariance and correlation helpers.
 
-use std::collections::HashMap;
-
 use crate::error::{DatarustError, Result};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -389,6 +387,12 @@ pub fn median_column(data: &[Vec<f64>]) -> Vec<f64> {
 /// Most frequent value. Ties broken by smallest value (deterministic).
 ///
 /// A column of all-equal (or empty) entries yields [`f64::NAN`] for that column.
+///
+/// Uses the same sort-then-scan strategy as [`mode`]: each column is gathered
+/// once, sorted, and the longest run of equal bit patterns is scanned. This is
+/// dramatically faster than hash-map counting on large mostly-distinct columns
+/// (the previous `HashMap<u64, …>` grew to one entry per distinct value) and
+/// breaks ties identically (smallest value wins).
 pub fn mode_column(data: &[Vec<f64>]) -> Vec<f64> {
     if data.is_empty() {
         return vec![];
@@ -398,55 +402,24 @@ pub fn mode_column(data: &[Vec<f64>]) -> Vec<f64> {
     {
         (0..cols)
             .into_par_iter()
-            .map(|j| {
-                let mut counts: HashMap<u64, (usize, f64)> = HashMap::new();
-                for r in data {
-                    let key = r[j].to_bits();
-                    let entry = counts.entry(key).or_insert((0, r[j]));
-                    entry.0 += 1;
-                    entry.1 = r[j];
-                }
-                let mut best: Option<(usize, f64)> = None;
-                for (_, (cnt, val)) in counts {
-                    match best {
-                        None => best = Some((cnt, val)),
-                        Some((bc, bv)) => {
-                            if cnt > bc || (cnt == bc && val < bv) {
-                                best = Some((cnt, val));
-                            }
-                        }
-                    }
-                }
-                best.map(|(_, v)| v).unwrap_or(f64::NAN)
-            })
+            .map(|j| mode_column_one(data, j))
             .collect()
     }
     #[cfg(not(feature = "rayon"))]
     {
-        (0..cols)
-            .map(|j| {
-                let mut counts: HashMap<u64, (usize, f64)> = HashMap::new();
-                for r in data {
-                    let key = r[j].to_bits();
-                    let entry = counts.entry(key).or_insert((0, r[j]));
-                    entry.0 += 1;
-                    entry.1 = r[j];
-                }
-                let mut best: Option<(usize, f64)> = None;
-                for (_, (cnt, val)) in counts {
-                    match best {
-                        None => best = Some((cnt, val)),
-                        Some((bc, bv)) => {
-                            if cnt > bc || (cnt == bc && val < bv) {
-                                best = Some((cnt, val));
-                            }
-                        }
-                    }
-                }
-                best.map(|(_, v)| v).unwrap_or(f64::NAN)
-            })
-            .collect()
+        (0..cols).map(|j| mode_column_one(data, j)).collect()
     }
+}
+
+/// Sorted-run mode of a single gathered column, returning [`f64::NAN`] for an
+/// empty column (matching [`mode_column`]'s contract).
+fn mode_column_one(data: &[Vec<f64>], j: usize) -> f64 {
+    let mut col: Vec<f64> = data.iter().map(|r| r[j]).collect();
+    if col.is_empty() {
+        return f64::NAN;
+    }
+    col.sort_by(|a, b| a.total_cmp(b));
+    mode_sorted(&col).unwrap_or(f64::NAN)
 }
 
 /// Most frequent value of a slice. Ties are broken by the smallest value
@@ -460,13 +433,26 @@ pub fn mode(data: &[f64]) -> Option<f64> {
         return None;
     }
     // Sort-then-scan: one copy + one sort, then find the longest run of equal
-    // bit patterns. This is dramatically faster than hash-map counting on
-    // large mostly-distinct columns (e.g. imputing continuous features), where
-    // the old `HashMap<u64, …>` grew to one entry per distinct value. Ties are
-    // broken by the smallest value because the scan keeps the first (sorted)
-    // value that achieves the maximum run length.
+    // bit patterns via [`mode_sorted`]. This is dramatically faster than
+    // hash-map counting on large mostly-distinct columns (e.g. imputing
+    // continuous features), where the old `HashMap<u64, …>` grew to one entry
+    // per distinct value. Ties are broken by the smallest value because the
+    // scan keeps the first (sorted) value that achieves the maximum run length.
     let mut sorted = data.to_vec();
     sorted.sort_by(|a, b| a.total_cmp(b));
+    mode_sorted(&sorted)
+}
+
+/// Scans an ascending-sorted slice for the longest run of equal bit patterns,
+/// returning the first value that achieves the maximum run length.
+///
+/// Because the input is sorted ascending, ties are broken toward the smallest
+/// value. Returns `None` for an empty slice.
+fn mode_sorted(sorted: &[f64]) -> Option<f64> {
+    let n = sorted.len();
+    if n == 0 {
+        return None;
+    }
     let mut best_val = sorted[0];
     let mut best_len = 1usize;
     let mut run_val = sorted[0];
