@@ -630,7 +630,8 @@ fn column_quantiles_select(col: &mut [f64], qs: &[f64]) -> Vec<f64> {
     idx.dedup();
     if idx.len() > 32 {
         col.sort_by(|a, b| a.total_cmp(b));
-        return qs.iter()
+        return qs
+            .iter()
             .map(|&q| quantile(col, q).expect("non-empty column with q in [0,1]"))
             .collect();
     }

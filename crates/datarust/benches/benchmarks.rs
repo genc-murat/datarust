@@ -419,7 +419,11 @@ fn bench_kbins_discretizer(c: &mut Criterion) {
             &x,
             |bencher, x| {
                 bencher.iter_batched(
-                    || KBinsDiscretizer::new(10).unwrap().strategy(BinStrategy::Quantile),
+                    || {
+                        KBinsDiscretizer::new(10)
+                            .unwrap()
+                            .strategy(BinStrategy::Quantile)
+                    },
                     |mut kb| kb.fit_transform(x),
                     BatchSize::SmallInput,
                 )

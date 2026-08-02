@@ -174,8 +174,7 @@ impl PowerTransformer {
     /// Find optimal lambda via golden-section search in [-5, 5].
     fn optimal_lambda(col: &[f64], method: PowerMethod) -> f64 {
         let jacobian = Self::jacobian_term(col, method);
-        let neg_lik =
-            |lam: f64| -Self::neg_log_likelihood(col, lam, method, jacobian);
+        let neg_lik = |lam: f64| -Self::neg_log_likelihood(col, lam, method, jacobian);
 
         // Coarse grid search first.
         let grid: Vec<f64> = (-50..=50).map(|i| i as f64 / 10.0).collect();

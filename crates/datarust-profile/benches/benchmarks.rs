@@ -47,9 +47,7 @@ fn bench_profile_table(c: &mut Criterion) {
     for (rows, n_cols, c_cols) in [(10_000, 10, 10), (100_000, 10, 10)] {
         let numeric = make_matrix(rows, n_cols);
         let categorical = make_str_matrix(rows, c_cols);
-        let names: Vec<String> = (0..n_cols + c_cols)
-            .map(|j| format!("col{j}"))
-            .collect();
+        let names: Vec<String> = (0..n_cols + c_cols).map(|j| format!("col{j}")).collect();
         group.bench_with_input(
             BenchmarkId::new("mixed_table", format!("{rows}x{}+{}", n_cols, c_cols)),
             &(&numeric, &categorical, &names),

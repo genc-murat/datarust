@@ -128,7 +128,10 @@ fn compute_cramers_v<T: AsRef<str>>(cols: &[(&str, &[T])]) -> Option<Correlation
         return None;
     }
 
-    let encoded: Vec<CodedColumn> = cols.iter().map(|(_, values)| encode_column(values)).collect();
+    let encoded: Vec<CodedColumn> = cols
+        .iter()
+        .map(|(_, values)| encode_column(values))
+        .collect();
 
     let p = cols.len();
     let labels: Vec<String> = cols.iter().map(|(name, _)| name.to_string()).collect();
@@ -162,8 +165,11 @@ fn cramers_v_from_codes(a: &CodedColumn, b: &CodedColumn) -> f64 {
     let mut col_totals = vec![0usize; a_c];
 
     let flat_limit = 1 << 16;
-    let mut flat: Option<Vec<usize>> =
-        if a_r * a_c <= flat_limit { Some(vec![0; a_r * a_c]) } else { None };
+    let mut flat: Option<Vec<usize>> = if a_r * a_c <= flat_limit {
+        Some(vec![0; a_r * a_c])
+    } else {
+        None
+    };
     let mut counts: HashMap<usize, usize> = HashMap::new();
 
     for i in 0..n {

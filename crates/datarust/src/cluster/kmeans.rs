@@ -345,7 +345,9 @@ impl KMeans {
         let mut labels = vec![0usize; n];
         let mut centroid_shift_sq = f64::MAX;
         let mut iter = 0;
-        let xnorms: Vec<f64> = (0..n).map(|i| x.row(i).iter().map(|v| v * v).sum()).collect();
+        let xnorms: Vec<f64> = (0..n)
+            .map(|i| x.row(i).iter().map(|v| v * v).sum())
+            .collect();
         let mut cnorms: Vec<f64> = centers
             .iter()
             .map(|c| c.iter().map(|v| v * v).sum())
@@ -493,7 +495,9 @@ impl Clusterer for KMeans {
         }
         x.validate_finite()?;
         let n = x.nrows();
-        let xnorms: Vec<f64> = (0..n).map(|i| x.row(i).iter().map(|v| v * v).sum()).collect();
+        let xnorms: Vec<f64> = (0..n)
+            .map(|i| x.row(i).iter().map(|v| v * v).sum())
+            .collect();
         let cnorms: Vec<f64> = self
             .cluster_centers_
             .iter()
@@ -501,12 +505,7 @@ impl Clusterer for KMeans {
             .collect();
         let mut out = vec![0usize; n];
         for (i, slot) in out.iter_mut().enumerate() {
-            *slot = Self::nearest_centroid(
-                x.row(i),
-                xnorms[i],
-                &self.cluster_centers_,
-                &cnorms,
-            );
+            *slot = Self::nearest_centroid(x.row(i), xnorms[i], &self.cluster_centers_, &cnorms);
         }
         Ok(out)
     }

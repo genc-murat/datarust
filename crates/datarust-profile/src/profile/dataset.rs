@@ -366,8 +366,7 @@ fn count_duplicate_str(m: &StrMatrix) -> usize {
 
 fn count_duplicate_table(numeric: &Matrix, categorical: &StrMatrix) -> usize {
     let rows = numeric.nrows();
-    let mut seen: HashSet<(Vec<u64>, Vec<&str>)> =
-        HashSet::with_capacity(rows.min(1 << 20));
+    let mut seen: HashSet<(Vec<u64>, Vec<&str>)> = HashSet::with_capacity(rows.min(1 << 20));
     let mut dupes = 0usize;
     for i in 0..rows {
         let mut nr: Vec<u64> = Vec::with_capacity(numeric.ncols());
