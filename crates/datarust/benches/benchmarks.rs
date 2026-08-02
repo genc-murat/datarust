@@ -177,7 +177,10 @@ fn bench_minmax_scaler(c: &mut Criterion) {
 
 fn bench_pca(c: &mut Criterion) {
     let mut group = c.benchmark_group("pca");
-    for (rows, cols, k) in [(50, 10, 3), (200, 20, 5)] {
+    // Include a tall-and-wide shape from the public sklearn comparison.  The
+    // smaller cases are useful for latency regressions, but they do not expose
+    // covariance / eigensolver costs that dominate production PCA workloads.
+    for (rows, cols, k) in [(50, 10, 3), (200, 20, 5), (10_000, 100, 10)] {
         let x = make_matrix(rows, cols);
         group.bench_with_input(
             criterion::BenchmarkId::new("fit_transform", format!("{}x{}->{}", rows, cols, k)),
@@ -354,6 +357,53 @@ fn bench_logistic_regression(c: &mut Criterion) {
             criterion::BenchmarkId::new("predict", format!("{rows}x{cols}")),
             &x,
             |bencher, x| bencher.iter(|| model.predict(x)),
+        );
+    }
+    group.finish();
+}
+
+/// Multinomial fitting has a distinct Newton path from binary IRLS: its Hessian
+/// is `(classes - 1) * features` squared.  The binary group above cannot
+/// expose this cost, while the `predict_proba` group only times an already
+/// fitted multiclass model.
+fn bench_logistic_multiclass_fit(c: &mut Criterion) {
+    use datarust::linear_model::LogisticRegression;
+    use datarust::traits::Predictor;
+
+    let mut group = c.benchmark_group("logistic_multiclass_fit");
+    for (rows, cols) in [(1_000, 10), (10_000, 50)] {
+        let x = make_matrix(rows, cols);
+        // Three non-separable classes: a linear binary boundary plus a stable
+        // third-class perturbation.  This exercises the multinomial solver
+        // without the pathological convergence of separable data.
+        let y: Vec<f64> = (0..rows)
+            .map(|i| {
+                let row = &x.as_slice()[i * cols..(i + 1) * cols];
+                let dot: f64 = row
+                    .iter()
+                    .enumerate()
+                    .map(|(j, &v)| v * (j as f64 + 1.0))
+                    .sum();
+                if i % 10 == 0 {
+                    2.0
+                } else if dot > 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+
+        group.bench_with_input(
+            BenchmarkId::new("fit", format!("{rows}x{cols}x3")),
+            &(&x, &y),
+            |bencher, (x, y)| {
+                bencher.iter_batched(
+                    || LogisticRegression::new().with_max_iter(50),
+                    |mut model| model.fit(x, y),
+                    BatchSize::SmallInput,
+                )
+            },
         );
     }
     group.finish();
@@ -1415,6 +1465,7 @@ criterion_group!(
     bench_linear_regression,
     bench_ridge_and_lasso,
     bench_logistic_regression,
+    bench_logistic_multiclass_fit,
     bench_kmeans,
     bench_quantile_transformer,
     bench_kbins_discretizer,

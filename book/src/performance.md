@@ -92,6 +92,17 @@ surface. The medians below are from the **default** (zero-dependency) build with
 Pro, and document the operations added most recently. Each time carries its own
 unit.
 
+> **Feature-build comparisons:** Criterion identifies a benchmark by group and
+> ID, not Cargo features. Use a distinct `CARGO_TARGET_DIR` for the default and
+> `matrixmultiply` runs; otherwise its `change` output compares unlike builds
+> and falsely reports the feature switch as a regression.
+>
+> ```sh
+> CARGO_TARGET_DIR=target/criterion-default cargo bench -p datarust --bench benchmarks
+> CARGO_TARGET_DIR=target/criterion-matrixmultiply cargo bench -p datarust \
+>   --bench benchmarks --features matrixmultiply
+> ```
+
 ### datarust
 
 | Benchmark | Size | median |
