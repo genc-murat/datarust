@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a longest-run scan. This is dramatically faster on large mostly-distinct
   columns and drives the `SimpleImputer` `MostFrequent` strategy; ties still
   break to the smallest value and empty input still returns `None`.
+- **Lower-triangle flat covariance.** `covariance_centered_flat_scalar`
+  accumulates only the lower triangle of `XcᵀXc` and mirrors it into the upper
+  triangle, roughly halving the multiply-adds of the scalar (default-build)
+  path. Per-element accumulation order is unchanged, so results are
+  bit-identical; this speeds up `correlation_matrix_flat` and PCA's scalar
+  fit, and a new parity test asserts agreement with the nested path.
 - **Logistic regression benchmark realism.** The benchmark target now flips
   ~10% of labels deterministically, so IRLS converges instead of diverging on
   exactly separable data; the 50 000 × 100 fit dropped from ~1.56 s to ~190 ms
@@ -89,7 +95,9 @@ build:
 Additional quick-mode measurements (criterion `--quick`, same Apple Silicon
 machine): `SimpleImputer` `MostFrequent` `fit_transform` 50 000 × 20 dropped
 from 32.9 ms to 17.0 ms (**1.9×**), and `stats::mode` on a 50 000-element
-mostly-distinct column now runs in ~0.52 ms.
+mostly-distinct column now runs in ~0.52 ms. The lower-triangle covariance
+improved `correlation_matrix_flat` 10 000 × 100 from 38.7 ms to 6.7 ms
+(**5.8×**) and 10 000 × 50 from 9.3 ms to 2.1 ms (**4.4×**).
 
 ## [0.6.5] - 2026-07-27
 

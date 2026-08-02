@@ -29,7 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row-major buffer and calls `datarust::stats::correlation_matrix_flat`, which
   streams the mean/center/covariance passes over contiguous memory instead of a
   nested `Vec<Vec<f64>>` — and automatically picks up the GEMM-backed
-  covariance when `datarust` is built with the `matrixmultiply` feature.
+  covariance when `datarust` is built with the `matrixmultiply` feature. The
+  scalar covariance path inside `datarust` now accumulates only the lower
+  triangle (flop-halving, bit-identical), further accelerating wide-table
+  Pearson.
 
 ### Added
 
@@ -47,11 +50,14 @@ time on deterministic xorshift64 data:
 |---|---:|---:|---:|
 | `profile_str_matrix` 100 000 × 20 | 269 ms | 132 ms | **2.0×** |
 | `profile_str_matrix` 10 000 × 20 | 22.3 ms | 10.1 ms | **2.2×** |
-| `relationships` Pearson 10 000 × 100 | — | ~45 ms | new baseline (flat path) |
+| `relationships` Pearson 10 000 × 100 | ~45 ms | ~7 ms | **6.4×** |
+| `relationships` Pearson 10 000 × 50 | ~8.9 ms | ~2.3 ms | **3.8×** |
+| `profile_matrix` 10 000 × 100 (wide) | ~63 ms | ~31 ms | **2.0×** |
 
-The new `relationships` benchmark measures the Pearson kernel standalone
-(~45 ms for a 10 000 × 100 numeric table, criterion `--quick`, single-threaded
-default build).
+All figures are criterion `--quick`, single-threaded default build on the same
+Apple Silicon machine. The `relationships` Pearson kernel dropped to ~7 ms
+after the scalar covariance switched to lower-triangle accumulation; wide-table
+`profile_matrix` halves alongside it.
 
 ## [0.3.0] - 2026-07-31
 

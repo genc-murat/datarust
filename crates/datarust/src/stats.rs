@@ -816,6 +816,7 @@ pub(crate) fn covariance_centered_flat(
 }
 
 #[cfg(not(feature = "matrixmultiply"))]
+#[allow(clippy::needless_range_loop)]
 fn covariance_centered_flat_scalar(
     x_centered: &[f64],
     n: usize,
@@ -830,9 +831,21 @@ fn covariance_centered_flat_scalar(
             if xi == 0.0 {
                 continue;
             }
-            for b in 0..p {
-                cov[a][b] += xi * x_centered[base + b];
+            // Accumulate only the lower triangle (b in 0..=a) and mirror it
+            // afterwards: roughly halves the multiply-adds versus the full
+            // p×p product. Per-element accumulation order is unchanged (each
+            // cov[a][b] still receives one term per row in row order), so the
+            // lower triangle is bit-identical to the previous full loop.
+            let row = &mut cov[a];
+            for (slot, &xb) in row.iter_mut().take(a + 1).zip(&x_centered[base..base + a + 1]) {
+                *slot += xi * xb;
             }
+        }
+    }
+    // Mirror the lower triangle into the upper triangle.
+    for a in 0..p {
+        for b in (a + 1)..p {
+            cov[a][b] = cov[b][a];
         }
     }
     let denom = n.saturating_sub(ddof) as f64;
@@ -1452,6 +1465,35 @@ mod tests {
         }
         assert!(correlation_matrix_flat(&[], 0, 0).is_empty());
         assert_eq!(correlation_matrix_flat(&flat, 3, 1).len(), 1);
+    }
+
+    #[test]
+    fn flat_covariance_matches_nested_and_is_symmetric() {
+        // The flat scalar covariance (lower-triangle accumulation + mirror)
+        // must agree with the nested full-product path and yield an exactly
+        // symmetric matrix. Deterministic pseudo-random centered data.
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            (state.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64 * 2.0
+                - 1.0
+        };
+        let (n, p) = (64, 12);
+        let flat: Vec<f64> = (0..n * p).map(|_| next()).collect();
+        let nested: Vec<Vec<f64>> = flat.chunks_exact(p).map(|r| r.to_vec()).collect();
+        let cov_flat = covariance_centered_flat(&flat, n, p, 1);
+        let cov_nested = covariance_centered(&nested, 1);
+        for a in 0..p {
+            for b in 0..p {
+                assert!(
+                    (cov_flat[a][b] - cov_nested[a][b]).abs() < 1e-12,
+                    "mismatch at ({a},{b})"
+                );
+                assert_eq!(cov_flat[a][b], cov_flat[b][a]);
+            }
+        }
     }
 
     #[test]
