@@ -605,31 +605,29 @@ mod tests {
                 - 1.0
         };
 
-        let cases: Vec<(Vec<f64>, Vec<f64>)> = (
-            0..50
-        )
-        .map(|_| {
-            let len = 20 + (next().abs() * 980.0) as usize; // 20..1000
-            let binary: Vec<f64> = (0..len)
-                .map(|i| {
-                    let r = next();
-                    if i % 7 == 0 {
-                        f64::NAN
-                    } else if i % 13 == 0 {
-                        f64::INFINITY
-                    } else if r > 0.3 {
-                        1.0
-                    } else if r < -0.3 {
-                        0.0
-                    } else {
-                        2.0 // non-binary → filtered
-                    }
-                })
-                .collect();
-            let numeric: Vec<f64> = (0..len).map(|_| next() * 100.0).collect();
-            (binary, numeric)
-        })
-        .collect();
+        let cases: Vec<(Vec<f64>, Vec<f64>)> = (0..50)
+            .map(|_| {
+                let len = 20 + (next().abs() * 980.0) as usize; // 20..1000
+                let binary: Vec<f64> = (0..len)
+                    .map(|i| {
+                        let r = next();
+                        if i % 7 == 0 {
+                            f64::NAN
+                        } else if i % 13 == 0 {
+                            f64::INFINITY
+                        } else if r > 0.3 {
+                            1.0
+                        } else if r < -0.3 {
+                            0.0
+                        } else {
+                            2.0 // non-binary → filtered
+                        }
+                    })
+                    .collect();
+                let numeric: Vec<f64> = (0..len).map(|_| next() * 100.0).collect();
+                (binary, numeric)
+            })
+            .collect();
 
         for (i, (binary, numeric)) in cases.iter().enumerate() {
             let got = calculate_point_biserial(binary, numeric);
@@ -640,7 +638,8 @@ mod tests {
                     // accumulation order (two-pass sums deviations from the
                     // mean; single-pass uses the computational identity).
                     assert!(
-                        (g - w).abs() < 1e-14 || (g.to_bits() as i64 - w.to_bits() as i64).unsigned_abs() <= 1,
+                        (g - w).abs() < 1e-14
+                            || (g.to_bits() as i64 - w.to_bits() as i64).unsigned_abs() <= 1,
                         "case {i}: single-pass {g} != two-pass {w}"
                     );
                 }
@@ -657,7 +656,11 @@ mod tests {
         // Hand-picked cases where the result is known analytically.
         let cases: &[(&[f64], &[f64], Option<f64>)] = &[
             // Identical values → r = 0.
-            (&[0.0, 0.0, 1.0, 1.0, 1.0], &[5.0, 5.0, 5.0, 5.0, 5.0], Some(0.0)),
+            (
+                &[0.0, 0.0, 1.0, 1.0, 1.0],
+                &[5.0, 5.0, 5.0, 5.0, 5.0],
+                Some(0.0),
+            ),
             // Too few samples → None.
             (&[0.0, 1.0], &[1.0, 2.0], None),
             // Only one group → None.
@@ -690,7 +693,10 @@ mod tests {
                     "case {i}: got {r}, expected {exp}"
                 );
             } else {
-                assert!(got_single.is_none(), "case {i}: expected None, got {got_single:?}");
+                assert!(
+                    got_single.is_none(),
+                    "case {i}: expected None, got {got_single:?}"
+                );
             }
         }
     }

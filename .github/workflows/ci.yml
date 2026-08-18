@@ -162,11 +162,12 @@ jobs:
   profile-package:
     name: Package (datarust-profile)
     runs-on: ubuntu-latest
+    needs: [package]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Verify the crates.io package
-        run: cargo package -p datarust-profile --locked
+        run: cargo package -p datarust-profile
 
   site:
     name: Docs and blog site
