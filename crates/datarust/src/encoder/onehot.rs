@@ -339,13 +339,18 @@ impl OneHotEncoder {
         let mut indices = Vec::with_capacity(nnz);
         indptr.push(0);
         for cols in row_cols {
+            debug_assert!(
+                cols.windows(2).all(|w| w[0] < w[1]),
+                "per-row CSR indices must be strictly increasing"
+            );
+            debug_assert!(
+                cols.last().map_or(true, |&c| c < n_out),
+                "CSR column index must be in range"
+            );
             indices.extend(cols);
             indptr.push(indices.len());
         }
         let data = vec![1.0; nnz];
-        // `SparseMatrix::new` re-validates the CSR invariants (strictly
-        // increasing per-row indices, in-range columns), which hold by
-        // construction above.
         SparseMatrix::new(nrows, n_out, indptr, indices, data)
     }
 

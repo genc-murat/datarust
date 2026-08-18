@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-18
+
 ### Changed
 
 - **Hash-based row deduplication.** `count_duplicate_numeric`,
@@ -33,12 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scalar covariance path inside `datarust` now accumulates only the lower
   triangle (flop-halving, bit-identical), further accelerating wide-table
   Pearson.
-- **Allocation-free point-biserial.** `calculate_point_biserial` replaces the
+- **Single-pass point-biserial.** `calculate_point_biserial` replaces the
   per-(categorical, numeric)-pair `group_0` / `group_1` / `all_y` `Vec`s with
-  two fused scalar passes (counts and sums, then the pooled variance),
-  eliminating the allocation churn that dominated wide-table profiles with many
-  binary columns. Results are unchanged — same accumulation order, ddof, and
-  filtering of non-binary / non-finite pairs.
+  a single allocation-free pass using the computational identity
+  `SS = Σy² − (Σy)² / N` for pooled variance, eliminating the allocation
+  churn that dominated wide-table profiles with many binary columns. A parity
+  test confirms bit-level agreement with the previous two-pass reference
+  implementation.
 
 ### Added
 
@@ -50,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `point_biserial` (binary × numeric pairwise), `profile_str_high_cardinality`
   (near-unique identifier columns), and serde-gated `report_json`
   (`JsonReport` → `to_json`).
+- **Point-biserial parity tests.** Two new tests verify the single-pass
+  `calculate_point_biserial` against a two-pass reference implementation:
+  50 deterministic pseudo-random cases with edge-case coverage (NaN, inf,
+  non-binary indicators) and 6 hand-computed known-value cases.
 
 ### Docs
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-08-18
+
 ### Changed
 
 - **Silhouette Score allocations.** Eliminated $O(N)$ inner-loop vector allocations in `silhouette_score`, significantly improving execution time.
@@ -75,6 +77,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hash probes replaced by k mask passes. The complement `Vec` is pre-sized to
   avoid the geometric-growth copies of a plain push loop. The emitted folds
   are identical. `split` at 100 000 samples dropped from 6.31 ms to 1.82 ms.
+- **`QuantileBuckets` hot-path inline.** The binary search and linear
+  interpolation inside `QuantileBuckets::percentile` are now inlined directly
+  into the method body, eliminating a function-call layer on the per-value
+  lookup hot path. The cold fallback (subnormal spans) retains a separate
+  `pub(crate) percentile_binary_search` method. Benchmarked `quantile_transformer`
+  `fit_transform` 1 000 × 50 improved from ~1.02 ms to ~945 µs (**−6.2%**,
+  p=0.00).
+- **`OneHotEncoder` CSR invariant `debug_assert`.** `transform_sparse` now
+  asserts per-row CSR indices are strictly increasing and column indices are
+  in range before constructing the `SparseMatrix`, catching invariant
+  violations in debug builds.
 - **README and book Performance documentation.** The README "Performance:
   datarust vs scikit-learn" section and the mdBook `performance` page now
   include a "Scalar vs `matrixmultiply` kernels" table that isolates the GEMM

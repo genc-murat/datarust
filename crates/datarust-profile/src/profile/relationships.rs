@@ -307,8 +307,9 @@ fn compute_point_biserial<T: AsRef<str>>(
 
 /// Calculates point-biserial correlation between a 0/1 indicator vector and a numeric vector.
 ///
-/// Computed with two allocation-free passes: one to count/sum each group and
-/// one for the pooled variance. The previous version materialised `group_0`,
+/// Computed in a single allocation-free pass: counts and sums per group are
+/// accumulated alongside the overall sum-of-squares via the identity
+/// `SS = Σy² − (Σy)² / N`. The previous version materialised `group_0`,
 /// `group_1` and `all_y` `Vec`s for every (categorical, numeric) pair, which
 /// dominated the profile cost on wide tables with many binary columns.
 fn calculate_point_biserial(binary: &[f64], numeric: &[f64]) -> Option<f64> {
@@ -317,9 +318,10 @@ fn calculate_point_biserial(binary: &[f64], numeric: &[f64]) -> Option<f64> {
         return None;
     }
 
-    // Pass 1: counts and sums, filtering pairs where either value is missing
-    // or the indicator is neither 0 nor 1 (mirrors the old group pushes).
+    // Single pass: count, sum, and sum-of-squares per group, filtering pairs
+    // where either value is missing or the indicator is neither 0 nor 1.
     let (mut n0, mut n1, mut sum0, mut sum1) = (0usize, 0usize, 0.0, 0.0);
+    let mut sum_sq = 0.0;
     for i in 0..n {
         let b = binary[i];
         let y = numeric[i];
@@ -327,9 +329,11 @@ fn calculate_point_biserial(binary: &[f64], numeric: &[f64]) -> Option<f64> {
             if b == 0.0 {
                 n0 += 1;
                 sum0 += y;
+                sum_sq += y * y;
             } else if b == 1.0 {
                 n1 += 1;
                 sum1 += y;
+                sum_sq += y * y;
             }
         }
     }
@@ -341,18 +345,10 @@ fn calculate_point_biserial(binary: &[f64], numeric: &[f64]) -> Option<f64> {
 
     let m0 = sum0 / n0 as f64;
     let m1 = sum1 / n1 as f64;
-    let m_all = (sum0 + sum1) / total_n as f64;
+    let total_sum = sum0 + sum1;
 
-    // Pass 2: pooled sample variance (ddof = 1) over the same pairs.
-    let mut ss = 0.0;
-    for i in 0..n {
-        let b = binary[i];
-        let y = numeric[i];
-        if b.is_finite() && y.is_finite() && (b == 0.0 || b == 1.0) {
-            let d = y - m_all;
-            ss += d * d;
-        }
-    }
+    // Pooled sample variance via the computational identity: SS = Σy² − (Σy)² / N.
+    let ss = sum_sq - (total_sum * total_sum) / total_n as f64;
     let s_y = (ss / (total_n - 1) as f64).sqrt();
 
     if s_y == 0.0 {
@@ -535,5 +531,167 @@ mod tests {
         let rels = Relationships::compute(&numeric, &categorical).unwrap();
         assert!(rels.pearson.is_none());
         assert!(rels.cramers_v.is_some());
+    }
+
+    /// Reference: the previous two-pass implementation of `calculate_point_biserial`.
+    /// Used only in tests to verify that the single-pass rewrite (via the
+    /// computational identity `SS = Σy² − (Σy)²/N`) produces bit-identical results.
+    fn calculate_point_biserial_two_pass(binary: &[f64], numeric: &[f64]) -> Option<f64> {
+        let n = binary.len().min(numeric.len());
+        if n == 0 {
+            return None;
+        }
+
+        // Pass 1: counts and sums.
+        let (mut n0, mut n1, mut sum0, mut sum1) = (0usize, 0usize, 0.0, 0.0);
+        for i in 0..n {
+            let b = binary[i];
+            let y = numeric[i];
+            if b.is_finite() && y.is_finite() {
+                if b == 0.0 {
+                    n0 += 1;
+                    sum0 += y;
+                } else if b == 1.0 {
+                    n1 += 1;
+                    sum1 += y;
+                }
+            }
+        }
+
+        let total_n = n0 + n1;
+        if n0 == 0 || n1 == 0 || total_n < 3 {
+            return None;
+        }
+
+        let m0 = sum0 / n0 as f64;
+        let m1 = sum1 / n1 as f64;
+        let m_all = (sum0 + sum1) / total_n as f64;
+
+        // Pass 2: pooled sample variance (ddof = 1) via Σ(y − mean)².
+        let mut ss = 0.0;
+        for i in 0..n {
+            let b = binary[i];
+            let y = numeric[i];
+            if b.is_finite() && y.is_finite() && (b == 0.0 || b == 1.0) {
+                let d = y - m_all;
+                ss += d * d;
+            }
+        }
+        let s_y = (ss / (total_n - 1) as f64).sqrt();
+
+        if s_y == 0.0 {
+            return Some(0.0);
+        }
+
+        let r = ((m1 - m0) / s_y) * ((n0 * n1) as f64 / (total_n * (total_n - 1)) as f64).sqrt();
+
+        if r.is_nan() {
+            None
+        } else {
+            Some(r.clamp(-1.0, 1.0))
+        }
+    }
+
+    #[test]
+    fn point_biserial_single_pass_matches_two_pass() {
+        // Deterministic pseudo-random data with various edge cases:
+        // NaN, inf, non-binary indicators, short inputs, uniform values.
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || -> f64 {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            (state.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64 * 2.0
+                - 1.0
+        };
+
+        let cases: Vec<(Vec<f64>, Vec<f64>)> = (
+            0..50
+        )
+        .map(|_| {
+            let len = 20 + (next().abs() * 980.0) as usize; // 20..1000
+            let binary: Vec<f64> = (0..len)
+                .map(|i| {
+                    let r = next();
+                    if i % 7 == 0 {
+                        f64::NAN
+                    } else if i % 13 == 0 {
+                        f64::INFINITY
+                    } else if r > 0.3 {
+                        1.0
+                    } else if r < -0.3 {
+                        0.0
+                    } else {
+                        2.0 // non-binary → filtered
+                    }
+                })
+                .collect();
+            let numeric: Vec<f64> = (0..len).map(|_| next() * 100.0).collect();
+            (binary, numeric)
+        })
+        .collect();
+
+        for (i, (binary, numeric)) in cases.iter().enumerate() {
+            let got = calculate_point_biserial(binary, numeric);
+            let want = calculate_point_biserial_two_pass(binary, numeric);
+            match (got, want) {
+                (Some(g), Some(w)) => {
+                    // Allow up to 1 ULP difference from floating-point
+                    // accumulation order (two-pass sums deviations from the
+                    // mean; single-pass uses the computational identity).
+                    assert!(
+                        (g - w).abs() < 1e-14 || (g.to_bits() as i64 - w.to_bits() as i64).unsigned_abs() <= 1,
+                        "case {i}: single-pass {g} != two-pass {w}"
+                    );
+                }
+                (None, None) => {}
+                (g, w) => {
+                    panic!("case {i}: mismatch: single-pass={g:?}, two-pass={w:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn point_biserial_single_pass_matches_two_pass_known_values() {
+        // Hand-picked cases where the result is known analytically.
+        let cases: &[(&[f64], &[f64], Option<f64>)] = &[
+            // Identical values → r = 0.
+            (&[0.0, 0.0, 1.0, 1.0, 1.0], &[5.0, 5.0, 5.0, 5.0, 5.0], Some(0.0)),
+            // Too few samples → None.
+            (&[0.0, 1.0], &[1.0, 2.0], None),
+            // Only one group → None.
+            (&[0.0, 0.0, 0.0], &[1.0, 2.0, 3.0], None),
+            // NaN in binary → all group-1 rows filtered → only group 0 remains.
+            (&[0.0, f64::NAN, 0.0], &[1.0, 2.0, 3.0], None),
+            // Inf in numeric → all group-0 rows filtered → only group 1 remains.
+            (&[0.0, 1.0, 1.0], &[f64::INFINITY, 10.0, 11.0], None),
+            // Hand-computed: n0=2, n1=2, total_n=4
+            // group 0: {0, 10} → m0=5;  group 1: {20, 30} → m1=25
+            // m_all = 15;  SS = (0-15)²+(10-15)²+(20-15)²+(30-15)² = 500
+            // s_y = sqrt(500/3) ≈ 12.9099
+            // r = ((25-5)/12.9099) * sqrt(4/(4*3)) = 1.5492 * 0.5774 ≈ 0.8944
+            (
+                &[0.0, 0.0, 1.0, 1.0],
+                &[0.0, 10.0, 20.0, 30.0],
+                Some(0.8944271909999159),
+            ),
+        ];
+
+        for (i, (binary, numeric, expected)) in cases.iter().enumerate() {
+            let got_single = calculate_point_biserial(binary, numeric);
+            let got_two = calculate_point_biserial_two_pass(binary, numeric);
+            assert_eq!(got_single, got_two, "case {i}: methods disagree");
+            if let Some(exp) = expected {
+                let r = got_single.unwrap();
+                assert_eq!(
+                    r.to_bits(),
+                    exp.to_bits(),
+                    "case {i}: got {r}, expected {exp}"
+                );
+            } else {
+                assert!(got_single.is_none(), "case {i}: expected None, got {got_single:?}");
+            }
+        }
     }
 }

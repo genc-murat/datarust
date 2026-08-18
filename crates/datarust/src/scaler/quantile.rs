@@ -203,16 +203,14 @@ impl QuantileBuckets {
         // window does not contain the value's actual interval. Fall back to
         // the original full-range search in that case.
         if !self.inv_width.is_finite() {
-            return Self::percentile_full(refs, value);
+            return Self::percentile_binary_search(refs, value);
         }
 
-        let n = refs.len();
         let bucket = (((value - self.min) * self.inv_width) as usize).min(Self::BUCKETS - 1);
+        // Inlined binary search over the bucket's narrow window.
+        let n = refs.len();
         let mut lo = self.starts[bucket];
         let mut hi = self.starts[bucket + 1];
-        // First index in [lo, hi] whose reference exceeds `value`; defaults to
-        // `hi` when the whole window is `<= value` (then `refs[hi] > value` by
-        // the bucket invariant, since `value` is below the bucket's upper edge).
         while lo < hi {
             let mid = (lo + hi) / 2;
             if refs[mid] <= value {
@@ -221,8 +219,6 @@ impl QuantileBuckets {
                 hi = mid;
             }
         }
-        // lo is first index where refs[lo] > value.
-        // Linear interpolation between refs[lo-1] and refs[lo].
         let lower = lo - 1;
         let upper = lo;
         let denom = refs[upper] - refs[lower];
@@ -231,14 +227,14 @@ impl QuantileBuckets {
         } else {
             (value - refs[lower]) / denom
         };
-        // Map to percentile in [0, 1].
         lower as f64 / (n - 1) as f64 + frac / (n - 1) as f64
     }
 
-    /// Full-array binary-search fallback used when a bucket scale cannot be
-    /// represented as a finite `f64`.
+    /// Full-array binary search fallback used when the bucket scale is not
+    /// finite (e.g. subnormal spans). Kept as a separate method only for the
+    /// cold fallback path; the hot bucket path inlines its own search.
     #[inline]
-    fn percentile_full(refs: &[f64], value: f64) -> f64 {
+    pub(crate) fn percentile_binary_search(refs: &[f64], value: f64) -> f64 {
         let n = refs.len();
         let mut lo = 0usize;
         let mut hi = n;
@@ -534,26 +530,7 @@ mod tests {
     /// Reference: the pre-bucketing full-array binary search that
     /// `QuantileBuckets` must reproduce bit-for-bit.
     fn full_search_percentile(value: f64, refs: &[f64]) -> f64 {
-        let n = refs.len();
-        let mut lo = 0usize;
-        let mut hi = n;
-        while lo < hi {
-            let mid = (lo + hi) / 2;
-            if refs[mid] <= value {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        let lower = lo - 1;
-        let upper = lo;
-        let denom = refs[upper] - refs[lower];
-        let frac = if denom.abs() < f64::EPSILON {
-            0.5
-        } else {
-            (value - refs[lower]) / denom
-        };
-        lower as f64 / (n - 1) as f64 + frac / (n - 1) as f64
+        QuantileBuckets::percentile_binary_search(refs, value)
     }
 
     #[test]

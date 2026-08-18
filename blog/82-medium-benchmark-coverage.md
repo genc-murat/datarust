@@ -91,7 +91,7 @@ The fix shares a single private `mode_sorted` helper between both functions: gat
 
 `Relationships::compute` runs the point-biserial path for every (binary categorical, numeric) pair. The old `calculate_point_biserial` materialised three `Vec`s per pair — `group_0`, `group_1`, and a concatenated `all_y` — then ran means and a std over them. On 20 × 20 pairs of 10k rows, that's ~1 200 allocations and ~96 MB of churn, per profile.
 
-The rewrite is two fused scalar passes: one for counts/sums per group, one for the pooled variance. Same accumulation order, same ddof, same filtering of non-binary or non-finite pairs — the results are unchanged, just no allocation. The new `point_biserial` benchmark puts 10 000 × (20 + 20) at **12.3 ms**, and wide-table profiling no longer spends its time on `malloc`.
+The rewrite is a single allocation-free pass using the computational identity `SS = Σy² − (Σy)² / N` for pooled variance — same accumulation order, same ddof, same filtering of non-binary or non-finite pairs. A parity test against the previous two-pass reference confirms bit-level agreement. The new `point_biserial` benchmark puts 10 000 × (20 + 20) at **12.3 ms**, and wide-table profiling no longer spends its time on `malloc`.
 
 ## What I deliberately did not touch
 

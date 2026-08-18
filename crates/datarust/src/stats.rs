@@ -460,11 +460,12 @@ fn mode_sorted(sorted: &[f64]) -> Option<f64> {
     for &x in &sorted[1..] {
         if x.to_bits() == run_val.to_bits() {
             run_len += 1;
+        } else if run_len > best_len {
+            best_len = run_len;
+            best_val = run_val;
+            run_val = x;
+            run_len = 1;
         } else {
-            if run_len > best_len {
-                best_len = run_len;
-                best_val = run_val;
-            }
             run_val = x;
             run_len = 1;
         }
