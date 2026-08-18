@@ -69,22 +69,22 @@ fn compute_pearson(cols: &[(&str, &[f64])]) -> Option<CorrelationMatrix> {
         return None;
     }
 
-    // Build a single flat row-major buffer (instead of a nested `Vec<Vec>`)
-    // so `correlation_matrix_flat` can stream the mean/center/covariance
-    // passes over contiguous memory — significantly faster on wide tables.
-    let p = cols.len();
-    let mut flat = vec![0.0; n_rows * p];
+    // Build row-oriented data matrix for datarust::stats::correlation_matrix.
+    // NOTE: Switch to `correlation_matrix_flat` (flat row-major buffer) after
+    // datarust 0.6.6 is published — it streams contiguous memory and is
+    // significantly faster on wide tables.
+    let mut rows_data: Vec<Vec<f64>> = vec![vec![0.0; cols.len()]; n_rows];
     for (j, (_, values)) in cols.iter().enumerate() {
         if values.len() != n_rows {
             return None;
         }
         for i in 0..n_rows {
-            flat[i * p + j] = values[i];
+            rows_data[i][j] = values[i];
         }
     }
 
     let labels: Vec<String> = cols.iter().map(|(name, _)| name.to_string()).collect();
-    let values = datarust::stats::correlation_matrix_flat(&flat, n_rows, p);
+    let values = datarust::stats::correlation_matrix(&rows_data);
 
     Some(CorrelationMatrix { labels, values })
 }

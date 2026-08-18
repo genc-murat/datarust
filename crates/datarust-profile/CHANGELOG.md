@@ -27,14 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is keyed by integers instead of hashing string tuples for every row of every
   column pair; small tables use a flat array and chi-squared is computed with
   the `ΣO²/E − N` identity.
-- **Flat Pearson correlation.** `compute_pearson` builds a single flat
-  row-major buffer and calls `datarust::stats::correlation_matrix_flat`, which
-  streams the mean/center/covariance passes over contiguous memory instead of a
-  nested `Vec<Vec<f64>>` — and automatically picks up the GEMM-backed
-  covariance when `datarust` is built with the `matrixmultiply` feature. The
-  scalar covariance path inside `datarust` now accumulates only the lower
-  triangle (flop-halving, bit-identical), further accelerating wide-table
-  Pearson.
+- **Pearson correlation.** `compute_pearson` calls `datarust::stats::correlation_matrix`.
+  After datarust 0.6.6 is published, this will switch to `correlation_matrix_flat`
+  (flat row-major buffer) for contiguous-memory streaming and GEMM-backed covariance.
 - **Single-pass point-biserial.** `calculate_point_biserial` replaces the
   per-(categorical, numeric)-pair `group_0` / `group_1` / `all_y` `Vec`s with
   a single allocation-free pass using the computational identity
