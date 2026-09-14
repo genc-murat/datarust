@@ -172,6 +172,9 @@ pub fn profile_csv_with_types(
 
 #[cfg(test)]
 mod tests {
+    // Both tests are csv-gated; without the feature the glob import would
+    // be unused and fail clippy's `-D warnings` default-feature build.
+    #[cfg(feature = "csv")]
     use super::*;
 
     /// `profile_csv` and `profile_str_matrix` must produce bit-identical
