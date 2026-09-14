@@ -325,9 +325,7 @@ impl CriterionState {
     ) {
         self.start = start;
         self.end = end;
-        for v in &mut self.sum_total {
-            *v = 0.0;
-        }
+        self.sum_total.fill(0.0);
         self.sq_sum_total = 0.0;
         self.weighted_n_node_samples = 0.0;
         for &i in &samples[start..end] {

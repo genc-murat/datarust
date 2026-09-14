@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn cr_or_lf_delimiter_and_quote_are_rejected() {
-        for bad in [b'\r', b'\n'] {
+        for bad in *b"\r\n" {
             let opts = CsvReadOptions {
                 delimiter: bad,
                 ..Default::default()
