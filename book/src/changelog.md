@@ -4,7 +4,43 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
 
 > This page provides a summary. For the full, detailed changelog (including internal refactors and performance tables), see the [canonical source](https://github.com/genc-murat/datarust/blob/main/crates/datarust/CHANGELOG.md).
 
-## Unreleased
+## 0.7.0
+
+The tree-based learning release.
+
+- **Tree module (`src/tree/`)** — `DecisionTreeClassifier` (Gini / entropy)
+  and `DecisionTreeRegressor` (squared error). The CART splitter is a
+  line-by-line transliteration of scikit-learn 1.6.1's `BestSplitter` +
+  `DensePartitioner`: with the same data, parameters, and integer
+  `random_state`, the fitted tree matches sklearn **node-for-node,
+  bit-for-bit** — split features, thresholds, impurities, node values,
+  predictions, probabilities, and `feature_importances_` (pinned by
+  `tests/tree_parity.rs` against seeded sklearn fixtures). Includes the
+  `with_*` builder options, `TreeStructure` introspection (per-node
+  feature/threshold/impurity/improvement/sample count/value, `classes()`,
+  `leaf_for` routing), sklearn-spelling `Criterion`/`MaxFeatures` parsing,
+  and `fit`-time rejection of the regression-only criterion on classifiers.
+- **Random forest ensembles (`src/ensemble.rs`)** —
+  `RandomForestClassifier` / `RandomForestRegressor` with bootstrap
+  aggregation seeded through a local MT19937 "legacy `RandomState`" clone,
+  matching sklearn's forests bit-for-bit under the same seed. Classifiers
+  average per-tree probabilities (lowest-class tie breaks), regressors
+  average predictions; `estimators_samples()` regenerates each tree's
+  bootstrap indices from stored per-tree seeds on demand. Out-of-bag
+  scoring, sample weights, and parallel fitting are explicitly out of
+  scope for this first release.
+- **Public RNG (`src/rng.rs`)** — the internal xorshift64* PRNG promoted
+  from `model_selection` to a top-level module (`next_u64`, `next_unit`,
+  `next_range`, `next_usize`/`next_index`, `next_normal`, Fisher-Yates
+  `shuffle`); `model_selection::rng` remains as a re-export shim.
+- **`datasets::diabetes::load_normalized()`** — the sklearn
+  `load_diabetes(scaled=True)` layout (mean-centred, population-std
+  scaled) computed from the embedded raw data.
+- Twelve `DIABETES_DATA` literals were re-precisioned to sklearn's exact
+  `f64` values; `load()` output can differ from previous releases at the
+  ULP level.
+
+## 0.6.6
 
 - **PowerTransformer:** the lambda-search likelihood now uses a precomputed
   jacobian term and a single fused Welford mean+variance pass — `fit_transform`
@@ -34,7 +70,7 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
   vs `matrixmultiply` kernels" table with stable criterion medians
   (`--warm-up-time 0.5 --measurement-time 1.5 --sample-size 10`) isolating the
   GEMM feature's effect on matmul-heavy kernels.
-- **datarust-profile:** hash-based row deduplication, borrow-based categorical
+- **datarust-profile 0.3.1:** hash-based row deduplication, borrow-based categorical
   access (`T: AsRef<str>`), allocation-free missing detection, and integer-coded
   Cramér's V — `profile_str_matrix` 100 000 × 20 drops from 269 ms to 132 ms.
 - **Encoder fit paths:** the four categorical encoders now gather columns

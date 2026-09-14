@@ -20,6 +20,7 @@ src/
 ├── error.rs               # DatarustError enum + Result alias
 ├── traits.rs              # Estimator, Predictor, Regressor, Classifier, transformers, FeatureNames
 ├── matrix.rs              # Matrix (f64 flat), StrMatrix, SparseMatrix (CSR)
+├── rng.rs                 # public xorshift64* Rng (foundation module)
 ├── stats.rs               # Column statistics, covariance/correlation
 ├── pipeline.rs            # Sequential and supervised Pipeline
 ├── transformer_kind.rs    # TransformerKind enum (type erasure)
@@ -28,6 +29,7 @@ src/
 ├── function_transformer.rs
 ├── polynomial.rs          # PolynomialFeatures
 ├── serialize.rs           # JSON save/load (serde feature)
+├── label_space.rs         # Label vocabulary (fit/encode/decode)
 ├── datasets/              # Iris, Breast Cancer, Wine, Diabetes (datasets feature)
 ├── linalg/
 │   └── cholesky.rs        # Cholesky decomposition + SPD solver
@@ -37,14 +39,16 @@ src/
 ├── selection/             # VarianceThreshold, SelectKBest
 ├── decomposition/         # PCA, TruncatedSVD, Jacobi, randomized_svd
 ├── linear_model/          # LinearRegression, Ridge, Lasso, LogisticRegression
+├── tree/                  # CART kernel: estimators, splitter, node arena
+├── ensemble.rs            # RandomForestClassifier / RandomForestRegressor
+├── cluster/               # KMeans
 ├── metrics/
 │   ├── regression.rs      # MSE, MAE, R², max_error, explained_variance
 │   └── classification.rs  # accuracy, precision, recall, F1, confusion_matrix, log_loss
 ├── model_selection/
 │   ├── split.rs           # train_test_split
 │   ├── kfold.rs           # KFold, StratifiedKFold
-│   ├── cross_val.rs       # cross_val_score
-│   └── rng.rs             # shared xorshift64 PRNG
+│   └── cross_val.rs       # cross_val_score (rng re-exported from src/rng.rs)
 └── compose/
     ├── column_transformer.rs
     └── output.rs
@@ -55,9 +59,10 @@ src/
 | Trait | Data flow | Implementors |
 |---|---|---|
 | `Transformer` | `Matrix → Matrix` | all scalers, PCA, TruncatedSVD, PolynomialFeatures, VarianceThreshold, SelectKBest, imputers, FunctionTransformer |
-| `Predictor` | `fit(X, y)` + `predict(X) → Vec<f64>` | all linear models and supervised pipelines |
-| `Regressor` | continuous-prediction semantics | LinearRegression, Ridge, Lasso |
-| `Classifier` | class-label prediction semantics | LogisticRegression |
+| `Predictor` | `fit(X, y)` + `predict(X) → Vec<f64>` | all linear models, decision trees, random forests, and supervised pipelines |
+| `Regressor` | continuous-prediction semantics | LinearRegression, Ridge, Lasso, DecisionTreeRegressor, RandomForestRegressor |
+| `Classifier` | class-label prediction semantics | LogisticRegression, DecisionTreeClassifier, RandomForestClassifier |
+| `PredictProba` | `predict_proba(X) → Matrix` | LogisticRegression, DecisionTreeClassifier, RandomForestClassifier |
 | `CategoricalTransformer` | `StrMatrix → Matrix` | OneHotEncoder, OrdinalEncoder, FrequencyEncoder |
 | `TargetTransformer` | `fit(StrMatrix, y)` | TargetEncoder |
 | `LabelTransformer` | `&[String] ↔ Vec<usize>` | LabelEncoder |
@@ -65,13 +70,14 @@ src/
 
 ## Solver infrastructure
 
-Three distinct solver families, all pure-Rust, in `linalg/`:
+Four distinct solver families, all pure-Rust:
 
 1. **Cholesky** (`linalg::cholesky`) — symmetric positive-definite system solver. Used by `LinearRegression`, `Ridge`, and `LogisticRegression` (per IRLS iteration).
 2. **Coordinate descent** (`Lasso`) — soft-thresholding iteration for L1-regularized problems.
 3. **IRLS** (`LogisticRegression`) — Newton-Raphson on the logistic loss, solving a weighted least-squares system each iteration.
+4. **CART splitter + forest seeding** (`tree/splitter.rs`, `ensemble.rs`) — an exact transliteration of sklearn's `BestSplitter`/`DensePartitioner` criterion accumulation, plus a local MT19937 "legacy `RandomState`" clone that seeds bootstrap samples identically to sklearn's forests.
 
-All three are backed by the shared `Matrix::matmul` for forming Gram matrices, which dispatches to a tuned GEMM under the `matrixmultiply` feature.
+The first three are backed by the shared `Matrix::matmul` for forming Gram matrices, which dispatches to a tuned GEMM under the `matrixmultiply` feature; the tree kernel is allocation-light comparison sort + prefix accumulation and needs no BLAS at all.
 
 ## Error handling
 

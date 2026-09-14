@@ -50,6 +50,25 @@ Production-style model persistence. Trains a `SupervisedPipeline<Ridge>` (Standa
 
 Unsupervised clustering on synthetic 2-D point data. Generates three well-separated blobs, fits a `KMeans` with k-means++ initialization, inspects the learned centroids against the true blob centers, predicts cluster assignments for new points, compares k-means++ vs random initialization by inertia, and (with `--features serde`) round-trips the fitted model through JSON. Demonstrates the `Clusterer` trait.
 
+## Decision trees
+
+`cargo run --example decision_tree`
+
+Seeded CART classification on a synthetic two-feature rectangle problem: a depth-1 stump vs an unlimited tree, Gini vs entropy, and `DecisionTreeRegressor` reconstructing a feature from pure leaves. Shows `with_random_state` reproducibility, `TreeStructure` inspection (depth, leaves, per-node thresholds), `feature_importances`, and the `Sqrt` per-split feature strategy — the same seeded-fits-sklearn-exactly kernel the [forests](./guide/ensembles.md) build on.
+
+A minimal forest looks like:
+
+```rust
+use datarust::ensemble::RandomForestClassifier;
+use datarust::traits::{Classifier, Predictor};
+
+let mut forest = RandomForestClassifier::new()
+    .with_n_estimators(100)
+    .with_random_state(42);
+forest.fit(&x_train, &y_train)?;
+println!("accuracy: {:.1}%", forest.score(&x_test, &y_test)? * 100.0);
+```
+
 ## Benchmark comparison
 
 `cargo run --release --example bench_compare_rust`

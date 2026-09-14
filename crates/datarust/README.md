@@ -2,13 +2,13 @@
 
 [![crates.io](https://img.shields.io/crates/v/datarust.svg)](https://crates.io/crates/datarust)
 [![docs.rs](https://docs.rs/datarust/badge.svg)](https://docs.rs/datarust)
-[![Documentation](https://img.shields.io/badge/docs-book-blue.svg)](https://genc-murat.github.io/datarust/)
+[![Documentation](https://img.shields.io/badge/docs-book-blue.svg)](https://datarust.dev/docs/)
 [![CI](https://github.com/genc-murat/datarust/actions/workflows/ci.yml/badge.svg)](https://github.com/genc-murat/datarust/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **The missing scikit-learn experience for Rust.** — a modular, dependency-free preprocessing and classical ML library built on a lightweight `Matrix` type.
 
-📖 **[Read the documentation book →](https://genc-murat.github.io/datarust/)**
+📖 **[Read the documentation book →](https://datarust.dev/docs/)**
 
 ```rust,ignore
 let mut scaler = StandardScaler::new();
@@ -28,7 +28,10 @@ let normalized = scaler.fit_transform(&data)?;
 | **Selection** | VarianceThreshold, SelectKBest (ANOVA F / Chi2 / Mutual Information) |
 | **Decomposition** | PCA (with whiten, inverse_transform), TruncatedSVD (SVDComponents: Count/Variance/All) |
 | **Linear Models** | LinearRegression (Cholesky & SVD), Ridge (L2), Lasso (L1, coordinate descent, sparse) |
-| **Classification** | LogisticRegression (binary IRLS + multiclass softmax, Cholesky & SVD) |
+| **Classification** | LogisticRegression (binary IRLS + multiclass softmax, Cholesky & SVD), RandomForestClassifier (CART bagging, bootstrap, feature subsampling) |
+| **Trees** | DecisionTreeClassifier (Gini / entropy), DecisionTreeRegressor (squared error), `TreeStructure` node introspection — bit-exact scikit-learn parity under the same seed |
+| **Ensembles** | RandomForestClassifier, RandomForestRegressor (bootstrap aggregation, per-split feature subsampling, deterministic sklearn-compatible sampling, on-demand `estimators_samples()`) |
+| **RNG** | Public seedable `Rng` (xorshift64*): `next_unit`, `next_range`, `next_normal`, Fisher–Yates `shuffle` |
 | **Clustering** | KMeans (Lloyd's algorithm, k-means++ initialization, n_init restarts), silhouette_score |
 | **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, precision, recall, F1, confusion_matrix (n×n), log_loss, ROC-AUC, average precision, Cohen's kappa, Matthews corrcoef (macro-averaged for multiclass) |
 | **Model Selection** | train_test_split, KFold, StratifiedKFold, cross_val_score |
@@ -64,20 +67,44 @@ let mut minmax = MinMaxScaler::new();
 let scaled = minmax.fit_transform(&x)?;
 ```
 
+### Trees & forests
+
+Decision trees and random forests reproduce scikit-learn's fits
+**bit-for-bit** under the same integer `random_state` — same splits,
+thresholds, probabilities, and `feature_importances`:
+
+```rust
+use datarust::ensemble::RandomForestClassifier;
+use datarust::traits::{Classifier, PredictProba, Predictor};
+
+let mut forest = RandomForestClassifier::new()
+    .with_n_estimators(100)               // default
+    .with_max_features(MaxFeatures::Sqrt) // default
+    .with_random_state(42);
+
+forest.fit(&x_train, &y_train)?;
+let proba = forest.predict_proba(&x_test)?;   // averaged tree probabilities
+let importances = forest.feature_importances()?;
+```
+
+`DecisionTreeClassifier` / `DecisionTreeRegressor` expose the same seeded
+CART kernel directly, with full node introspection (`tree().node_feature`,
+`node_threshold`, `leaf_for`).
+
 ## Installation
 
 Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-datarust = "0.6"
+datarust = "0.7"
 ```
 
 ### Optional features
 
 ```toml
 [dependencies]
-datarust = { version = "0.6", features = ["serde", "rayon"] }
+datarust = { version = "0.7", features = ["serde", "rayon"] }
 ```
 
 - **`serde`** — enables JSON serialization/deserialization of fitted transformers via `datarust::serialize::{save_json, load_json, to_json, from_json}`.
@@ -679,6 +706,73 @@ model.intercept(); // &[f64] — one per class
 
 `predict_positive_proba` is binary-only and returns the probability of the second sorted class. Use `predict_proba_for_class` when the label should be explicit, or `predict_proba` for the full matrix.
 
+### Trees & Ensembles
+
+#### DecisionTreeClassifier / DecisionTreeRegressor
+
+CART decision trees whose splitter is a transliteration of scikit-learn
+1.6.1's `BestSplitter` + `DensePartitioner`: with the same data,
+parameters, and integer `random_state`, the fitted tree matches sklearn
+**node-for-node, bit-for-bit** — split features, thresholds, impurities,
+node values, predictions, probabilities, and `feature_importances_`
+(pinned by parity tests against seeded sklearn fixtures).
+
+```rust
+use datarust::tree::{Criterion, DecisionTreeClassifier, MaxFeatures};
+use datarust::traits::{Classifier, PredictProba, Predictor};
+
+let mut clf = DecisionTreeClassifier::new()
+    .with_criterion(Criterion::Gini)      // or Criterion::Entropy
+    .with_max_depth(Some(6))
+    .with_max_features(MaxFeatures::All)  // Sqrt, Log2, Count(n)
+    .with_random_state(7);
+
+clf.fit(&x_train, &y_train)?;
+let pred = clf.predict(&x_test)?;
+let proba = clf.predict_proba(&x_test)?;  // leaf class frequencies
+let importances = clf.feature_importances()?;
+
+// Full node introspection:
+let tree = clf.tree().unwrap();
+tree.n_nodes();                 // arena size
+tree.node_feature(0);           // Some(split feature), None for leaves
+tree.node_threshold(0);         // f64 midpoint threshold
+tree.leaf_for(&row)?;           // route one row to its leaf
+```
+
+`DecisionTreeRegressor` (squared-error criterion, leaf means) has the same
+builders minus `with_criterion`. `fit` rejects the regression-only
+`Criterion::SquaredError` on classifiers with `InvalidInput`.
+
+#### RandomForestClassifier / RandomForestRegressor
+
+Bootstrap-aggregated forests seeded through the same MT19937 "legacy
+`RandomState`" stream sklearn uses — the same `random_state` reproduces
+sklearn's forests bit-for-bit, including `feature_importances_` and the
+bootstrap samples. Classifiers average per-tree probabilities (argmax,
+ties to the smallest class label); regressors average predictions.
+`estimators_samples()` regenerates each tree's bootstrap indices from the
+stored per-tree seeds on demand, so the fitted model doesn't retain
+`n_estimators × n_samples` indices.
+
+```rust
+use datarust::ensemble::RandomForestClassifier;
+use datarust::traits::{Classifier, PredictProba, Predictor};
+
+let mut forest = RandomForestClassifier::new()
+    .with_n_estimators(200)
+    .with_max_depth(Some(8))
+    .with_random_state(42);
+
+forest.fit(&x_train, &y_train)?;
+let accuracy = forest.score(&x_test, &y_test)?;
+let samples = forest.estimators_samples(); // Vec<Vec<usize>>, per-tree rows
+```
+
+Both forests implement `Params` for hyperparameter introspection.
+Out-of-bag scoring, sample weights, and parallel fitting are not in this
+first release.
+
 ### Clustering
 
 #### KMeans
@@ -855,9 +949,12 @@ let wine = datasets::wine::load();
 
 // Diabetes: 442 samples, 10 features, regression target
 let diabetes = datasets::diabetes::load();
+
+// Or the sklearn load_diabetes(scaled=True) layout:
+let scaled = datasets::diabetes::load_normalized(); // mean-centred, population-std
 ```
 
-Each loader returns a `Dataset` struct with `features()` → `Matrix`, `targets()` → `&[f64]`, `feature_names()` → `&[&str]`, `target_names()` → `&[&str]`.
+Each loader returns a `Dataset` struct with `features()` → `Matrix`, `targets()` → `&[f64]`, `feature_names()` → `&[&str]`, `target_names()` → `&[&str]`. `diabetes::load_normalized()` matches sklearn's `scaled=True` output to the last few ULPs (rows 0–2 are pinned bit-exact against a sklearn reference in the tests).
 
 ### Pipeline
 
@@ -1103,7 +1200,7 @@ PCA also exposes [`noise_variance()`](https://docs.rs/datarust/latest/datarust/d
 Enable the `serde` feature for JSON save/load of fitted transformers.
 
 ```toml
-datarust = { version = "0.6", features = ["serde"] }
+datarust = { version = "0.7", features = ["serde"] }
 ```
 
 ```rust
@@ -1131,7 +1228,7 @@ than causing an indexing panic.
 Enable the `rayon` feature for parallel column operations on large datasets.
 
 ```toml
-datarust = { version = "0.6", features = ["rayon"] }
+datarust = { version = "0.7", features = ["rayon"] }
 ```
 
 When enabled, the following use parallel iterators:
@@ -1238,7 +1335,7 @@ or PR if a cell is stale.
 | PCA | ✓ | ✓ | ✓ |
 | TruncatedSVD | ✓ | ✗ | ✓ |
 | SVM | ✗ | ✓ | ✓ |
-| RandomForest / DecisionTree | ✗ | ✓ | ✓ |
+| RandomForest / DecisionTree | ✓ (bit-exact sklearn parity) | ✓ | ✓ |
 | KMeans | ✓ (k-means++ init) | ✓ | ✓ |
 | DBSCAN | ✗ | ✓ | ✓ |
 
@@ -1263,7 +1360,7 @@ or PR if a cell is stale.
   (18 transformers/encoders/imputers/selectors vs ≤5 elsewhere), a type-safe
   `Pipeline` + `ColumnTransformer`, KMeans clustering, and a **zero-dependency
   default build** that compiles to WASM/embedded with no BLAS or LAPACK.
-  Trade-off: only four linear models and KMeans — no SVM, trees, or DBSCAN yet
+  Trade-off: no SVM or DBSCAN yet
   (see the [Roadmap](#roadmap)).
 - **smartcore** — the broadest **single-crate algorithm zoo** (SVM, RandomForest,
   DecisionTree, KMeans, DBSCAN, KNN, NaiveBayes…) with model selection and
@@ -1923,9 +2020,9 @@ We also provide standard real-world examples in the `examples/` directory:
 
 datarust is working toward a complete scikit-learn-style ML toolkit for Rust,
 with every algorithm implemented in pure Rust and zero external dependencies
-by default. The path from the current **preprocessing-first** v0.6.5 to a
+by default. The path from the current **tree-enabled** v0.7.0 to a
 **v1.0 stability** release is tracked in [`ROADMAP.md`](ROADMAP.md) and the
-[book's roadmap page](https://genc-murat.github.io/datarust/roadmap.html).
+[book's roadmap page](https://datarust.dev/docs/roadmap/).
 
 **Guiding principles** (non-negotiable):
 
@@ -1942,9 +2039,9 @@ and checkboxes):
 | Version | Theme | Headline deliverables |
 |---|---|---|
 | **v0.6** ✅ shipped | Core ML foundations | `Clusterer` trait + `KMeans`, multiclass `LogisticRegression` (softmax), ROC-AUC / PR-AUC, Cohen's kappa, Matthews corrcoef, silhouette score, `Params` trait |
-| **v0.7** | Tree-based learning | `DecisionTree`, `RandomForest`, `ExtraTrees`, `Bagging`, feature importances |
+| **v0.7** ✅ shipped | Tree-based learning | `DecisionTreeClassifier` / `DecisionTreeRegressor` (CART, bit-exact sklearn parity), `RandomForestClassifier` / `RandomForestRegressor`, `feature_importances`, public `Rng` |
 | **v0.8** | Model selection & text | `GridSearchCV`, `CountVectorizer` / `TfidfVectorizer`, sparse-matrix arithmetic, `KNeighbors`, Naive Bayes |
-| **v0.9** | Depth & breadth | `GradientBoosting` / `AdaBoost`, `SVC` (SMO), `DBSCAN`, `ElasticNet`, `NMF`, embedded `datasets`, CSV reader |
+| **v0.9** | Depth & breadth | `GradientBoosting` / `AdaBoost`, `ExtraTrees` / `Bagging`, `SVC` (SMO), `DBSCAN`, `ElasticNet`, `NMF` |
 | **v1.0** | Stability | API freeze, legacy-API cleanup, `ARCHITECTURE.md` refresh, full public-API audit, SemVer commitment |
 
 **Explicitly out of scope:** GPU compute, distributed training, deep learning

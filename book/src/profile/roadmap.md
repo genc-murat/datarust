@@ -14,9 +14,15 @@ and data-quality toolkit for the datarust ecosystem — zero external
 dependencies by default, reusing `datarust::stats` for the numerical kernels,
 owning the interpretation layer (summaries, flags, reports).
 
-## Where we are — v0.3.0
+## Where we are — v0.4.0
 
-Pairwise relationships & interaction analysis landed: Pearson correlation matrix, Cramér's V categorical association, point-biserial correlation, target-leakage detection hints (`profile_table_with_target`), correlation heatmaps in the HTML report, and two new data-quality checks (`HighCorrelation`, `TargetLeakage`). Eight quality checks now run out of the box.
+Data loading & ergonomics landed: a pure-Rust RFC-4180 CSV reader behind the
+`csv` feature, one-call profiling entry points (`from_csv`,
+`from_csv_with_types`), a streaming single-pass profiler with bounded memory
+(Welford moments, reservoir-sampled quantiles) behind the `streaming` feature,
+a terminal-table renderer behind `pretty`, and the `datarust-profile` CLI
+binary (CSV → HTML/JSON/terminal) behind `cli`. The default build still has
+zero external dependencies. Eight quality checks run out of the box.
 
 ## The release track
 
@@ -29,12 +35,13 @@ categorical pairs and point-biserial correlation for binary categorical ⇄ nume
 A target-leakage hint flags features highly correlated with a designated target column,
 and correlation heatmaps are rendered in the HTML report.
 
-### v0.4 — Data loading & ergonomics
+### v0.4 — Data loading & ergonomics (Shipped)
 
 Meet the user at the file, not the in-memory `Matrix`. A `csv` feature adds
 one-call profiling from a path, a `cli` binary generates reports from the
 shell, and a streaming single-pass mode profiles large files without holding
-them in memory.
+them in memory. All four landed behind optional feature flags — the default
+build stays zero-dependency.
 
 ### v0.5 — Missingness & comparison
 
@@ -49,7 +56,7 @@ Richer categorical profiling: string-length distributions, casing/format flags
 that catch silent duplicates (`"USA"` vs `"usa "`), and identifier-vs-feature
 scoring beyond the current binary `NearUnique` check.
 
-### v0.7 — Performance (In progress)
+### v0.7 — Performance (In progress; streaming groundwork shipped in v0.4)
 
 The hot paths are already competitive with the reference tools: row
 deduplication is hash-based instead of an O(n²) scan, categorical columns are

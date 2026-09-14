@@ -5,7 +5,31 @@ use datarust::{stats, Matrix, StrMatrix};
 use super::column::{ColumnProfile, FiveNumber, PrecomputedStats};
 use crate::error::{ProfileError, Result};
 use crate::infer;
+#[cfg(feature = "csv")]
+use crate::types::ColumnType;
+#[cfg(feature = "csv")]
+use std::collections::HashMap;
 use std::collections::HashSet;
+#[cfg(feature = "csv")]
+use std::path::Path;
+
+/// Profiles a parsed CSV table, inferring each column's type.
+///
+/// Requires the `csv` feature. This is the composition of
+/// [`crate::csv::read_csv_reader`] output and [`DatasetProfile::from_str_matrix`]
+/// with the header names, so both produce bit-identical profiles.
+#[cfg(feature = "csv")]
+pub(crate) fn profile_from_csv_table(
+    table: &crate::csv::CsvTable,
+    names: Option<&[String]>,
+) -> Result<DatasetProfile> {
+    let fallback = table.column_names();
+    let resolved: &[String] = match names {
+        Some(ns) if ns.len() == table.ncols() => ns,
+        _ => &fallback,
+    };
+    DatasetProfile::from_str_matrix(&table.rows, Some(resolved))
+}
 
 /// Borrows column `j` of a [`StrMatrix`] as string slices, avoiding the
 /// per-cell `String` clone of `StrMatrix::column`. Kept local so the published
@@ -49,6 +73,16 @@ pub struct DatasetProfile {
 }
 
 impl DatasetProfile {
+    /// Library-facing alias for [`profile_from_csv_table`], used by the
+    /// `profile_csv*` free functions in the crate root.
+    #[cfg(feature = "csv")]
+    pub(crate) fn profile_from_csv_table_pub(
+        table: &crate::csv::CsvTable,
+        names: Option<&[String]>,
+    ) -> Result<Self> {
+        profile_from_csv_table(table, names)
+    }
+
     /// Designated target column setter for leakage detection.
     pub fn with_target(mut self, target: &str) -> Self {
         self.target_column = Some(target.to_string());
@@ -302,6 +336,167 @@ impl DatasetProfile {
         ))
     }
 
+    /// Profiles a CSV file, inferring each column's type.
+    ///
+    /// Requires the `csv` feature. Header names become column names when the
+    /// file has a header row (the default); `names` (when supplied with the
+    /// matching length) overrides them.
+    ///
+    /// ```no_run
+    /// use datarust_profile::DatasetProfile;
+    /// use std::path::Path;
+    ///
+    /// let profile = DatasetProfile::from_csv(Path::new("data.csv")).unwrap();
+    /// println!("{} rows", profile.n_rows);
+    /// ```
+    #[cfg(feature = "csv")]
+    pub fn from_csv(path: &Path) -> Result<Self> {
+        let table = crate::csv::read_csv(path)?;
+        profile_from_csv_table(&table, None)
+    }
+
+    /// Profiles a CSV file with explicit [`crate::csv::CsvReadOptions`]
+    /// (delimiter, header, trimming, ...). Requires the `csv` feature.
+    #[cfg(feature = "csv")]
+    pub fn from_csv_with(path: &Path, opts: &crate::csv::CsvReadOptions) -> Result<Self> {
+        let table = crate::csv::read_csv_with(path, opts)?;
+        profile_from_csv_table(&table, None)
+    }
+
+    /// Profiles a CSV file with per-column forced types.
+    ///
+    /// Requires the `csv` feature. Column `j` is profiled as `schema[j]`:
+    /// `Numeric` columns are parsed with the crate's missing-marker semantics
+    /// (non-parseable cells become missing) and grouped into a numeric block,
+    /// `Categorical` columns stay strings. The schema must have one entry per
+    /// CSV column. This mirrors the roadmap's `from_csv_with_types`.
+    #[cfg(feature = "csv")]
+    pub fn from_csv_with_types(path: &Path, schema: &[ColumnType]) -> Result<Self> {
+        let table = crate::csv::read_csv(path)?;
+        Self::from_csv_table_with_types(&table, schema)
+    }
+
+    /// Applies a forced-type schema to an already-parsed CSV table.
+    #[cfg(feature = "csv")]
+    pub(crate) fn from_csv_table_with_types(
+        table: &crate::csv::CsvTable,
+        schema: &[ColumnType],
+    ) -> Result<Self> {
+        if schema.len() != table.ncols() {
+            return Err(ProfileError::InvalidInput(format!(
+                "schema has {} entries, CSV has {} columns",
+                schema.len(),
+                table.ncols()
+            )));
+        }
+        let names = table.column_names();
+        // The schema path reorders columns back into CSV order by name, so
+        // duplicate header names must be rejected instead of silently
+        // collapsing the affected columns.
+        {
+            let mut seen = HashSet::new();
+            if let Some(dup) = names.iter().find(|n| !seen.insert(n.as_str())) {
+                return Err(ProfileError::InvalidInput(format!(
+                    "duplicate column name '{dup}' in the CSV header; \
+                     column names must be unique when a type schema is used"
+                )));
+            }
+        }
+        let rows = table.nrows();
+
+        // Group columns by forced type, preserving input order within each group.
+        let mut numeric_idx: Vec<usize> = Vec::new();
+        let mut categorical_idx: Vec<usize> = Vec::new();
+        for (j, kind) in schema.iter().enumerate() {
+            match kind {
+                ColumnType::Numeric => numeric_idx.push(j),
+                ColumnType::Categorical => categorical_idx.push(j),
+            }
+        }
+
+        // Transpose the required columns once, then split into blocks.
+        let mut columns_of: Vec<Vec<String>> = Vec::with_capacity(table.ncols());
+        for j in 0..table.ncols() {
+            columns_of.push(
+                (0..rows)
+                    .map(|i| table.rows.get(i, j).to_string())
+                    .collect(),
+            );
+        }
+
+        let mut numeric_columns: Vec<Vec<f64>> = Vec::with_capacity(numeric_idx.len());
+        for &j in &numeric_idx {
+            numeric_columns.push(infer::parse_numeric_column(&columns_of[j]));
+        }
+
+        let numeric_matrix = if numeric_columns.is_empty() {
+            None
+        } else {
+            Some(build_numeric_matrix(rows, &numeric_columns)?)
+        };
+        // Categorical columns are re-interleaved row-major for `StrMatrix`.
+        let categorical_matrix = if categorical_idx.is_empty() {
+            None
+        } else {
+            let cat_rows: Vec<Vec<String>> = (0..rows)
+                .map(|i| {
+                    categorical_idx
+                        .iter()
+                        .map(|&j| columns_of[j][i].clone())
+                        .collect()
+                })
+                .collect();
+            Some(StrMatrix::from_strings(cat_rows)?)
+        };
+
+        // Names in original column order: numeric names first, then categorical.
+        let mut ordered_names: Vec<String> = Vec::with_capacity(table.ncols());
+        for &j in &numeric_idx {
+            ordered_names.push(names[j].clone());
+        }
+        for &j in &categorical_idx {
+            ordered_names.push(names[j].clone());
+        }
+
+        let mut profile = Self::from_table(
+            numeric_matrix.as_ref(),
+            categorical_matrix.as_ref(),
+            &ordered_names,
+        )?;
+        profile = Self::reorder_columns(profile, &names);
+        Ok(profile)
+    }
+
+    /// Rebuilds a profile with `columns` permuted into the order given by
+    /// `names` (matched by name). Relationships are left as computed.
+    #[cfg(feature = "csv")]
+    fn reorder_columns(mut profile: Self, names: &[String]) -> Self {
+        let mut by_name: HashMap<String, ColumnProfile> = HashMap::new();
+        for col in std::mem::take(&mut profile.columns) {
+            by_name.insert(col.name.clone(), col);
+        }
+        profile.columns = names
+            .iter()
+            .map(|n| {
+                by_name.remove(n).unwrap_or_else(|| {
+                    // All names come from the same profile and duplicates
+                    // are rejected before the reorder, so absence is a bug;
+                    // degrade to an empty column instead of panicking.
+                    ColumnProfile {
+                        name: n.clone(),
+                        column_type: crate::types::ColumnType::Categorical,
+                        count: 0,
+                        missing_count: 0,
+                        missing_fraction: 0.0,
+                        numeric: None,
+                        categorical: None,
+                    }
+                })
+            })
+            .collect();
+        profile
+    }
+
     fn finish(
         n_rows: usize,
         n_columns: usize,
@@ -401,3 +596,16 @@ fn count_duplicate_table(numeric: &Matrix, categorical: &StrMatrix) -> usize {
 
 // Re-export the missing-marker check for callers building profiles by hand.
 pub use infer::is_missing as _reexport_is_missing;
+
+/// Builds a row-major `Matrix` from column-major `f64` vectors.
+#[cfg(feature = "csv")]
+fn build_numeric_matrix(rows: usize, columns: &[Vec<f64>]) -> Result<Matrix> {
+    let cols = columns.len();
+    let mut flat = Vec::with_capacity(rows * cols);
+    for i in 0..rows {
+        for col in columns {
+            flat.push(col[i]);
+        }
+    }
+    Matrix::from_flat(rows, cols, flat).map_err(ProfileError::from)
+}

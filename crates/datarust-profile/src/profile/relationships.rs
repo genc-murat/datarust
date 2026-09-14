@@ -59,7 +59,8 @@ impl Relationships {
     }
 }
 
-/// Computes Pearson correlation matrix for numeric columns using `datarust::stats::correlation_matrix`.
+/// Computes Pearson correlation matrix for numeric columns using
+/// `datarust::stats::correlation_matrix_flat`.
 fn compute_pearson(cols: &[(&str, &[f64])]) -> Option<CorrelationMatrix> {
     if cols.len() < 2 {
         return None;
@@ -69,22 +70,25 @@ fn compute_pearson(cols: &[(&str, &[f64])]) -> Option<CorrelationMatrix> {
         return None;
     }
 
-    // Build row-oriented data matrix for datarust::stats::correlation_matrix.
-    // NOTE: Switch to `correlation_matrix_flat` (flat row-major buffer) after
-    // datarust 0.6.6 is published — it streams contiguous memory and is
-    // significantly faster on wide tables.
-    let mut rows_data: Vec<Vec<f64>> = vec![vec![0.0; cols.len()]; n_rows];
-    for (j, (_, values)) in cols.iter().enumerate() {
+    // Interleave the column-major slices into one flat row-major buffer and
+    // hand it to the flat correlation kernel: a single allocation streaming
+    // contiguous memory (and GEMM-backed covariance under the
+    // `matrixmultiply` feature) instead of the nested `Vec<Vec<f64>>` layout.
+    let p = cols.len();
+    for (_, values) in cols {
         if values.len() != n_rows {
             return None;
         }
-        for i in 0..n_rows {
-            rows_data[i][j] = values[i];
+    }
+    let mut flat: Vec<f64> = Vec::with_capacity(n_rows * p);
+    for i in 0..n_rows {
+        for (_, values) in cols {
+            flat.push(values[i]);
         }
     }
 
     let labels: Vec<String> = cols.iter().map(|(name, _)| name.to_string()).collect();
-    let values = datarust::stats::correlation_matrix(&rows_data);
+    let values = datarust::stats::correlation_matrix_flat(&flat, n_rows, p);
 
     Some(CorrelationMatrix { labels, values })
 }

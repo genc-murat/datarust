@@ -2,14 +2,16 @@
 //!
 //! 442 samples, 10 features (age, sex, BMI, blood pressure, 6 blood serum
 //! measurements), and a quantitative measure of disease progression after one
-//! year (the regression target). Features have been mean-centered and scaled
-//! to unit sum of squares (as in sklearn).
+//! year (the regression target). `load` exposes the original raw measurements
+//! while `load_normalized` matches scikit-learn's default
+//! `load_diabetes(scaled=True)` representation.
 //!
 //! ```rust
 //! use datarust::datasets::diabetes;
 //!
-//! let data = diabetes::load();
-//! assert_eq!(data.n_samples(), 442);
+//! let raw = diabetes::load();
+//! let data = diabetes::load_normalized();
+//! assert_eq!(raw.n_samples(), 442);
 //! assert_eq!(data.n_features(), 10);
 //! ```
 
@@ -252,7 +254,18 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
     [40.0, 1.0, 26.9, 92.0, 203.0, 119.8, 70.0, 3.0, 4.1897, 81.0],
     [57.0, 2.0, 30.7, 90.0, 204.0, 147.8, 34.0, 6.0, 4.7095, 93.0],
     [37.0, 1.0, 38.3, 113.0, 165.0, 94.6, 53.0, 3.0, 4.4659, 79.0],
-    [40.0, 2.0, 31.9, 95.0, 198.0, 135.6, 38.0, 5.0, 4.804, 93.0],
+    [
+        40.0,
+        2.0,
+        31.9,
+        95.0,
+        198.0,
+        135.6,
+        38.0,
+        5.0,
+        4.803999999999999,
+        93.0,
+    ],
     [
         33.0, 1.0, 35.0, 89.0, 200.0, 130.4, 42.0, 4.76, 4.9273, 101.0,
     ],
@@ -429,7 +442,18 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
     [
         58.0, 2.0, 25.5, 112.0, 163.0, 110.6, 29.0, 6.0, 4.7622, 86.0,
     ],
-    [55.0, 1.0, 28.2, 91.0, 250.0, 140.2, 67.0, 4.0, 5.366, 103.0],
+    [
+        55.0,
+        1.0,
+        28.2,
+        91.0,
+        250.0,
+        140.2,
+        67.0,
+        4.0,
+        5.3660000000000005,
+        103.0,
+    ],
     [
         62.0, 2.0, 33.3, 114.0, 182.0, 114.0, 38.0, 5.0, 5.0106, 96.0,
     ],
@@ -482,7 +506,16 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
     [28.0, 2.0, 19.2, 81.0, 155.0, 94.6, 51.0, 3.0, 3.8501, 87.0],
     [58.0, 2.0, 29.0, 85.0, 156.0, 109.2, 36.0, 4.0, 3.989, 86.0],
     [
-        39.0, 2.0, 24.0, 89.67, 190.0, 113.6, 52.0, 3.65, 4.804, 101.0,
+        39.0,
+        2.0,
+        24.0,
+        89.67,
+        190.0,
+        113.6,
+        52.0,
+        3.65,
+        4.803999999999999,
+        101.0,
     ],
     [34.0, 2.0, 20.6, 98.0, 183.0, 92.0, 83.0, 2.0, 3.6889, 92.0],
     [65.0, 1.0, 26.3, 70.0, 244.0, 166.2, 51.0, 5.0, 4.8978, 98.0],
@@ -551,7 +584,18 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
     [
         52.0, 1.0, 29.5, 104.33, 211.0, 132.8, 49.0, 4.31, 4.9836, 98.0,
     ],
-    [69.0, 1.0, 29.6, 122.0, 231.0, 128.4, 56.0, 4.0, 5.451, 86.0],
+    [
+        69.0,
+        1.0,
+        29.6,
+        122.0,
+        231.0,
+        128.4,
+        56.0,
+        4.0,
+        5.4510000000000005,
+        86.0,
+    ],
     [
         60.0, 2.0, 22.8, 110.0, 245.0, 189.8, 39.0, 6.0, 4.3944, 88.0,
     ],
@@ -571,7 +615,18 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
         75.0, 1.0, 30.1, 78.0, 222.0, 154.2, 44.0, 5.05, 4.7791, 97.0,
     ],
     [28.0, 1.0, 24.2, 93.0, 174.0, 106.4, 54.0, 3.0, 4.2195, 84.0],
-    [65.0, 2.0, 31.3, 110.0, 213.0, 128.0, 47.0, 5.0, 5.247, 91.0],
+    [
+        65.0,
+        2.0,
+        31.3,
+        110.0,
+        213.0,
+        128.0,
+        47.0,
+        5.0,
+        5.247000000000001,
+        91.0,
+    ],
     [42.0, 1.0, 30.1, 91.0, 182.0, 114.8, 49.0, 4.0, 4.5109, 82.0],
     [51.0, 1.0, 24.5, 79.0, 212.0, 128.6, 65.0, 3.0, 4.5218, 91.0],
     [
@@ -596,7 +651,18 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
     [
         68.0, 2.0, 25.7, 109.0, 233.0, 112.6, 35.0, 7.0, 6.0568, 105.0,
     ],
-    [57.0, 1.0, 26.9, 98.0, 246.0, 165.2, 38.0, 7.0, 5.366, 96.0],
+    [
+        57.0,
+        1.0,
+        26.9,
+        98.0,
+        246.0,
+        165.2,
+        38.0,
+        7.0,
+        5.3660000000000005,
+        96.0,
+    ],
     [
         48.0, 1.0, 31.4, 75.33, 242.0, 151.6, 38.0, 6.37, 5.5683, 103.0,
     ],
@@ -656,7 +722,16 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
     [32.0, 2.0, 31.0, 100.0, 177.0, 96.2, 45.0, 4.0, 5.1874, 77.0],
     [43.0, 1.0, 18.5, 87.0, 163.0, 93.6, 61.0, 2.67, 3.7377, 80.0],
     [
-        59.0, 2.0, 26.9, 104.0, 194.0, 126.6, 43.0, 5.0, 4.804, 106.0,
+        59.0,
+        2.0,
+        26.9,
+        104.0,
+        194.0,
+        126.6,
+        43.0,
+        5.0,
+        4.803999999999999,
+        106.0,
     ],
     [
         53.0, 1.0, 28.3, 101.0, 179.0, 107.0, 48.0, 4.0, 4.7875, 101.0,
@@ -666,7 +741,18 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
         54.0, 2.0, 36.1, 115.0, 163.0, 98.4, 43.0, 4.0, 4.6821, 101.0,
     ],
     [35.0, 2.0, 24.1, 94.67, 155.0, 97.4, 32.0, 4.84, 4.852, 94.0],
-    [49.0, 2.0, 25.8, 89.0, 182.0, 118.6, 39.0, 5.0, 4.804, 115.0],
+    [
+        49.0,
+        2.0,
+        25.8,
+        89.0,
+        182.0,
+        118.6,
+        39.0,
+        5.0,
+        4.803999999999999,
+        115.0,
+    ],
     [
         58.0, 1.0, 22.8, 91.0, 196.0, 118.8, 48.0, 4.0, 4.9836, 115.0,
     ],
@@ -746,7 +832,18 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
     [
         34.0, 2.0, 25.3, 111.0, 230.0, 162.0, 39.0, 6.0, 4.9767, 90.0,
     ],
-    [46.0, 2.0, 23.8, 97.0, 224.0, 139.2, 42.0, 5.0, 5.366, 81.0],
+    [
+        46.0,
+        2.0,
+        23.8,
+        97.0,
+        224.0,
+        139.2,
+        42.0,
+        5.0,
+        5.3660000000000005,
+        81.0,
+    ],
     [50.0, 1.0, 31.8, 82.0, 136.0, 69.2, 55.0, 2.0, 4.0775, 85.0],
     [
         69.0, 1.0, 34.3, 113.0, 200.0, 123.8, 54.0, 4.0, 4.7095, 112.0,
@@ -755,7 +852,18 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
     [
         71.0, 2.0, 27.0, 93.33, 269.0, 190.2, 41.0, 6.56, 5.2417, 93.0,
     ],
-    [47.0, 1.0, 27.2, 80.0, 208.0, 145.6, 38.0, 6.0, 4.804, 92.0],
+    [
+        47.0,
+        1.0,
+        27.2,
+        80.0,
+        208.0,
+        145.6,
+        38.0,
+        6.0,
+        4.803999999999999,
+        92.0,
+    ],
     [
         41.0, 1.0, 33.8, 123.33, 187.0, 127.0, 45.0, 4.16, 4.3175, 100.0,
     ],
@@ -783,7 +891,16 @@ const DIABETES_DATA: [[f64; 10]; 442] = [
     ],
     [39.0, 2.0, 26.9, 93.0, 136.0, 75.4, 48.0, 3.0, 4.1431, 99.0],
     [
-        62.0, 2.0, 34.6, 120.0, 215.0, 129.2, 43.0, 5.0, 5.366, 123.0,
+        62.0,
+        2.0,
+        34.6,
+        120.0,
+        215.0,
+        129.2,
+        43.0,
+        5.0,
+        5.3660000000000005,
+        123.0,
     ],
     [37.0, 1.0, 23.3, 88.0, 223.0, 142.0, 65.0, 3.4, 4.3567, 82.0],
     [46.0, 1.0, 21.1, 80.0, 205.0, 144.4, 42.0, 5.0, 4.5326, 87.0],
@@ -845,20 +962,68 @@ const DIABETES_TARGET: [f64; 442] = [
     183.0, 66.0, 173.0, 72.0, 49.0, 64.0, 48.0, 178.0, 104.0, 132.0, 220.0, 57.0,
 ];
 
-/// Loads the Diabetes dataset.
+/// Loads the original raw Diabetes measurements.
 ///
-/// Returns a [`Dataset`] with 442 samples, 10 features, and a continuous
-/// regression target (disease progression). `n_classes()` returns 0 — this
-/// is a regression dataset, not classification.
+/// This preserves datarust's historical dataset API. Use [`load_normalized`]
+/// for the default representation returned by scikit-learn's
+/// `load_diabetes()`.
 pub fn load() -> Dataset {
     let data: Vec<Vec<f64>> = DIABETES_DATA.iter().map(|r| r.to_vec()).collect();
     let target = DIABETES_TARGET.to_vec();
     Dataset::from_const(data, target, &FEATURE_NAMES, &TARGET_NAMES)
 }
 
+/// Loads Diabetes features normalized like
+/// `sklearn.datasets.load_diabetes(scaled=True)`.
+///
+/// Each feature is centered by its column mean, divided by its population
+/// standard deviation, and then divided by `sqrt(442)`. The transformation
+/// matches sklearn's math; note that numpy computes its sums with pairwise
+/// accumulation while this implementation accumulates sequentially, so
+/// results agree to the last few ULPs rather than bit-for-bit (rows 0–2 are
+/// pinned bit-exact against a sklearn reference in the tests below). The
+/// target vector and metadata are identical to [`load`].
+pub fn load_normalized() -> Dataset {
+    let n = DIABETES_DATA.len() as f64;
+    let root_n = n.sqrt();
+    let mut data = vec![vec![0.0; FEATURE_NAMES.len()]; DIABETES_DATA.len()];
+
+    for feature in 0..FEATURE_NAMES.len() {
+        let mean = DIABETES_DATA.iter().map(|row| row[feature]).sum::<f64>() / n;
+        let variance = DIABETES_DATA
+            .iter()
+            .map(|row| {
+                let centered = row[feature] - mean;
+                centered * centered
+            })
+            .sum::<f64>()
+            / n;
+        let scale = variance.sqrt();
+        for (sample, row) in DIABETES_DATA.iter().enumerate() {
+            data[sample][feature] = (row[feature] - mean) / scale / root_n;
+        }
+    }
+
+    Dataset::from_const(
+        data,
+        DIABETES_TARGET.to_vec(),
+        &FEATURE_NAMES,
+        &TARGET_NAMES,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fnv1a_f64_bits(values: impl Iterator<Item = f64>) -> u64 {
+        let mut hash = 0xcbf29ce484222325u64;
+        for value in values {
+            hash ^= value.to_bits();
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash
+    }
 
     #[test]
     fn diabetes_dimensions() {
@@ -872,6 +1037,86 @@ mod tests {
         let d = load();
         assert_eq!(d.n_classes(), 0); // regression, no class names
         assert_eq!(d.target_names().len(), 0);
+    }
+
+    #[test]
+    fn normalized_features_match_sklearn_shape_and_scale() {
+        let d = load_normalized();
+        assert_eq!(d.n_samples(), 442);
+        assert_eq!(d.n_features(), 10);
+        assert_eq!(d.n_classes(), 0);
+
+        // sklearn's load_diabetes(scaled=True) reference values for rows 0–2.
+        let x = d.features();
+        let expected: [[f64; 10]; 3] = [
+            [
+                0.038075906433423026,
+                0.05068011873981862,
+                0.061696206518683294,
+                0.0218723855140367,
+                -0.04422349842444599,
+                -0.03482076283769895,
+                -0.04340084565202491,
+                -0.002592261998183278,
+                0.019907486170462722,
+                -0.01764612515980379,
+            ],
+            [
+                -0.0018820165277906047,
+                -0.044641636506989144,
+                -0.051474061238800654,
+                -0.02632752814785296,
+                -0.008448724111216851,
+                -0.019163339748222204,
+                0.07441156407875721,
+                -0.03949338287409329,
+                -0.0683315470939731,
+                -0.092204049626824,
+            ],
+            [
+                0.08529890629667548,
+                0.05068011873981862,
+                0.04445121333659049,
+                -0.00567042229275739,
+                -0.04559945128264711,
+                -0.03419446591411989,
+                -0.03235593223976409,
+                -0.002592261998183278,
+                0.002861309289833047,
+                -0.025930338989472702,
+            ],
+        ];
+        for (i, row) in expected.iter().enumerate() {
+            for (j, &reference) in row.iter().enumerate() {
+                assert_eq!(x.get(i, j).to_bits(), reference.to_bits(), "({}, {})", i, j);
+            }
+        }
+        let feature_hash = fnv1a_f64_bits(x.as_slice().iter().copied());
+        assert_eq!(feature_hash, 0x38c0_6e31_b3af_7ff6);
+
+        let target_hash = fnv1a_f64_bits(d.targets().iter().copied());
+        assert_eq!(target_hash, 0x023d_3629_fc5c_ff4d);
+    }
+
+    #[test]
+    fn normalized_features_have_unit_sum_of_squares() {
+        let x = load_normalized().features();
+        for j in 0..x.ncols() {
+            let sum = (0..x.nrows())
+                .map(|i| x.get(i, j) * x.get(i, j))
+                .sum::<f64>();
+            assert!((sum - 1.0).abs() < 2e-14, "feature {j}: sum={sum}");
+        }
+    }
+
+    #[test]
+    fn normalized_targets_match_raw_targets_bit_for_bit() {
+        let raw = load();
+        let normalized = load_normalized();
+        assert_eq!(raw.targets().len(), normalized.targets().len());
+        for (i, (&a, &b)) in raw.targets().iter().zip(normalized.targets()).enumerate() {
+            assert_eq!(a.to_bits(), b.to_bits(), "target {i}");
+        }
     }
 
     #[test]

@@ -166,18 +166,28 @@ zero-dep default.
 
 **Deliverables:**
 
-- [ ] `csv` feature: a pure-Rust CSV reader (or a gated wrapper over the
+- [x] `csv` feature: a pure-Rust CSV reader (or a gated wrapper over the
       `csv` crate) returning a typed table ready for `profile_table`.
-- [ ] `from_csv(path)` / `from_csv_with_types(path, schema)` entry points
+      *(Shipped in v0.4.0 as a zero-dependency RFC-4180-subset parser —
+      `CsvReadOptions` + `CsvTable` — no `csv`-crate wrapper.)*
+- [x] `from_csv(path)` / `from_csv_with_types(path, schema)` entry points
       behind the `csv` feature, with automatic type inference per column.
-- [ ] `cli` feature + binary: `datarust-profile path/to/data.csv -o
+      *(Shipped in v0.4.0: `from_csv`, `from_csv_with`, `from_csv_with_types`,
+      and the `profile_csv*` free functions.)*
+- [x] `cli` feature + binary: `datarust-profile path/to/data.csv -o
       report.html` (and `--json`). Arg parsing via a gated `clap` dependency
       or a hand-rolled parser to stay dep-light.
-- [ ] Streaming-friendly profiling for large files: compute column stats in a
+      *(Shipped in v0.4.0 with clap `=4.4.18`, MSRV-safe; also `--target`,
+      `--streaming`, `--delimiter`, `--no-header`, `--types`.)*
+- [x] Streaming-friendly profiling for large files: compute column stats in a
       single forward pass (Welford mean/variance, reservoir-sampled quantiles
       or t-digest) so the whole file never needs to reside in memory.
-- [ ] `pretty` feature: a terminal-table summary printer (think `bat` /
+      *(Shipped in v0.4.0 with Welford moments + reservoir sampling;
+      t-digest remains a future refinement.)*
+- [x] `pretty` feature: a terminal-table summary printer (think `bat` /
       `term-table`) for quick inspection without leaving the shell.
+      *(Shipped in v0.4.0 as a hand-rolled fixed-width renderer with ANSI
+      styling and `NO_COLOR` support.)*
 
 ### v0.5 — Missingness & comparison
 
@@ -229,6 +239,11 @@ adds the text-aware summaries that distinguish a profiling tool from a
 ### v0.7 — Performance
 
 > *Theme: profile million-row tables in seconds, not minutes.*
+>
+> *v0.4 note: the streaming profiler's reservoir quantiles and the
+> `distinct_cap` interning already bound the hot-path allocations; the
+> remaining v0.7 item below is the `rayon` column parallelisation and the
+> explicit memory-budget knobs.*
 
 The duplicate-row and per-column gather loops were O(n²) or allocation-heavy.
 The allocation and complexity issues are now addressed (unreleased):

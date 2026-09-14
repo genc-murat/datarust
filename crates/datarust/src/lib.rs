@@ -66,6 +66,8 @@ pub mod compose;
 pub mod datasets;
 pub mod decomposition;
 pub mod encoder;
+/// Random-forest classifiers and regressors built from CART trees.
+pub mod ensemble;
 /// Error types returned by fallible operations.
 pub mod error;
 /// Wrap arbitrary functions as a [`Transformer`].
@@ -86,6 +88,8 @@ pub mod model_selection;
 pub mod pipeline;
 /// Generate polynomial feature combinations.
 pub mod polynomial;
+/// Shared deterministic PRNG (xorshift64) used across estimators and splitters.
+pub mod rng;
 pub mod scaler;
 pub mod selection;
 #[cfg(feature = "serde")]
@@ -94,14 +98,17 @@ pub mod stats;
 pub mod target_kind;
 pub mod traits;
 pub mod transformer_kind;
+pub mod tree;
 
 pub use categorical_kind::CategoricalTransformerKind;
 pub use cluster::{KMeans, KMeansInit};
 pub use compose::{ColumnSpec, ColumnTransformer, Output, Remainder, Table};
+pub use decomposition::{PCAComponents, TruncatedSVD, PCA};
 pub use encoder::{
     DropStrategy, FrequencyEncoder, HandleUnknown, LabelEncoder, OneHotEncoder, OrdinalCategories,
     OrdinalEncoder, OrdinalHandleUnknown, TargetEncoder, UnknownFrequency, UnknownTarget,
 };
+pub use ensemble::{RandomForestClassifier, RandomForestRegressor};
 pub use error::{DatarustError, Result};
 pub use label_space::LabelSpace;
 pub use linear_model::{
@@ -112,6 +119,7 @@ pub use model_selection::{
     cross_val_score, train_test_split, KFold, StratifiedKFold, TrainTestSplit,
 };
 pub use pipeline::{Pipeline, SupervisedPipeline};
+pub use rng::Rng;
 pub use target_kind::TargetTransformerKind;
 pub use traits::{
     default_input_names, CategoricalTransformer, Classifier, Clusterer, Estimator, FeatureNames,
@@ -119,3 +127,4 @@ pub use traits::{
     Transformer,
 };
 pub use transformer_kind::TransformerKind;
+pub use tree::{Criterion, DecisionTreeClassifier, DecisionTreeRegressor, MaxFeatures};

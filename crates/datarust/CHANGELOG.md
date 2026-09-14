@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-14
+
+### Added
+
+- **Tree module (`src/tree/`) — the v0.7 release theme.** CART decision trees
+  with a splitter that is a line-by-line transliteration of scikit-learn
+  1.6.1's `BestSplitter` + `DensePartitioner`, so that with the same `X`, `y`,
+  integer `random_state`, and parameters, the fitted tree matches sklearn
+  *node-for-node, bit-for-bit* — split features, thresholds, impurities, node
+  values, predictions, probabilities, and `feature_importances_`:
+  - `DecisionTreeClassifier` (Gini / entropy criteria) with `predict`,
+    `predict_proba`, `feature_importances`, and tree introspection
+    (`tree()`, `n_features_in`).
+  - `DecisionTreeRegressor` (squared-error criterion) with `predict` and
+    `feature_importances`.
+  - Shared `TreeOptions` (max depth, min samples split/leaf, min impurity
+    decrease, max features `all`/`sqrt`/`log2`/count, seed) with the crate's
+    `with_*` builder convention and `Params` hyperparameter introspection.
+  - `TreeStructure` introspection: node count, depth, leaves, per-node
+    feature / threshold / impurity / improvement / sample count / value,
+    `classes()`, and `leaf_for` routing.
+  - `Criterion` and `MaxFeatures` parse from strings using sklearn's
+    parameter spelling (`"gini"`, `"entropy"`, `"squared_error"`,
+    `"sqrt"`, …).
+  - `fit` rejects `Criterion::SquaredError` on the classifiers with
+    `InvalidInput` (it is regression-only) instead of failing later at
+    predict time; the params API still round-trips the stored value.
+  - sklearn fidelity details reproduced exactly: float32 feature
+    quantization with float64 midpoint thresholds, the per-split
+    Fisher-Yates feature-draw RNG (ties resolve through the seeded stream,
+    exactly like `splitter="best"`), introsort sample ordering, criterion
+    accumulation in sklearn's forward/reverse `update` order, the builder's
+    `EPSILON` impurity tolerance, base-2 entropy, and the FMA contractions
+    clang emits for sklearn's Cython (entropy update and the
+    feature-importance contribution) plus numpy's pairwise summation in the
+    importance normalizer.
+  - Parity is pinned by `tests/tree_parity.rs` against six deterministic
+    fixtures generated from sklearn 1.6.1 / numpy 2.0.2 (iris Gini full,
+    depth-3 entropy, and `max_features=sqrt`; breast cancer Gini at depth 4
+    on 250 rows; diabetes regression at depth 5 and depth 3 — all bit-exact
+    via `to_bits()`), plus integration tests and property-based invariants
+    (leaf-mean consistency, probability distributions, depth limits,
+    determinism under a fixed seed).
+- **Random forest ensembles (`src/ensemble.rs`).**
+  `RandomForestClassifier` and `RandomForestRegressor` fit bootstrap-resampled
+  trees seeded through a local MT19937 "legacy `RandomState`" clone, so the
+  seed stream, bootstrap indices, and per-tree splitter states mirror
+  sklearn's forest: with the same integer `random_state` the forests match
+  sklearn's predictions, probabilities, `feature_importances_`, and
+  bootstrap samples bit-for-bit (pinned by `tests/integration_forest.rs`).
+  Classifiers average per-tree probabilities (argmax with lowest-class tie
+  breaks), regressors average predictions, and `estimators_samples()`
+  regenerates each tree's bootstrap indices from the stored per-tree seeds
+  on demand (the fitted model does not retain
+  `n_estimators × n_samples` indices). Out-of-bag scoring, sample
+  weights, and parallel fitting are intentionally outside this first
+  forest release.
+- **Diabetes `load_normalized()`.** Returns the scikit-learn
+  `load_diabetes(scaled=True)` layout — mean-centred, population-std
+  scaled — computed from the embedded raw data, with sklearn's feature
+  naming and order.
+- **Public RNG (`src/rng.rs`).** The internal PRNG is promoted from
+  `model_selection` to a top-level module: `Rng` (xorshift64*) with
+  `next_u64`, `next_unit`, `next_range`, `next_usize`/`next_index`,
+  `next_normal`, and Fisher-Yates `shuffle`. Zero seeds are deterministically
+  remapped instead of collapsing to a stuck all-zero state. Ensembles can now
+  build reproducible bootstrap samples from one shared, seedable utility;
+  `model_selection::rng` remains as a re-export shim for compatibility.
+
+### Changed
+
+- **`lib.rs` layout.** `rng` joins `matrix`, `traits`, and `error` as a
+  public foundation module; `Rng` is re-exported at the crate root.
+- **Diabetes raw literals re-precisioned.** Twelve `DIABETES_DATA` literals
+  now carry sklearn's exact `f64` values (e.g. `4.804` →
+  `4.803999999999999`); `load()` output can differ from previous releases
+  at the ULP level so the embedded values match sklearn bit-for-bit.
+
 ## [0.6.6] - 2026-08-18
 
 ### Changed

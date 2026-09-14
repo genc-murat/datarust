@@ -17,6 +17,8 @@
 - [Imputers](./guide/imputers.md)
 - [Decomposition](./guide/decomposition.md)
 - [Linear Models](./guide/linear-models.md)
+- [Trees](./guide/trees.md)
+- [Ensembles](./guide/ensembles.md)
 - [Clustering](./guide/cluster.md)
 - [Metrics](./guide/metrics.md)
 - [Model Selection](./guide/model-selection.md)

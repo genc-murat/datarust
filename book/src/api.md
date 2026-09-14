@@ -22,6 +22,9 @@ docs.rs builds the rustdoc documentation with **all features enabled** (`serde`,
 | `imputer` | [datarust::imputer](https://docs.rs/datarust/latest/datarust/imputer/index.html) |
 | `decomposition` | [datarust::decomposition](https://docs.rs/datarust/latest/datarust/decomposition/index.html) |
 | `linear_model` | [datarust::linear_model](https://docs.rs/datarust/latest/datarust/linear_model/index.html) |
+| `tree` | [datarust::tree](https://docs.rs/datarust/latest/datarust/tree/index.html) |
+| `ensemble` | [datarust::ensemble](https://docs.rs/datarust/latest/datarust/ensemble/index.html) |
+| `rng` | [datarust::Rng](https://docs.rs/datarust/latest/datarust/struct.Rng.html) |
 | `metrics` | [datarust::metrics](https://docs.rs/datarust/latest/datarust/metrics/index.html) |
 | `model_selection` | [datarust::model_selection](https://docs.rs/datarust/latest/datarust/model_selection/index.html) |
 | `compose` | [datarust::compose](https://docs.rs/datarust/latest/datarust/compose/index.html) |

@@ -460,9 +460,33 @@ model.fit(&amp;x_train, &amp;y_train)?;
   });
 }
 
+// Release posts carry their version in the slug ("v0-7" → [0, 7],
+// "profile-v0-4" → [0, 4]). Parsing it lets the featured story be the
+// *latest* release rather than the alphabetically first file (which would
+// otherwise always pick "medium-profile-v0.2.md").
+function releaseVersion(post) {
+  const match = post.slug.match(/v(\d+)-(\d+)$/);
+  return match ? [Number(match[1]), Number(match[2])] : null;
+}
+
+function releaseLabel(post) {
+  const version = releaseVersion(post);
+  if (!version) {
+    return '';
+  }
+  const prefix = post.slug.startsWith('profile-') ? 'profile ' : '';
+  return `${prefix}v${version[0]}.${version[1]}`;
+}
+
 function blogIndex(posts) {
   const numbered = posts.filter((post) => post.number).sort((a, b) => b.number - a.number);
-  const release = posts.find((post) => post.isRelease);
+  const release = posts
+    .filter((post) => post.isRelease && releaseVersion(post))
+    .sort((a, b) => {
+      const va = releaseVersion(a);
+      const vb = releaseVersion(b);
+      return vb[0] - va[0] || vb[1] - va[1];
+    })[0];
   return pageShell({
     title: 'Field notes',
     description: 'Practical, human-written lessons from building preprocessing and classical machine-learning workflows in Rust.',
@@ -471,7 +495,7 @@ function blogIndex(posts) {
     body: `
       <section class="page-hero shell narrow-left"><p class="eyebrow">Field notes · ${numbered.length} articles</p><h1>Small experiments.<br>Expensive lessons.</h1><p>Practical stories about models that ran, metrics that looked convincing, and the details that changed what the result actually meant.</p></section>
       <section class="shell blog-controls"><label for="blog-filter">Find a field note</label><div class="filter-input">${icon('search')}<input id="blog-filter" type="search" placeholder="Filter by topic…" data-blog-filter></div><p aria-live="polite" data-blog-count>${numbered.length} field notes</p></section>
-      ${release ? `<section class="shell featured-story"><div><p class="eyebrow">Release story</p><h2>${escapeHtml(release.title)}</h2><p>${escapeHtml(release.description)}</p><a class="text-link" href="${release.route}">Read the story ${icon('arrow')}</a></div><div class="feature-number">v0.6</div></section>` : ''}
+      ${release ? `<section class="shell featured-story"><div><p class="eyebrow">Release story</p><h2>${escapeHtml(release.title)}</h2><p>${escapeHtml(release.description)}</p><a class="text-link" href="${release.route}">Read the story ${icon('arrow')}</a></div><div class="feature-number">${escapeHtml(releaseLabel(release))}</div></section>` : ''}
       <section class="shell section article-grid blog-grid" data-blog-grid>${numbered.map((post) => articleCard(post)).join('')}<p class="empty-state" data-blog-empty hidden>No field note matched that search.</p></section>
     `,
   });

@@ -44,6 +44,10 @@ A side-by-side view of what's implemented. `✓` = supported, `—` = no equival
 | Ridge | ✓ (L2, Cholesky & SVD) | ✓ |
 | Lasso | ✓ (L1, coordinate descent) | ✓ |
 | LogisticRegression | ✓ (IRLS, Cholesky & SVD) | ✓ |
+| DecisionTreeClassifier | ✓ (CART, Gini/entropy, bit-exact parity) | ✓ |
+| DecisionTreeRegressor | ✓ (CART, squared error) | ✓ |
+| RandomForestClassifier | ✓ (bagging, bit-exact parity) | ✓ |
+| RandomForestRegressor | ✓ (bagging) | ✓ |
 | PCA | ✓ (Jacobi + randomized SVD, whiten, inverse) | ✓ |
 | TruncatedSVD | ✓ (Count/Variance/All) | ✓ |
 
@@ -106,9 +110,10 @@ every design decision:
 - **datarust** optimizes for **preprocessing depth and zero-dependency
   deployability.** All linear algebra is pure Rust (Jacobi eigensolver,
   Cholesky, coordinate descent), so the default build has *no* external C
-  libraries — it links cleanly into WASM, embedded targets, and CLI tools. The
-  trade-off is algorithm breadth: only the four linear models (Linear / Ridge /
-  Lasso / Logistic regression) and `KMeans` clustering are implemented so far.
+  libraries — it links cleanly into WASM, embedded targets, and CLI tools.
+  Since v0.7 it also ships CART decision trees and random forests whose
+  splitter reproduces scikit-learn's bit-for-bit. The remaining trade-off
+  is algorithm breadth: SVM, DBSCAN, and boosting are not implemented yet.
 - **smartcore** optimizes for **single-crate algorithm breadth.** One dependency
   gives you SVM, RandomForest, DecisionTree, KMeans, DBSCAN, KNN, NaiveBayes,
   and more, plus model selection and metrics. The trade-off is preprocessing:
@@ -163,7 +168,7 @@ time of writing — please open an issue or PR if a cell goes stale.
 | PCA | ✓ | ✓ | ✓ |
 | TruncatedSVD | ✓ | ✗ | ✓ |
 | SVM | ✗ | ✓ | ✓ |
-| RandomForest / DecisionTree | ✗ | ✓ | ✓ |
+| RandomForest / DecisionTree | ✓ (bit-exact sklearn parity) | ✓ | ✓ |
 | KMeans | ✓ (k-means++ init) | ✓ | ✓ |
 | DBSCAN | ✗ | ✓ | ✓ |
 
@@ -188,7 +193,8 @@ time of writing — please open an issue or PR if a cell goes stale.
 |---|---|
 | Rich preprocessing (scalers, encoders, imputers, selection) | **datarust** |
 | WASM / embedded / single-binary deployment, no BLAS | **datarust** |
-| SVM, trees, DBSCAN, or the widest single-crate model zoo | **smartcore** |
+| Bit-exact sklearn-parity trees and forests in pure Rust | **datarust** |
+| SVM, DBSCAN, or the widest single-crate model zoo | **smartcore** |
 | Modular compile-what-you-use algorithms, or text vectorizers | **linfa** |
 | Deep learning (transformers, CNNs, autograd) | candle / burn / tch-rs |
 
@@ -198,4 +204,4 @@ These libraries are **not mutually exclusive.** Because all three expose plain
 `Vec`/matrix in/out interfaces, you can mix them in a single pipeline: use
 datarust for preprocessing (where its coverage is unique), then hand the
 transformed features to a smartcore or linfa estimator for an algorithm datarust
-doesn't implement yet.
+doesn't implement yet — SVM and DBSCAN are the current examples.

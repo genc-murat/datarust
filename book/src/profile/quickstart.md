@@ -1,22 +1,49 @@
 # Quick Start
 
-A 60-second tour: profile a numeric matrix, read the results, and render a
-report. Everything here works with the default feature set — no `serde`
-required for the HTML report.
+A 60-second tour: profile a CSV file or a numeric matrix, read the results,
+and render a report. Everything here works with the default feature set —
+no `serde` required for the HTML report.
 
 ## Install
 
 ```toml
 [dependencies]
-datarust = "0.6"
-datarust-profile = "0.3"
+datarust = "0.7"
+datarust-profile = "0.4"
 ```
 
 For JSON output, enable the `serde` feature (this also pulls in `datarust/serde`):
 
 ```toml
 [dependencies]
-datarust-profile = { version = "0.3", features = ["serde"] }
+datarust-profile = { version = "0.4", features = ["serde"] }
+```
+
+## Meet the user at the file: `from_csv`
+
+Since v0.4, the fastest path starts at the CSV file itself (`csv` feature)
+— no manual parsing, quoting rules handled for you:
+
+```rust
+use datarust_profile::DatasetProfile;
+
+let p = DatasetProfile::from_csv("customers.csv")?;
+```
+
+For files too large to hold in memory, the `streaming` feature profiles in
+a single forward pass with bounded memory:
+
+```rust
+use datarust_profile::{profile_csv_streaming, StreamingOptions};
+
+let p = profile_csv_streaming("customers.csv")?;
+```
+
+Or skip Rust entirely with the CLI (`cargo install datarust-profile --features cli`):
+
+```sh
+datarust-profile customers.csv --pretty --target churn
+datarust-profile customers.csv --streaming -o report.html
 ```
 
 ## Profile a numeric matrix
@@ -134,7 +161,8 @@ let p = profile_table(
 ## Render a report
 
 The HTML renderer produces a single self-contained document — inline CSS, no
-JavaScript, no external assets, now with correlation heatmaps. The JSON renderer needs the `serde` feature.
+JavaScript, no external assets, now with correlation heatmaps. The JSON renderer needs the `serde` feature, and the `pretty` feature adds a
+terminal-table summary (`report::to_terminal_auto`).
 
 ```rust
 use datarust_profile::report;
@@ -142,6 +170,9 @@ use datarust_profile::report;
 // Always available:
 let html = report::to_html(&p);
 std::fs::write("profile.html", html)?;
+
+#[cfg(feature = "pretty")]
+println!("{}", report::to_terminal_auto(&p));
 
 #[cfg(feature = "serde")]
 {

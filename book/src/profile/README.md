@@ -27,10 +27,27 @@ println!("{}x{}, {} duplicate rows",
 std::fs::write("profile.html", report::to_html(&profile))?;
 ```
 
+Since v0.4, profiling can also start straight at the file — a pure-Rust
+RFC-4180 CSV reader (`csv` feature), a single-pass streaming profiler for
+large files (`streaming` feature), a terminal summary (`pretty` feature),
+and a `datarust-profile` CLI binary (`cli` feature):
+
+```rust
+use datarust_profile::DatasetProfile;
+
+let profile = DatasetProfile::from_csv("customers.csv")?;      // csv feature
+let big = datarust_profile::profile_csv_streaming("logs.csv")?; // streaming feature
+```
+
+```sh
+datarust-profile customers.csv --pretty --target churn
+```
+
 > **Default build has zero external dependencies** beyond `datarust` itself.
 > Statistics flow through `datarust::stats`; the profiling crate owns the
 > *interpretation* (summaries, quality flags, reports). JSON output is opt-in
-> via the `serde` feature.
+> via the `serde` feature; CSV, streaming, terminal rendering, and the CLI
+> are opt-in via their own features.
 
 ---
 
@@ -79,7 +96,9 @@ JSON renderers include findings and correlation heatmaps by default.
 | Format | Feature  | Notes                                              |
 |--------|----------|----------------------------------------------------|
 | HTML   | —        | Single self-contained `.html`, inline CSS, no JS.  |
+| Terminal | `pretty` | Fixed-width table + findings for shell inspection; auto TTY/`NO_COLOR` detection. |
 | JSON   | `serde`  | Pretty-printed; schema mirrors the in-memory types. |
+| CLI    | `cli`    | `datarust-profile <CSV>` binary: HTML/JSON/terminal out, `--streaming`, `--target`, `--delimiter`, `--types`. |
 
 ```rust
 #[cfg(feature = "serde")]

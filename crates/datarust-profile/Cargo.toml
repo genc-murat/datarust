@@ -1,6 +1,6 @@
 [package]
 name = "datarust-profile"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.70"
 description = "One-call data profiling and quality reports for the datarust ecosystem"
@@ -26,23 +26,57 @@ include = [
 name = "datarust_profile"
 path = "src/lib.rs"
 
+[[bin]]
+name = "datarust-profile"
+path = "src/bin/datarust-profile.rs"
+required-features = ["cli"]
+
 [features]
 default = []
+# Pure-Rust CSV reading and one-call CSV profiling.
+csv = []
+# Streaming single-pass profiler (bounded memory); implies `csv` for the
+# shared record parser.
+streaming = ["csv"]
+# Terminal-table summary writer.
+pretty = []
+# The `datarust-profile` CLI binary. Pulls in clap and enables the CSV
+# reader, the streaming profiler, the terminal writer, and the serde JSON
+# renderer.
+cli = ["csv", "streaming", "pretty", "serde", "dep:clap"]
 # Enable JSON serialization of profile reports (and `to_json`).
 serde = ["dep:serde", "dep:serde_json", "datarust/serde"]
 
 [dependencies]
-datarust = "0.6"
+# Track the in-tree datarust major so the workspace [patch.crates-io] entry
+# stays applicable during development (a "0.6" requirement no longer matches
+# the local 0.7.0 tree, silently falling back to the crates.io release and
+# making `-p datarust` ambiguous under the 1.70 MSRV cargo).
+datarust = "0.7"
 # Optional, gated behind the `serde` feature. Pinned to the same lines datarust
 # uses in order to preserve the shared Rust 1.70 MSRV across the workspace.
 serde = { version = "=1.0.228", features = ["derive"], optional = true }
 serde_json = { version = "=1.0.145", optional = true }
+# Optional, gated behind the `cli` feature. Pin =4.4.18 (already used as a
+# dev-dependency). The derive feature pulls syn/quote/proc-macro2, but the
+# workspace already pins those exact versions for datarust's own `serde`
+# feature (see the datarust crate), keeping the shared graph on the Rust
+# 1.70 MSRV.
+clap = { version = "=4.4.18", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+    "error-context",
+], optional = true }
 
 [dev-dependencies]
 criterion = "=0.5.1"
 # Keep the shared test graph on the workspace Rust 1.70 MSRV (see datarust).
 clap = "=4.4.18"
 half = "=2.4.1"
+# CLI integration tests exercise the real binary via CARGO_BIN_EXE_.
+tempfile = "=3.15.0"
 
 [[bench]]
 name = "benchmarks"
@@ -91,3 +125,11 @@ required-features = ["serde"]
 name = "correlation_analysis"
 path = "examples/correlation_analysis.rs"
 
+[[example]]
+name = "profile_csv"
+path = "examples/profile_csv.rs"
+required-features = ["csv"]
+
+[package.metadata.docs.rs]
+features = ["csv", "streaming", "pretty", "serde", "cli"]
+rustdoc-args = ["--cfg", "docsrs"]

@@ -1,17 +1,18 @@
 # Roadmap
 
-This document tracks the path from the current release (v0.6.5) toward a
+This document tracks the path from the current release (v0.7.0) toward a
 **complete scikit-learn-style ML toolkit** for Rust (v1.0). It is a living
 document — priorities may shift, but the principles and the destination stay
 fixed.
 
-> **Where we are today (v0.6.5):** the deepest preprocessing coverage in the
+> **Where we are today (v0.7.0):** the deepest preprocessing coverage in the
 > Rust ecosystem (18 transformers/encoders/imputers/selectors), four linear
 > models with binary + multiclass (softmax) support, `KMeans` clustering, 15
 > metrics (including ROC-AUC, PR-AUC, Cohen's kappa, Matthews corrcoef,
 > silhouette), `Pipeline` + `ColumnTransformer`, cross-validation, the `Params`
-> trait for hyperparameter introspection — all with zero external dependencies
-> by default.
+> trait for hyperparameter introspection, CART decision trees with
+> **bit-exact scikit-learn parity**, and a shared seedable `Rng` — all with
+> zero external dependencies by default.
 
 ## Guiding principles
 
@@ -61,6 +62,25 @@ coverage, and release packaging:
 
 ---
 
+## Recently shipped (v0.7.0)
+
+The v0.7 "Tree-based learning" release landed its foundation: an exact CART
+tree kernel with bit-exact scikit-learn 1.6.1 parity (verified node-for-node
+against seeded fixtures) and the shared RNG the ensembles will need.
+
+- ✅ `src/tree/` module: `DecisionTreeClassifier` / `DecisionTreeRegressor`
+  (CART splitter, Gini / entropy / MSE criteria, depth and sample
+  constraints, `feature_importances_`)
+- ✅ Bit-exact sklearn parity tests (iris / breast cancer / diabetes
+  fixtures, `tests/tree_parity.rs`)
+- ✅ Public seedable `Rng` promoted to `src/rng.rs`
+- ✅ `src/ensemble.rs`: `RandomForestClassifier` / `RandomForestRegressor`
+  (bootstrap aggregation, per-split feature subsampling, deterministic
+  sklearn-parity sampling and predictions)
+- ⏳ `src/ensemble.rs`: `ExtraTrees*` and generic `Bagging` remain planned
+
+---
+
 ## Release track
 
 Progress on each item can be tracked by the checkboxes below.
@@ -77,17 +97,19 @@ shared crate-internal utility.
 
 **Deliverables:**
 
-- [ ] `src/tree/` module: `DecisionTreeClassifier` and `DecisionTreeRegressor`
+- [x] `src/tree/` module: `DecisionTreeClassifier` and `DecisionTreeRegressor`
       (CART splitter; Gini / entropy / MSE criteria; max depth, min samples
       split, min samples leaf).
-- [ ] `src/ensemble/` module:
-  - [ ] `RandomForestClassifier` / `RandomForestRegressor` (bagging +
+- [x] `src/ensemble.rs` module:
+  - [x] `RandomForestClassifier` / `RandomForestRegressor` (bagging +
         random feature subsampling).
   - [ ] `ExtraTreesClassifier` / `ExtraTreesRegressor` (random splits).
   - [ ] `Bagging` meta-estimator (works with any `Predictor`).
-- [ ] Tree-based `FeatureNames` support and `feature_importances_` output.
-- [ ] Promote the internal PRNG to a shared, seedable utility so ensembles can
-      build deterministic bootstrap samples.
+- [x] Tree-based `feature_importances_` output (normalized impurity
+      reduction, numpy-summation-exact); `FeatureNames` support follows with
+      the DataFrame-style API work.
+- [x] Promote the internal PRNG to a shared, seedable utility so ensembles can
+      build deterministic bootstrap samples (`src/rng.rs`, public `Rng`).
 
 ### v0.8 — Model selection & text
 

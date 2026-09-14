@@ -8,8 +8,8 @@ data-science and machine-learning workloads in Rust.
 
 | Crate | Path | Description |
 |---|---|---|
-| **[datarust]** | [`crates/datarust/`](crates/datarust) | Scikit-learn-style preprocessing and classical ML in Rust. Standard/minmax/robust scalers, encoders, imputers, PCA, linear models, clustering, pipelines — zero external dependencies by default. |
-| **[datarust-profile]** | [`crates/datarust-profile/`](crates/datarust-profile) | One-call data profiling and data-quality reports. Column statistics, distribution shape, pairwise relationships (Pearson, Cramér's V, point-biserial), target-leakage hints, quality findings, HTML/JSON output. |
+| **[datarust]** | [`crates/datarust/`](crates/datarust) | Scikit-learn-style preprocessing and classical ML in Rust. Standard/minmax/robust scalers, encoders, imputers, PCA, linear models, decision trees & random forests (bit-exact sklearn parity), clustering, pipelines — zero external dependencies by default. |
+| **[datarust-profile]** | [`crates/datarust-profile/`](crates/datarust-profile) | One-call data profiling and data-quality reports. Column statistics, distribution shape, pairwise relationships (Pearson, Cramér's V, point-biserial), target-leakage hints, quality findings, CSV ingestion, single-pass streaming, a CLI — HTML/JSON/terminal output. |
 
 Each crate has its own `README.md`, `CHANGELOG.md`, version, and release track,
 and is published independently to crates.io.

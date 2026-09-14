@@ -59,6 +59,11 @@ pub trait Predictor: Estimator {
 - `LogisticRegression` — implements `Classifier`; `predict` returns the original
   hard labels used during fitting. `predict_proba` returns one column per class
   in `classes()` order.
+- `DecisionTreeClassifier` / `RandomForestClassifier` — implement `Classifier`
+  and `PredictProba`; tree probabilities are leaf class frequencies, forest
+  probabilities are averaged across trees.
+- `DecisionTreeRegressor` / `RandomForestRegressor` — implement `Regressor`;
+  trees predict leaf means, forests average the tree predictions.
 
 ## 4. The `Clusterer` trait (unsupervised)
 
@@ -91,8 +96,10 @@ pub trait Params {
 }
 ```
 
-`KMeans` (`n_clusters`, `max_iter`, `tol`, `n_init`) and `LogisticRegression`
-(`max_iter`, `tol`, `fit_intercept`) implement it. Not every estimator needs
+`KMeans` (`n_clusters`, `max_iter`, `tol`, `n_init`),
+`LogisticRegression` (`max_iter`, `tol`, `fit_intercept`), the decision
+trees (`criterion`, `max_depth`, `min_samples_*`, `max_features`), and both
+random forests implement it. Not every estimator needs
 `Params` — only those whose hyperparameters should be tuned by an automated
 search (the foundation for future `GridSearchCV`).
 

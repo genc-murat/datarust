@@ -12,6 +12,7 @@ src/
 │                           #   Clusterer, Transformer, FeatureNames,
 │                           #   categorical traits
 ├── matrix.rs               # Matrix (f64), StrMatrix (String), SparseMatrix (CSR)
+├── rng.rs                  # Rng: seedable xorshift64* (u64/unit/range/normal/shuffle)
 ├── stats.rs                # Column-wise statistics (mean, var, quantile, covariance…)
 ├── pipeline.rs             # Sequential and supervised pipelines
 ├── transformer_kind.rs     # Type-erased enum over all Transformer impls
@@ -62,6 +63,23 @@ src/
 │   ├── pca.rs
 │   ├── truncated_svd.rs
 │   └── jacobi.rs           # Jacobi eigenvalue decomposition (internal)
+│
+├── model_selection/        # Splits, folds, cross-validation (re-exports rng)
+│   ├── mod.rs
+│   ├── rng.rs              # Compatibility shim over the top-level rng module
+│   ├── split.rs            # train_test_split, TrainTestSplit
+│   ├── kfold.rs            # KFold, StratifiedKFold
+│   └── cross_val.rs        # cross_val_score
+│
+├── ensemble.rs             # RandomForest classifier/regressor (bootstrap + feature subsampling)
+├── tree/                   # CART decision trees (sklearn-exact splitter)
+│   ├── mod.rs              # Criterion, MaxFeatures, TreeNode, TreeStructure,
+│   │                       #   numpy-exact pairwise sum, TreeBuilder
+│   ├── estimators.rs       # DecisionTreeClassifier / DecisionTreeRegressor
+│   ├── splitter.rs         # Exact port of sklearn 1.6.1 BestSplitter:
+│   │                       #   Fisher-Yates feature draws, float32 quantization,
+│   │                       #   introsort, criterion arithmetic (FMA-exact)
+│   └── node.rs             # ValueSummary (class histogram / regression moments)
 │
 ├── cluster/                # Clustering estimators + metrics
 │   ├── mod.rs

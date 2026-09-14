@@ -59,6 +59,25 @@ let accuracy = model.score(&x, &y)?;
 println!("Iris accuracy: {:.1}%", accuracy * 100.0);
 ```
 
+## Normalized Diabetes
+
+`diabetes::load()` returns the **raw** feature values. Since v0.7,
+`diabetes::load_normalized()` returns the layout sklearn's
+`load_diabetes(scaled=True)` produces — each feature centered by its
+column mean and divided by its population standard deviation (and by
+`sqrt(442)`), so the columns have zero mean and unit-ish scale:
+
+```rust
+use datarust::datasets::diabetes;
+
+let raw = diabetes::load();               // original units
+let scaled = diabetes::load_normalized(); // sklearn scaled=True layout
+```
+
+The raw literals were re-precisioned in v0.7 to sklearn's exact `f64`
+values, so `load()` output matches sklearn bit-for-bit (previously it
+could differ at the last-ULP level).
+
 ## Choosing a dataset
 
 | Goal | Dataset |

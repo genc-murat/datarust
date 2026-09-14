@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-13
+
+The data-loading & ergonomics release: meet the user at the file, not the
+in-memory `Matrix`. Adds a pure-Rust CSV reader, one-call CSV profiling entry
+points, a streaming single-pass profiler for large files, a terminal-table
+renderer, and the `datarust-profile` CLI binary — all behind optional feature
+flags, so the default build keeps **zero external dependencies**.
+
+### Added
+
+- **`csv` feature — pure-Rust RFC-4180 reader** (`src/csv.rs`, zero
+  dependencies): quoted fields with `""` escapes, embedded
+  delimiters/newlines in quoted fields, LF and CRLF line endings, UTF-8 BOM
+  stripping, configurable delimiter/quote bytes, optional field trimming,
+  header detection, and strict ragged-row rejection with file line numbers.
+  `CsvTable` pairs the optional header with a `StrMatrix` of data rows, and
+  the reader feeds the exact same path as `profile_str_matrix` — asserted by
+  a bit-identity parity test.
+- **One-call CSV profiling entry points** (csv feature):
+  `DatasetProfile::from_csv(path)`, `from_csv_with(path, opts)`,
+  `from_csv_with_types(path, schema)`, plus the `profile_csv`,
+  `profile_csv_with`, and `profile_csv_with_types` free functions.
+  Schema-forced types split columns into a numeric block and a categorical
+  block (grouped via `from_table`); parse failures under a forced `Numeric`
+  type become missing values, matching the crate's marker semantics. Column
+  profiles are reordered back into original CSV order.
+- **`streaming` feature — single-pass CSV profiler** (`src/streaming.rs`)
+  with bounded memory: exact Welford mean/variance and incremental central
+  moments (skewness/kurtosis), online min/max, reservoir-sampled quantiles
+  and histogram (`reservoir_capacity`, default 10 000 — exact when the table
+  fits), online Pearson co-moments, hashed Cramér's V contingency tables over
+  interned level codes, point-biserial group sums, deterministic
+  (`xorshift64*`) sampling, optional exact duplicate tracking, and a
+  `distinct_cap` (default 100 000) beyond which categorical `unique` becomes
+  a documented lower bound. Column types are decided online: a numeric column
+  permanently converts to categorical at its first non-parseable cell
+  (documented one-pass trade-off). Small tables match the in-memory profile
+  bit-for-bit on exact statistics.
+- **`pretty` feature — terminal-table renderer**
+  (`report::to_terminal`/`to_terminal_auto`/`to_terminal_with`): fixed-width
+  column table (type, missing %, μ/σ or unique/top), findings list with
+  CRIT/WARN/INFO tags, hand-rolled ANSI styling, auto color on TTY and
+  `NO_COLOR` support, zero dependencies.
+- **`cli` feature — `datarust-profile` binary** (`src/bin/`):
+  `datarust-profile <CSV> [-o report.html] [--json report.json] [--pretty]
+  [--target COLUMN] [--streaming] [--delimiter CHAR] [--no-header]
+  [--types ...]`. Implies `csv`, `streaming`, `pretty`, `serde`; clap pinned
+  to `=4.4.18` (default features off except `derive`, keeping the workspace
+  on the Rust 1.70 MSRV). Exit codes: 0 success, 1 runtime error, 2 usage.
+  13 integration tests exercise the real binary via `CARGO_BIN_EXE`.
+- **`profile_csv` runnable example** demonstrating the one-call workflow.
+
+### Changed
+
+- **Pearson correlation over flat buffers.** `compute_pearson` now
+  interleaves columns into one flat row-major buffer and calls
+  `datarust::stats::correlation_matrix_flat` (single allocation, contiguous
+  streaming, GEMM-backed covariance under the `matrixmultiply` feature),
+  replacing the nested `Vec<Vec<f64>>` transposition — the switch deferred
+  since 0.3.1 until datarust 0.6.6 shipped.
+
 ## [0.3.1] - 2026-08-18
 
 ### Changed

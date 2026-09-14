@@ -24,38 +24,50 @@ The principles that shape every decision:
 [candle]: https://crates.io/crates/candle-core
 [burn]: https://crates.io/crates/burn
 
-## Where we are (v0.6.5)
+## Where we are (v0.7.0)
 
-The preprocessing, linear-model, and clustering foundations are solid:
+The preprocessing, linear-model, clustering, and tree-based foundations are
+solid:
 
 - **18 transformers/encoders/imputers/selectors** — the deepest preprocessing
   coverage of any Rust ML library.
 - **4 linear models** (Linear / Ridge / Lasso / Logistic regression) with
   binary IRLS and multiclass softmax support.
+- **Decision trees and random forests** (v0.7) — a CART kernel and both
+  `RandomForest` estimators that reproduce scikit-learn's fits bit-for-bit
+  under the same seed.
 - **KMeans clustering** (Lloyd's algorithm, k-means++ initialization) +
   silhouette score.
 - 15 metrics: regression (MSE, MAE, R², ...), classification (accuracy,
   precision, recall, F1, ROC-AUC, PR-AUC, kappa, Matthews, ...), clustering
   (silhouette).
-- `Pipeline`, `ColumnTransformer`, cross-validation, `Params` trait.
+- `Pipeline`, `ColumnTransformer`, cross-validation, `Params` trait, and a
+  public seedable `Rng`.
 - **Zero external dependencies** by default; `serde` / `rayon` /
   `matrixmultiply` are opt-in.
 
-What is *conspicuously absent*: trees and ensembles, hyperparameter search,
-text features, and SVM. The roadmap below addresses each, in order of impact.
+What is *conspicuously absent*: hyperparameter search, text features, and
+SVM. The roadmap below addresses each, in order of impact.
 
 ## The release track
 
-### v0.7 — Tree-based learning
+### v0.7 — Tree-based learning (Shipped)
 
-**Why this comes first.** Trees and ensembles are the single most requested
-feature and the backbone of tabular ML. A shared, seedable RNG is a
-prerequisite for bootstrap sampling in ensembles — the current private
-`xorshift64` needs to be promoted first.
+Trees and ensembles are the backbone of tabular ML, and v0.7 delivered the
+core of that stack with an unusual guarantee: **bit-exact scikit-learn
+parity.** The CART splitter is a transliteration of sklearn 1.6.1's
+`BestSplitter` + `DensePartitioner`, and the forests seed their bootstrap
+samples through the same MT19937 "legacy `RandomState`" stream sklearn
+uses — the same integer `random_state` yields the same trees, node for
+node, verified bit-for-bit by the parity test suite.
 
-Highlights: `DecisionTree` (CART), `RandomForest`, `ExtraTrees`, a `Bagging`
-meta-estimator, and `feature_importances_` output. A new `src/tree/` and
-`src/ensemble/` module pair.
+Shipped: `src/tree/` (`DecisionTreeClassifier` / `DecisionTreeRegressor`,
+`TreeStructure` introspection, `feature_importances`), `src/ensemble.rs`
+(`RandomForestClassifier` / `RandomForestRegressor` with on-demand
+`estimators_samples()`), and the public `Rng` promoted from
+`model_selection`. `ExtraTrees` and a generic `Bagging` meta-estimator
+remain planned for a later phase, as do out-of-bag scoring and parallel
+forest fitting.
 
 ### v0.8 — Model selection & text
 
@@ -75,10 +87,11 @@ stack.
 **Why this is late.** These are high-value but lower-leverage than the
 foundational phases. Many users will be productive with v0.7–0.8 alone.
 
-Highlights: `GradientBoosting`/`AdaBoost`/`Voting`/`Stacking`, `LinearSVC`/`SVC`
-(SMO solver, pure Rust), `DBSCAN`/`AgglomerativeClustering`, `ElasticNet`/
-`SGDClassifier`, `NMF`/`FactorAnalysis`, an embedded `datasets` module, and a
-`csv` feature flag for data loading.
+Highlights: `GradientBoosting`/`AdaBoost`/`Voting`/`Stacking`,
+`ExtraTrees` and the `Bagging` meta-estimator carried over from the tree
+phase, `LinearSVC`/`SVC` (SMO solver, pure Rust),
+`DBSCAN`/`AgglomerativeClustering`, `ElasticNet`/`SGDClassifier`,
+`NMF`/`FactorAnalysis`.
 
 ### v1.0 — Stability
 

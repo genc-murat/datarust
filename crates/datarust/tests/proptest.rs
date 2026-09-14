@@ -328,4 +328,120 @@ proptest! {
             prop_assert_eq!(c, 1, "sample {} tested {} times", i, c);
         }
     }
+
+    #[test]
+    fn tree_classifier_fits_separable_targets_exactly(data in arb_matrix()) {
+        use datarust::traits::Predictor;
+        use datarust::tree::DecisionTreeClassifier;
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        // Sign of the first feature is always separable by an unrestricted
+        // CART tree, so training predictions must reproduce the labels.
+        let y: Vec<f64> = data.iter().map(|r| if r[0] > 0.0 { 1.0 } else { 0.0 }).collect();
+        let mut clf = DecisionTreeClassifier::new();
+        clf.fit(&x, &y).unwrap();
+        let pred = clf.predict(&x).unwrap();
+        for (i, (p, t)) in pred.iter().zip(y.iter()).enumerate() {
+            prop_assert_eq!(p, t, "row {} predicted {} expected {}", i, p, t);
+        }
+    }
+
+    #[test]
+    fn tree_regressor_depth1_leaves_are_exact_group_means(data in arb_matrix(), y in prop_vec(-100.0..100.0, 4..10)) {
+        use datarust::traits::Predictor;
+        use datarust::tree::DecisionTreeRegressor;
+        use datarust::Matrix;
+        let n = y.len();
+        let rows: Vec<Vec<f64>> = (0..n)
+            .map(|i| data[i % data.len()].clone())
+            .collect();
+        let x = Matrix::new(rows).unwrap();
+        let mut reg = DecisionTreeRegressor::new().with_max_depth(Some(1));
+        reg.fit(&x, &y).unwrap();
+        let tree = reg.tree().unwrap();
+        let pred = reg.predict(&x).unwrap();
+        if tree.n_nodes() == 1 {
+            // Degenerate input (constant column or pure y): the root is a
+            // leaf and every prediction is the global mean.
+            let mean = y.iter().sum::<f64>() / y.len() as f64;
+            for (i, p) in pred.iter().enumerate() {
+                prop_assert!((p - mean).abs() < 1e-9,
+                    "single-leaf tree: pred[{}] = {} but global mean is {}", i, p, mean);
+            }
+        } else {
+            prop_assert_eq!(tree.get_depth(), 1);
+            prop_assert_eq!(tree.n_leaves(), 2);
+        }
+
+        // Every prediction must equal the exact mean of the training targets
+        // routed to the same leaf.
+        let mut per_leaf: std::collections::HashMap<usize, (f64, usize)> =
+            std::collections::HashMap::new();
+        for (i, &yi) in y.iter().enumerate() {
+            let e = per_leaf
+                .entry(tree.leaf_for(x.row(i)).unwrap())
+                .or_insert((0.0, 0));
+            e.0 += yi;
+            e.1 += 1;
+        }
+        for (i, p) in pred.iter().enumerate() {
+            let (sum, cnt) = per_leaf[&tree.leaf_for(x.row(i)).unwrap()];
+            let mean = sum / cnt as f64;
+            prop_assert!((p - mean).abs() < 1e-9,
+                "pred[{}] = {} but its leaf mean is {}", i, p, mean);
+        }
+    }
+
+    #[test]
+    fn tree_proba_rows_are_distributions(data in arb_matrix()) {
+        use datarust::traits::{PredictProba, Predictor};
+        use datarust::tree::DecisionTreeClassifier;
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        let y: Vec<f64> = data.iter().map(|r| if r[0] > 0.0 { 1.0 } else { 0.0 }).collect();
+        let mut clf = DecisionTreeClassifier::new();
+        clf.fit(&x, &y).unwrap();
+        let proba = clf.predict_proba(&x).unwrap();
+        let pred = clf.predict(&x).unwrap();
+        for (i, p) in pred.iter().enumerate() {
+            let mut sum = 0.0;
+            for k in 0..proba.ncols() {
+                let p = proba.get(i, k);
+                prop_assert!((0.0..=1.0).contains(&p), "proba[{},{}] = {} out of range", i, k, p);
+                sum += p;
+            }
+            prop_assert!((sum - 1.0).abs() < 1e-9, "row {} sums to {}", i, sum);
+            // argmax class must agree with predict
+            let argmax = (0..proba.ncols())
+                .max_by(|a, b| proba.get(i, *a).total_cmp(&proba.get(i, *b)))
+                .unwrap();
+            prop_assert_eq!(argmax as f64, *p, "argmax disagrees with predict at row {}", i);
+        }
+    }
+
+    #[test]
+    fn tree_max_depth_is_respected(data in arb_matrix(), depth in 1usize..4) {
+        use datarust::tree::DecisionTreeRegressor;
+        use datarust::traits::Predictor;
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        let y: Vec<f64> = (0..x.nrows()).map(|i| (i % 3) as f64 * 7.0).collect();
+        let mut reg = DecisionTreeRegressor::new().with_max_depth(Some(depth));
+        reg.fit(&x, &y).unwrap();
+        prop_assert!(reg.tree().unwrap().get_depth() <= depth);
+    }
+
+    #[test]
+    fn tree_is_proper_binary_tree(data in arb_matrix()) {
+        use datarust::tree::DecisionTreeClassifier;
+        use datarust::traits::Predictor;
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        let y: Vec<f64> = data.iter().map(|r| (r[0] * r[1] > 0.0) as i32 as f64).collect();
+        let mut clf = DecisionTreeClassifier::new();
+        clf.fit(&x, &y).unwrap();
+        let tree = clf.tree().unwrap();
+        // A proper binary tree always has leaves = internal nodes + 1.
+        prop_assert_eq!(tree.n_leaves() * 2 - 1, tree.n_nodes());
+    }
 }

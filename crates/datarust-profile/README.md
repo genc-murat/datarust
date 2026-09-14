@@ -2,12 +2,13 @@
 
 **One-call data profiling and data-quality reports** for the [datarust] ecosystem.
 
-`datarust-profile` takes a numeric [`Matrix`], a categorical [`StrMatrix`], or a
-mixed table of both, and produces a [`DatasetProfile`] describing shape, memory
-footprint, duplicate rows, per-column descriptive statistics (mean, std,
-five-number summary, cardinality, top value) and a list of data-quality
-findings. Profiles can be rendered to JSON (via the `serde` feature) or to a
-self-contained HTML report with no extra dependencies.
+`datarust-profile` takes a numeric [`Matrix`], a categorical [`StrMatrix`], a
+mixed table of both — or, behind the `csv` feature, a CSV file path — and
+produces a [`DatasetProfile`] describing shape, memory footprint, duplicate
+rows, per-column descriptive statistics (mean, std, five-number summary,
+cardinality, top value) and a list of data-quality findings. Profiles can be
+rendered to JSON (via the `serde` feature), to a self-contained HTML report,
+or to a terminal table (via the `pretty` feature) with no extra dependencies.
 
 It is the Rust-native, dependency-free counterpart of tools like
 [ydata-profiling] / [fg-data-profiling]: instead of a Python package wrapping
@@ -22,7 +23,7 @@ designed to be embedded in CLIs, services, notebooks, and CI pipelines.
 
 ```toml
 [dependencies]
-datarust-profile = "0.3"
+datarust-profile = "0.4"
 ```
 
 For JSON output, enable the `serde` feature (this also pulls in
@@ -30,10 +31,21 @@ For JSON output, enable the `serde` feature (this also pulls in
 
 ```toml
 [dependencies]
-datarust-profile = { version = "0.3", features = ["serde"] }
+datarust-profile = { version = "0.4", features = ["serde"] }
 ```
 
 The default build has **zero external dependencies** beyond `datarust` itself.
+
+## Features
+
+| Feature    | What it enables                                                              |
+|------------|------------------------------------------------------------------------------|
+| *(default)*| In-memory profiling of `Matrix` / `StrMatrix` tables, HTML reports.           |
+| `csv`      | Pure-Rust RFC-4180 reader + one-call CSV profiling (`profile_csv`, `from_csv`).|
+| `streaming`| Single-pass bounded-memory CSV profiler (`profile_csv_streaming`).            |
+| `pretty`   | Terminal-table renderer (`report::to_terminal`).                              |
+| `cli`      | The `datarust-profile` binary (implies `csv`, `streaming`, `pretty`, `serde`).|
+| `serde`    | JSON serialization of profiles and quality findings.                          |
 
 ## Quick start
 
@@ -60,6 +72,46 @@ for col in &profile.columns {
 // Self-contained HTML report with CSS histograms and correlation heatmaps (no extra deps):
 std::fs::write("profile.html", report::to_html(&profile)).unwrap();
 ```
+
+## Profiling CSV files (`csv` / `streaming` features)
+
+```rust,ignore
+use datarust_profile::{profile_csv, profile_csv_streaming, DatasetProfile};
+
+// One call from a path (pure-Rust RFC-4180 reader; quoted fields, CRLF, BOM).
+let profile = profile_csv(std::path::Path::new("data.csv"), None)?;
+
+// Forced per-column types: parse failures become missing values.
+use datarust_profile::ColumnType;
+let forced = DatasetProfile::from_csv_with_types(
+    std::path::Path::new("data.csv"),
+    &[ColumnType::Numeric, ColumnType::Categorical],
+)?;
+
+// Million-row files in one bounded-memory pass (Welford + reservoir
+// sampling; exact mean/variance, approximate quantiles above 10 000 rows).
+let streamed = profile_csv_streaming(std::path::Path::new("big.csv"))?;
+
+// Terminal summary (pretty feature), HTML, JSON:
+println!("{}", datarust_profile::report::to_terminal_auto(&streamed));
+```
+
+The CSV reader feeds the exact same `StrMatrix` path as `profile_str_matrix`,
+so `profile_csv` and in-memory profiling produce identical profiles on the
+same rows (asserted by a bit-identity test).
+
+## The CLI (`cli` feature)
+
+```text
+datarust-profile data.csv -o report.html --json report.json --pretty
+datarust-profile data.csv --streaming --target churn
+datarust-profile data.csv --delimiter ';' --no-header
+datarust-profile data.csv --types numeric,categorical,numeric
+```
+
+Exit codes: `0` success, `1` runtime error (I/O or parsing), `2` usage error
+(from clap). The CLI is ad-hoc inspection; CI-grade contract checks
+(`validate` with non-zero exit) are planned for v0.9.
 
 ## What it computes
 
@@ -105,6 +157,8 @@ optional column name. The HTML and JSON renderers include findings by default.
 |--------|----------|----------------------------------------------------|
 | HTML   | —        | Single self-contained `.html`, inline CSS, no JS.  |
 | JSON   | `serde`  | Pretty-printed; schema mirrors the in-memory types. |
+| Terminal | `pretty` | Fixed-width table, auto ANSI color on TTY, honors `NO_COLOR`. |
+| CLI    | `cli`    | `datarust-profile` binary: CSV → HTML/JSON/terminal. |
 
 ```rust
 #[cfg(feature = "serde")]

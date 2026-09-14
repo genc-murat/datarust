@@ -85,7 +85,7 @@ top-N `(value, count)` pairs, sorted descending, for frequency charts.
 Real datasets mix numeric and categorical columns.
 [`profile_table`](https://docs.rs/datarust-profile/latest/datarust_profile/fn.profile_table.html)
 takes an optional numeric [`Matrix`] and an optional categorical
-[`StrMatrix`] side by side, with one shared row count. `names` must list every
+`StrMatrix` side by side, with one shared row count. `names` must list every
 column across both blocks (numerics first, then categoricals).
 
 ```rust
@@ -100,6 +100,89 @@ let p = profile_table(
 
 Duplicate-row detection works across both blocks: a row is a duplicate only if
 its numeric *and* categorical cells match an earlier row exactly.
+
+## Profiling CSV files (v0.4, `csv` feature)
+
+`DatasetProfile::from_csv` (and the `profile_csv*` free functions) parse the
+file with the crate's own pure-Rust RFC-4180 reader — quoted fields with
+`""` escapes, embedded delimiters and newlines inside quotes, LF and CRLF
+line endings, UTF-8 BOM stripping, configurable delimiter/quote bytes,
+optional trimming, and strict ragged-row rejection that reports the
+physical line number:
+
+```rust
+use datarust_profile::{DatasetProfile, CsvReadOptions};
+
+let p = DatasetProfile::from_csv("customers.csv")?;
+
+// Or with options (delimiter, headerless, trimming):
+let opts = CsvReadOptions { delimiter: b';', has_header: false, ..Default::default() };
+let p = DatasetProfile::from_csv_with("customers.csv", &opts)?;
+```
+
+Forcing types per column is also supported — schema-forced `Numeric`
+columns turn non-parseable cells into missing values instead of flipping
+the column type:
+
+```rust
+use datarust_profile::types::ColumnType;
+
+let schema = [ColumnType::Numeric, ColumnType::Categorical];
+let p = DatasetProfile::from_csv_with_types("data.csv", &schema)?;
+```
+
+## Streaming large files (v0.4, `streaming` feature)
+
+`profile_csv_streaming` profiles a CSV in a **single forward pass** with
+bounded memory — the natural fit for files that don't fit in RAM:
+
+```rust
+use datarust_profile::{profile_csv_streaming_with, StreamingOptions};
+
+let opts = StreamingOptions {
+    reservoir_capacity: 10_000, // default; quantile/histogram sample size
+    compute_duplicates: true,   // opt-in exact duplicate tracking
+    ..StreamingOptions::default()
+};
+let p = profile_csv_streaming_with("huge.csv", &opts)?;
+```
+
+The fidelity contract, briefly:
+
+- **Exact**: row/cell counts, missing counts, mean, variance/std, min/max,
+  categorical frequencies, duplicate rows (when enabled).
+- **Approximate**: quantiles, histogram, and outlier counts (reservoir
+  sample — exact whenever the table fits within `reservoir_capacity`
+  rows), and `unique` beyond `distinct_cap` distinct values.
+- Column types are decided online: a numeric column permanently converts
+  to categorical at its first non-parseable cell (a documented one-pass
+  trade-off).
+
+## Terminal reports & the CLI (v0.4, `pretty` / `cli` features)
+
+`report::to_terminal_auto` renders a fixed-width summary — per-column type,
+missing percentage, μ/σ or top values — plus the quality findings with
+CRIT/WARN/INFO tags, with ANSI color only on a TTY and `NO_COLOR` support:
+
+```rust
+#[cfg(feature = "pretty")]
+println!("{}", datarust_profile::report::to_terminal_auto(&p));
+```
+
+The `cli` feature builds the `datarust-profile` binary that wraps all of
+it:
+
+```sh
+datarust-profile data.csv                       # terminal summary
+datarust-profile data.csv -o report.html        # self-contained HTML
+datarust-profile data.csv --json report.json    # JSON (serde)
+datarust-profile data.csv --streaming --pretty  # single-pass, bounded memory
+datarust-profile data.csv --target churn --delimiter ';' --types numeric,categorical
+```
+
+Exit codes: `0` success, `1` runtime error (I/O or parsing), `2` usage
+error (unknown `--target` column, bad `--types` token, and the like —
+validated against the header before the file is profiled).
 
 ## Pairwise relationships & target leakage
 
@@ -170,8 +253,8 @@ findings like `DuplicateRows` set `column` to `None`).
 ## Rendering reports
 
 The [`report`](https://docs.rs/datarust-profile/latest/datarust_profile/report/index.html)
-module renders a profile plus its findings. HTML is always available; JSON
-needs the `serde` feature.
+module renders a profile plus its findings. HTML is always available; the
+terminal table needs the `pretty` feature; JSON needs the `serde` feature.
 
 ```rust
 use datarust_profile::report;
@@ -182,6 +265,10 @@ let html = report::to_html(&p);
 // Bring your own findings (e.g. with custom thresholds):
 let findings = run_checks(&p, &t);
 let html = report::to_html_with(&p, &findings);
+
+// Terminal (pretty feature):
+#[cfg(feature = "pretty")]
+let text = report::to_terminal_auto(&p);
 
 // JSON (serde feature):
 #[cfg(feature = "serde")]
