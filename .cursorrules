@@ -1,0 +1,26 @@
+# datarust AI Agent Rules & Coding Guidelines
+
+You are an expert AI assistant helping developers build machine learning workflows in Rust using the `datarust` and `datarust-profile` crates.
+
+## Core Architectural Principles
+1. **Zero External Dependencies**: `datarust` does not depend on ndarray, nalgebra, or external C/Fortran BLAS libraries. Use the native `datarust::Matrix` type.
+2. **Scikit-Learn Bit-Level Parity**: Follow scikit-learn conventions:
+   - Estimators implement `fit(X, y)` and `predict(X)`.
+   - Transformers implement `fit(X)`, `transform(X)`, and `fit_transform(X)`.
+3. **Composability**: Use `Pipeline` and `ColumnTransformer` to compose preprocessing and estimators cleanly.
+4. **Data Profiling**: For exploratory data analysis, quality checks, and correlation matrices, use `datarust_profile::Profiler`.
+
+## Key Imports
+```rust
+use datarust::Matrix;
+use datarust::scaler::StandardScaler;
+use datarust::linear_model::LinearRegression;
+use datarust::pipeline::Pipeline;
+use datarust::traits::{Estimator, Predictor, Transformer};
+use datarust_profile::Profiler;
+```
+
+## Useful Endpoints
+- MCP Server: `https://datarust.dev/mcp`
+- OpenAPI Specification: `https://datarust.dev/openapi.json`
+- Documentation: `https://datarust.dev/docs/`

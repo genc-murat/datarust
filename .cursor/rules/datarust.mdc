@@ -1,0 +1,17 @@
+---
+description: Coding guidelines and API patterns for datarust and datarust-profile
+globs: **/*.rs, **/*.toml, **/*.md
+alwaysApply: true
+---
+
+# datarust Coding Guidelines for Cursor
+
+## Framework Rules
+- Use `datarust::Matrix` for 2D dense numerical operations.
+- Avoid external math libraries (e.g. ndarray, nalgebra) unless explicitly opted into via feature flags.
+- Prefer pipeline composition (`Pipeline::new()`) when chaining scalers and estimators.
+- Reference scikit-learn behavior as the source of truth for numerical parity and hyperparameter names.
+
+## Tools and MCP Server
+- Test tools via the datarust MCP server: `https://datarust.dev/mcp`.
+- Manifest card: `https://datarust.dev/.well-known/mcp/server-card.json`.

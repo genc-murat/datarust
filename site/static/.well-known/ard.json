@@ -5,6 +5,14 @@
     "documentationUrl": "https://datarust.dev/docs/",
     "logoUrl": "https://datarust.dev/favicon.svg"
   },
+  "trustManifest": {
+    "publisher": "https://datarust.dev",
+    "verifiedBy": "datarust",
+    "securityContact": "security@datarust.dev",
+    "privacyPolicy": "https://datarust.dev/privacy/",
+    "termsOfService": "https://datarust.dev/about/",
+    "license": "MIT"
+  },
   "entries": [
     {
       "identifier": "urn:air:datarust.dev:mcp:datarust",
@@ -20,6 +28,14 @@
         "profile_dataset",
         "evaluate_metrics"
       ],
+      "trustManifest": {
+        "publisher": "https://datarust.dev",
+        "verifiedBy": "datarust",
+        "securityContact": "security@datarust.dev",
+        "privacyPolicy": "https://datarust.dev/privacy/",
+        "termsOfService": "https://datarust.dev/about/",
+        "license": "MIT"
+      },
       "representativeQueries": [
         "train a decision tree or random forest model in Rust",
         "generate a data profiling report for a CSV dataset",
@@ -49,6 +65,14 @@
         "data_quality_checks",
         "leakage_detection"
       ],
+      "trustManifest": {
+        "publisher": "https://datarust.dev",
+        "verifiedBy": "datarust",
+        "securityContact": "security@datarust.dev",
+        "privacyPolicy": "https://datarust.dev/privacy/",
+        "termsOfService": "https://datarust.dev/about/",
+        "license": "MIT"
+      },
       "representativeQueries": [
         "profile a dataset to find missing values, skewness, and correlations",
         "check data quality and detect target leakage in Rust",
@@ -79,6 +103,14 @@
         "kmeans_clustering",
         "pipeline"
       ],
+      "trustManifest": {
+        "publisher": "https://datarust.dev",
+        "verifiedBy": "datarust",
+        "securityContact": "security@datarust.dev",
+        "privacyPolicy": "https://datarust.dev/privacy/",
+        "termsOfService": "https://datarust.dev/about/",
+        "license": "MIT"
+      },
       "representativeQueries": [
         "build a machine learning pipeline in Rust",
         "fit a random forest classifier bit-exact to scikit-learn in Rust",
@@ -106,6 +138,14 @@
         "api_documentation",
         "crate_reference"
       ],
+      "trustManifest": {
+        "publisher": "https://datarust.dev",
+        "verifiedBy": "datarust",
+        "securityContact": "security@datarust.dev",
+        "privacyPolicy": "https://datarust.dev/privacy/",
+        "termsOfService": "https://datarust.dev/about/",
+        "license": "MIT"
+      },
       "representativeQueries": [
         "find datarust Rust API documentation on docs.rs",
         "datarust crates.io packages and API links"

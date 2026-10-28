@@ -46,11 +46,25 @@ Add to your `claude_desktop_config.json`:
 - `scale_features`: Feature scaling via StandardScaler, MinMaxScaler, or RobustScaler.
 - `evaluate_metrics`: Computes R², MSE, RMSE, MAE, and accuracy metrics.
 
+## Agent Platform Configs & Official Skills
+
+This repository provides pre-configured agent instructions and official Agent Skills for autonomous coding agents:
+- **Cursor Rules:** [`.cursorrules`](.cursorrules) & [`.cursor/rules/datarust.mdc`](.cursor/rules/datarust.mdc)
+- **Claude Instructions:** [`CLAUDE.md`](CLAUDE.md) & [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
+- **Windsurf Rules:** [`.windsurf/rules/rules.md`](.windsurf/rules/rules.md)
+- **Copilot Instructions:** [`.github/copilot-instructions.md`](.github/copilot-instructions.md)
+- **Agent Plugins Manifest:** [`plugin.json`](plugin.json)
+- **Official Skills (skills.sh):** [`skills.json`](skills.json) — self-published skills in [`skills/`](skills/):
+  - [`data-profiling`](skills/data-profiling/SKILL.md)
+  - [`classical-ml`](skills/classical-ml/SKILL.md)
+
 ## Documentation
 
 - **Website:** <https://datarust.dev>
+- **Developer Portal:** <https://datarust.dev/developers/>
 - **Docs (book):** [`book/`](book) — rendered at <https://datarust.dev/docs/>
-- **MCP Server:** <https://datarust.dev/docs/mcp/> — listed on [Smithery](https://smithery.ai/server/@genc-murat/datarust) and [mcp.so](https://mcp.so/server/datarust)
+- **MCP Server:** <https://datarust.dev/docs/mcp/> — verified listing on [Smithery](https://smithery.ai/server/@genc-murat/datarust)
+- **OpenAPI 3.1 Spec:** <https://datarust.dev/openapi.json>
 - **Blog:** [`blog/`](blog) — release stories and field notes
 - **Architecture:** [`crates/datarust/ARCHITECTURE.md`](crates/datarust/ARCHITECTURE.md)
 - **Roadmap:** [`crates/datarust/ROADMAP.md`](crates/datarust/ROADMAP.md)

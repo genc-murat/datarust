@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "datarust ML & Profiling",
+  "name_for_model": "datarust",
+  "description_for_human": "Scikit-learn-style classical machine learning, feature preprocessing, and automated dataset profiling in Rust.",
+  "description_for_model": "Plugin for classical machine learning and data profiling. Fits linear models, trees, clustering, scales features, and generates automated dataset quality reports in native Rust with exact scikit-learn parity.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://datarust.dev/openapi.json"
+  },
+  "logo_url": "https://datarust.dev/favicon.svg",
+  "contact_email": "murat@datarust.dev",
+  "legal_info_url": "https://datarust.dev/privacy/"
+}

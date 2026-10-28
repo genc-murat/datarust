@@ -256,10 +256,35 @@ async function check() {
         if (!entry.url && !entry.data) {
           errors.push(`.well-known/ard.json: entry ${entry.identifier} must have url or data`);
         }
+        if (!entry.trustManifest || !entry.trustManifest.publisher) {
+          errors.push(`.well-known/ard.json: entry ${entry.identifier} must include trustManifest`);
+        }
       }
     }
   } catch (err) {
     errors.push(`.well-known/ard.json: failed to read or parse ARD manifest (${err.message})`);
+  }
+
+  const pluginManifestFile = path.join(DIST, '.well-known', 'plugin.json');
+  try {
+    const pluginRaw = await readFile(pluginManifestFile, 'utf8');
+    const plugin = JSON.parse(pluginRaw);
+    if (!plugin.name_for_human || !plugin.api || !plugin.api.url) {
+      errors.push('.well-known/plugin.json: missing required fields (name_for_human, api.url)');
+    }
+  } catch (err) {
+    errors.push(`.well-known/plugin.json: failed to read or parse plugin manifest (${err.message})`);
+  }
+
+  const skillsShManifestFile = path.join(DIST, '.well-known', 'skills.json');
+  try {
+    const skillsRaw = await readFile(skillsShManifestFile, 'utf8');
+    const skills = JSON.parse(skillsRaw);
+    if (!skills.name || !Array.isArray(skills.skills) || skills.skills.length === 0) {
+      errors.push('.well-known/skills.json: missing skills array or name');
+    }
+  } catch (err) {
+    errors.push(`.well-known/skills.json: failed to read or parse skills.json (${err.message})`);
   }
 
   const legacyCatalogFile = path.join(DIST, '.well-known', 'ai-catalog.json');

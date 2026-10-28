@@ -1,0 +1,27 @@
+{
+  "$schema": "https://skills.sh/schema/v1.json",
+  "name": "datarust",
+  "owner": "genc-murat",
+  "repo": "datarust",
+  "homepage": "https://datarust.dev",
+  "skills": [
+    {
+      "name": "data-profiling",
+      "displayName": "datarust Data Profiling",
+      "description": "Automated dataset profiling, data quality checks, and report generation in Rust with datarust-profile. Use this skill when inspecting tabular datasets, evaluating data quality, detecting target leakage, or generating EDA summaries.",
+      "path": "skills/data-profiling/SKILL.md",
+      "url": "https://datarust.dev/.well-known/agent-skills/data-profiling/SKILL.md",
+      "version": "0.4.0",
+      "tags": ["data-profiling", "eda", "quality-checks", "rust"]
+    },
+    {
+      "name": "classical-ml",
+      "displayName": "datarust Classical Machine Learning",
+      "description": "Scikit-learn-style preprocessing, feature engineering, and classical machine learning estimators in Rust with datarust. Use this skill when scaling features, encoding categorical columns, fitting classical estimators, or building ML pipelines.",
+      "path": "skills/classical-ml/SKILL.md",
+      "url": "https://datarust.dev/.well-known/agent-skills/classical-ml/SKILL.md",
+      "version": "0.7.0",
+      "tags": ["machine-learning", "scikit-learn", "preprocessing", "rust"]
+    }
+  ]
+}
