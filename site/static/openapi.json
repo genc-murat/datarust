@@ -1,0 +1,258 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "datarust API",
+    "version": "0.7.0",
+    "description": "Classical machine learning, feature preprocessing pipelines, and automated dataset profiling in Rust with bit-exact scikit-learn parity.",
+    "contact": {
+      "name": "datarust maintainers",
+      "url": "https://datarust.dev"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://datarust.dev",
+      "description": "Primary Production Server"
+    }
+  ],
+  "paths": {
+    "/api/profile": {
+      "post": {
+        "operationId": "profileDataset",
+        "summary": "Profile tabular dataset",
+        "description": "Calculates descriptive statistics, distribution shapes, quality warnings, and pairwise relationships.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful dataset profile generation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/train": {
+      "post": {
+        "operationId": "trainModel",
+        "summary": "Train machine learning estimator",
+        "description": "Fits linear models, decision trees, or random forests with scikit-learn parity.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Trained estimator weights and score",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scale": {
+      "post": {
+        "operationId": "scaleFeatures",
+        "summary": "Scale feature matrix",
+        "description": "Transforms numerical features using standard, minmax, or robust scaling.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScaleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scaled feature matrix",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScaleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evaluate": {
+      "post": {
+        "operationId": "evaluateMetrics",
+        "summary": "Compute model evaluation metrics",
+        "description": "Calculates R2, MSE, RMSE, MAE, or classification accuracy.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Computed metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ProfileRequest": {
+        "type": "object",
+        "required": ["csv_data"],
+        "properties": {
+          "csv_data": {
+            "type": "string",
+            "description": "CSV content including headers"
+          },
+          "target_column": {
+            "type": "string",
+            "description": "Optional target column for leakage detection"
+          }
+        }
+      },
+      "ProfileResponse": {
+        "type": "object",
+        "properties": {
+          "n_rows": { "type": "integer" },
+          "n_columns": { "type": "integer" },
+          "duplicate_rows": { "type": "integer" }
+        }
+      },
+      "TrainRequest": {
+        "type": "object",
+        "required": ["x", "y"],
+        "properties": {
+          "x": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": { "type": "number" }
+            }
+          },
+          "y": {
+            "type": "array",
+            "items": { "type": "number" }
+          },
+          "model_type": {
+            "type": "string",
+            "enum": ["linear_regression", "ridge", "lasso", "decision_tree"],
+            "default": "linear_regression"
+          }
+        }
+      },
+      "TrainResponse": {
+        "type": "object",
+        "properties": {
+          "coefficients": {
+            "type": "array",
+            "items": { "type": "number" }
+          },
+          "intercept": { "type": "number" },
+          "r2_score": { "type": "number" }
+        }
+      },
+      "ScaleRequest": {
+        "type": "object",
+        "required": ["x"],
+        "properties": {
+          "x": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": { "type": "number" }
+            }
+          },
+          "method": {
+            "type": "string",
+            "enum": ["standard", "minmax", "robust"],
+            "default": "standard"
+          }
+        }
+      },
+      "ScaleResponse": {
+        "type": "object",
+        "properties": {
+          "method": { "type": "string" },
+          "scaled_features": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": { "type": "number" }
+            }
+          }
+        }
+      },
+      "EvaluateRequest": {
+        "type": "object",
+        "required": ["y_true", "y_pred"],
+        "properties": {
+          "y_true": {
+            "type": "array",
+            "items": { "type": "number" }
+          },
+          "y_pred": {
+            "type": "array",
+            "items": { "type": "number" }
+          },
+          "task": {
+            "type": "string",
+            "enum": ["regression", "classification"],
+            "default": "regression"
+          }
+        }
+      },
+      "EvaluateResponse": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string" },
+          "r2_score": { "type": "number" },
+          "mean_squared_error": { "type": "number" },
+          "accuracy": { "type": "number" }
+        }
+      }
+    }
+  }
+}

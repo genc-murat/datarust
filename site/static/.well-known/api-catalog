@@ -4,6 +4,10 @@
       "anchor": "https://datarust.dev/docs/api/",
       "service-desc": [
         {
+          "href": "https://datarust.dev/openapi.json",
+          "type": "application/vnd.oai.openapi+json"
+        },
+        {
           "href": "https://docs.rs/datarust",
           "type": "text/html"
         }

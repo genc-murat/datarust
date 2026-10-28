@@ -14,6 +14,7 @@ datarust is an ecosystem of independent, pure-Rust crates for machine learning a
 - [Legacy AI Catalog](https://datarust.dev/.well-known/ai-catalog.json): Backward-compatible AI discovery manifest.
 - [API Reference (docs.rs)](https://datarust.dev/docs/api/): Rust crate API documentation, structs, traits, and method signatures on docs.rs.
 - [RFC 9727 API Catalog](https://datarust.dev/.well-known/api-catalog): Linkset catalog pointing to docs.rs and crate repository resources.
+- [OpenAPI 3.1 Specification](https://datarust.dev/openapi.json): Complete OpenAPI schema with operationIds for machine learning and profiling endpoints.
 - [Agent Skills](https://datarust.dev/.well-known/agent-skills/index.json): Discovery index for data-profiling and classical-ml agent skills.
 - [DNS for AI Discovery (DNS-AID)](https://datarust.dev/docs/dns-aid/): DNS-based agent discovery records under `_agents.datarust.dev`.
 

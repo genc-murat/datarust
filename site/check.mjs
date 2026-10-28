@@ -187,6 +187,17 @@ async function check() {
     errors.push(`.well-known/mcp/server-card.json: failed to read or parse SEP-1649 MCP server card (${err.message})`);
   }
 
+  const openapiFile = path.join(DIST, 'openapi.json');
+  try {
+    const openapiRaw = await readFile(openapiFile, 'utf8');
+    const openapi = JSON.parse(openapiRaw);
+    if (!openapi.openapi || !openapi.paths || !openapi.info) {
+      errors.push('openapi.json: missing required openapi, paths, or info object');
+    }
+  } catch (err) {
+    errors.push(`openapi.json: failed to read or parse openapi schema (${err.message})`);
+  }
+
   const agentSkillsFile = path.join(DIST, '.well-known', 'agent-skills', 'index.json');
   try {
     const indexRaw = await readFile(agentSkillsFile, 'utf8');

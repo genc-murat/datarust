@@ -24,10 +24,35 @@
       "listChanged": false
     }
   },
+  "resources": [
+    {
+      "uri": "datarust://docs/overview",
+      "name": "datarust Documentation Overview",
+      "description": "Complete architecture and usage documentation for datarust classical ML algorithms.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "uri": "datarust://docs/api",
+      "name": "datarust API Reference",
+      "description": "Full Rust API specifications, Estimator, Predictor, and Transformer traits.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "uri": "datarust://schema/openapi.json",
+      "name": "datarust OpenAPI Specification",
+      "description": "OpenAPI 3.1.0 specification of datarust tabular ML and data profiling endpoints.",
+      "mimeType": "application/json"
+    }
+  ],
   "tools": [
     {
       "name": "profile_dataset",
+      "title": "Profile Dataset",
       "description": "Profiles tabular data from CSV content, generating descriptive statistics, distribution metrics, pairwise correlations, and data quality checks.",
+      "annotations": {
+        "readOnly": true,
+        "idempotent": true
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -45,7 +70,12 @@
     },
     {
       "name": "train_linear_regression",
+      "title": "Train Linear Regression",
       "description": "Fits an ordinary least squares linear regression model on feature matrix X and target vector y.",
+      "annotations": {
+        "readOnly": true,
+        "idempotent": true
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -68,7 +98,12 @@
     },
     {
       "name": "scale_features",
+      "title": "Scale Features",
       "description": "Transforms numerical features using standard, minmax, or robust scaling.",
+      "annotations": {
+        "readOnly": true,
+        "idempotent": true
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -91,7 +126,12 @@
     },
     {
       "name": "evaluate_metrics",
+      "title": "Evaluate Metrics",
       "description": "Computes regression metrics (R2, MSE, RMSE, MAE) or classification metrics (accuracy).",
+      "annotations": {
+        "readOnly": true,
+        "idempotent": true
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
