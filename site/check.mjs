@@ -237,6 +237,23 @@ async function check() {
     errors.push('.well-known/ai-catalog.json: missing legacy fallback manifest');
   }
 
+  const llmsFile = path.join(DIST, 'llms.txt');
+  try {
+    const llmsContent = await readFile(llmsFile, 'utf8');
+    if (!llmsContent.includes('/docs/mcp/') || !llmsContent.includes('/docs/api/')) {
+      errors.push('llms.txt: must include developer resource links (/docs/mcp/ and /docs/api/)');
+    }
+  } catch {
+    errors.push('llms.txt: missing llms.txt discovery file in dist');
+  }
+
+  const mcpDocsFile = path.join(DIST, 'docs', 'mcp', 'index.html');
+  try {
+    await access(mcpDocsFile);
+  } catch {
+    errors.push('docs/mcp/index.html: missing dedicated MCP server documentation page');
+  }
+
   const appJsFile = path.join(DIST, 'assets', 'app.js');
   try {
     const appJsContent = await readFile(appJsFile, 'utf8');

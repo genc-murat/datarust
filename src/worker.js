@@ -1,5 +1,13 @@
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === '/mcp' || url.pathname === '/mcp/') {
+      const accept = request.headers.get('accept') || '';
+      if (accept.includes('application/json')) {
+        return env.ASSETS.fetch(new Request(new URL('/.well-known/mcp/server-card.json', request.url)));
+      }
+      return Response.redirect(new URL('/docs/mcp/', request.url), 302);
+    }
     const accept = request.headers.get('accept') || '';
     if (accept.includes('text/markdown')) {
       const url = new URL(request.url);

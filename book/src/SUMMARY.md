@@ -39,6 +39,7 @@
 - [Examples](./examples.md)
 - [Architecture](./architecture.md)
 - [DNS for AI Discovery (DNS-AID)](./dns-aid.md)
+- [Model Context Protocol (MCP)](./mcp.md)
 - [Roadmap](./roadmap.md)
 - [Changelog](./changelog.md)
 - [API Docs (docs.rs)](./api.md)

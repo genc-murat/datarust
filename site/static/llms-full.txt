@@ -1,0 +1,68 @@
+# datarust — Full Context for AI Agents & Developers
+
+> Scikit-learn-style classical machine learning, preprocessing, and automated data profiling in Rust with zero external dependencies by default.
+
+Website: https://datarust.dev
+Crates:
+- datarust: https://crates.io/crates/datarust (Docs: https://docs.rs/datarust)
+- datarust-profile: https://crates.io/crates/datarust-profile (Docs: https://docs.rs/datarust-profile)
+
+---
+
+## 1. AI Capabilities & Developer Endpoints
+
+### Model Context Protocol (MCP) Server
+- **Endpoint**: `https://datarust.dev/mcp`
+- **Server Card**: `https://datarust.dev/.well-known/mcp/server-card.json`
+- **ARD Discovery**: `https://datarust.dev/.well-known/ard.json` (ID: `urn:air:datarust.dev:mcp:datarust`)
+- **Documentation**: `https://datarust.dev/docs/mcp/`
+
+Exposed MCP Tools:
+- `profile_dataset`: Computes column descriptive statistics, distribution shapes, quality warnings, target leakage detection, and correlation matrices.
+- `preprocess`: Feature transformation using StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder, OrdinalEncoder, TargetEncoder, SimpleImputer.
+- `train_model`: Fits LinearRegression, Ridge, Lasso, LogisticRegression, DecisionTree, or RandomForest models with scikit-learn bit-level parity.
+- `evaluate_metrics`: Computes R², MSE, RMSE, MAE, accuracy, precision, recall, F1, and confusion matrix.
+
+### Agentic Resource Discovery (ARD v0.91)
+- Manifest URL: `https://datarust.dev/.well-known/ard.json`
+- In-Page Discovery: `<link rel="ard" type="application/json" href="/.well-known/ard.json">`
+- HTTP Discovery: `Link: </.well-known/ard.json>; rel="ard"`
+
+### Agent Skills
+- Index URL: `https://datarust.dev/.well-known/agent-skills/index.json`
+- `data-profiling`: Automated profiling and quality reports with datarust-profile (`https://datarust.dev/.well-known/agent-skills/data-profiling/SKILL.md`)
+- `classical-ml`: Classical machine learning estimators with datarust (`https://datarust.dev/.well-known/agent-skills/classical-ml/SKILL.md`)
+
+---
+
+## 2. Architecture & Rust API
+
+### Core Traits (`datarust::traits`)
+- `Estimator`: Base trait for objects with hyperparameters.
+- `Transformer`: For unsupervised feature transformers (`fit`, `transform`, `fit_transform`, `inverse_transform`).
+- `Predictor`: Base trait for supervised estimators with `fit(&Matrix, &[f64])` and `predict(&Matrix) -> Result<Vec<f64>>`.
+- `Regressor`: Marker trait for continuous prediction models with `score(&Matrix, &[f64])` returning R².
+- `Classifier`: Trait for discrete prediction models with `classes()` and `score(&Matrix, &[f64])` returning accuracy.
+- `PredictProba`: Trait for classifiers outputting probability distributions over class labels.
+- `Clusterer`: Trait for unsupervised clustering estimators (`fit`, `predict`, `fit_predict`).
+
+### Pipeline & Composition (`datarust::compose`)
+- `Pipeline`: Sequential chain of `Transformer` steps.
+- `SupervisedPipeline<E>`: Sequential chain of `Transformer` steps followed by a final `Predictor` estimator `E`.
+- `ColumnTransformer`: Direct analog to scikit-learn's `ColumnTransformer`, routing specific numeric or categorical columns to distinct transformers.
+
+---
+
+## 3. Installation & Cargo Features
+
+```toml
+[dependencies]
+datarust = "0.7.0"
+datarust-profile = "0.4.0"
+```
+
+### Feature Flags
+- `serde`: Enables JSON serialization/deserialization for models, pipelines, and profiles.
+- `rayon`: Multi-threaded parallel execution for column statistics and tree building.
+- `matrixmultiply`: Tuned pure-Rust GEMM for fast matrix multiplication and covariance computation without system BLAS.
+- `datasets`: Built-in toy datasets (Iris, Breast Cancer, Wine, Diabetes).

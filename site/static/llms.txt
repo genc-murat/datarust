@@ -1,0 +1,27 @@
+# datarust
+
+> Scikit-learn-style classical machine learning, preprocessing, and automated data profiling in Rust with zero external dependencies by default.
+
+datarust is an ecosystem of independent, pure-Rust crates for machine learning and data science workloads. It features exact bit-level parity with scikit-learn estimators, high-performance scalers, encoders, imputers, pipelines, and automated data-quality profiling.
+
+## Developer Resources & AI Endpoints
+
+- [Model Context Protocol (MCP) Server](https://datarust.dev/docs/mcp/): Comprehensive documentation of the datarust MCP server endpoint (`https://datarust.dev/mcp`) and available tools.
+- [MCP Server Card](https://datarust.dev/.well-known/mcp/server-card.json): Machine-readable SEP-1649 MCP server manifest declaring capabilities and tool metadata.
+- [Agentic Resource Discovery (ARD)](https://datarust.dev/.well-known/ard.json): ARD v0.91 resource catalog indexing MCP servers, agent skills, and API docs.
+- [Legacy AI Catalog](https://datarust.dev/.well-known/ai-catalog.json): Backward-compatible AI discovery manifest.
+- [API Reference (docs.rs)](https://datarust.dev/docs/api/): Rust crate API documentation, structs, traits, and method signatures on docs.rs.
+- [RFC 9727 API Catalog](https://datarust.dev/.well-known/api-catalog): Linkset catalog pointing to docs.rs and crate repository resources.
+- [Agent Skills](https://datarust.dev/.well-known/agent-skills/index.json): Discovery index for data-profiling and classical-ml agent skills.
+- [DNS for AI Discovery (DNS-AID)](https://datarust.dev/docs/dns-aid/): DNS-based agent discovery records under `_agents.datarust.dev`.
+
+## Core Documentation
+
+- [Introduction](https://datarust.dev/docs/): Overview of datarust and datarust-profile crates.
+- [Quick Start](https://datarust.dev/docs/quickstart/): Getting started guide with model fitting and evaluation.
+- [Installation](https://datarust.dev/docs/installation/): Cargo dependency configurations and optional feature flags (`serde`, `rayon`, `matrixmultiply`, `datasets`).
+- [Core Concepts](https://datarust.dev/docs/concepts/): Fundamental traits (`Estimator`, `Predictor`, `Transformer`, `Regressor`, `Classifier`, `Clusterer`).
+- [datarust-profile Overview](https://datarust.dev/docs/profile/README/): Automated data profiling, quality checks, and report generation in Rust.
+- [Performance vs scikit-learn](https://datarust.dev/docs/performance/): Benchmarks and latency comparisons.
+- [Feature Comparison](https://datarust.dev/docs/comparison/): Feature matrix comparing datarust capabilities to scikit-learn.
+- [Architecture](https://datarust.dev/docs/architecture/): Architecture notes on zero-dependency design and pure-Rust linear algebra solvers.
