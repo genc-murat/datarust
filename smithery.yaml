@@ -7,6 +7,6 @@ startCommand:
   commandFunction:
     |- (config) => ({
       command: 'cargo',
-      args: ['run', '-p', 'datarust-profile', '--bin', 'datarust-profile', '--', '--mcp']
+      args: ['run', '--release', '-p', 'datarust-mcp']
     })
   exampleConfig: {}

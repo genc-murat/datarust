@@ -10,9 +10,41 @@ data-science and machine-learning workloads in Rust.
 |---|---|---|
 | **[datarust]** | [`crates/datarust/`](crates/datarust) | Scikit-learn-style preprocessing and classical ML in Rust. Standard/minmax/robust scalers, encoders, imputers, PCA, linear models, decision trees & random forests (bit-exact sklearn parity), clustering, pipelines — zero external dependencies by default. |
 | **[datarust-profile]** | [`crates/datarust-profile/`](crates/datarust-profile) | One-call data profiling and data-quality reports. Column statistics, distribution shape, pairwise relationships (Pearson, Cramér's V, point-biserial), target-leakage hints, quality findings, CSV ingestion, single-pass streaming, a CLI — HTML/JSON/terminal output. |
+| **[datarust-mcp]** | [`crates/datarust-mcp/`](crates/datarust-mcp) | Model Context Protocol (MCP) server implementation for Claude Desktop, Cursor, and AI agents. Exposes data profiling, training, and preprocessing over stdio JSON-RPC. |
 
 Each crate has its own `README.md`, `CHANGELOG.md`, version, and release track,
 and is published independently to crates.io.
+
+## Model Context Protocol (MCP) Server
+
+This repository contains the official MCP server implementation in [`crates/datarust-mcp`](crates/datarust-mcp).
+
+### Running Locally (Stdio)
+
+```sh
+cargo run --release -p datarust-mcp
+```
+
+### Claude Desktop / Cursor Setup
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "datarust": {
+      "command": "cargo",
+      "args": ["run", "--release", "--manifest-path", "/path/to/datarust/Cargo.toml", "-p", "datarust-mcp"]
+    }
+  }
+}
+```
+
+### Available Tools
+- `profile_dataset`: Profiles CSV data, computing descriptive stats, distribution shapes, and quality checks.
+- `train_linear_regression`: Fits OLS linear regression with exact scikit-learn parity.
+- `scale_features`: Feature scaling via StandardScaler, MinMaxScaler, or RobustScaler.
+- `evaluate_metrics`: Computes R², MSE, RMSE, MAE, and accuracy metrics.
 
 ## Documentation
 

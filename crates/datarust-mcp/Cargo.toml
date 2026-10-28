@@ -1,0 +1,18 @@
+[package]
+name = "datarust-mcp"
+version = "0.7.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Model Context Protocol (MCP) server for datarust and datarust-profile"
+license = "MIT"
+repository = "https://github.com/genc-murat/datarust"
+homepage = "https://datarust.dev"
+readme = "README.md"
+keywords = ["mcp", "model-context-protocol", "machine-learning", "data-profiling", "rust"]
+categories = ["command-line-utilities", "science"]
+
+[dependencies]
+datarust = { path = "../datarust", features = ["serde"] }
+datarust-profile = { path = "../datarust-profile", features = ["serde", "csv"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

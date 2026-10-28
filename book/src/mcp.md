@@ -5,6 +5,7 @@
 ## MCP Server Endpoint & Manifest
 
 - **MCP Server Endpoint**: `https://datarust.dev/mcp`
+- **In-Repository Implementation**: Built in Rust in [`crates/datarust-mcp`](https://github.com/genc-murat/datarust/tree/main/crates/datarust-mcp)
 - **MCP Server Card (SEP-1649)**: [`https://datarust.dev/.well-known/mcp/server-card.json`](https://datarust.dev/.well-known/mcp/server-card.json)
 - **Agentic Resource Discovery (ARD)**: Indexed in [`https://datarust.dev/.well-known/ard.json`](https://datarust.dev/.well-known/ard.json) under `urn:air:datarust.dev:mcp:datarust`
 - **Link Header**: Every response advertises `rel="ard"` and `rel="api-catalog"` discovery headers.
