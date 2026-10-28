@@ -310,6 +310,16 @@ async function check() {
     errors.push(`.well-known/agent-card.json: failed to read or parse A2A agent card (${err.message})`);
   }
 
+  const devPortalFile = path.join(DIST, 'developers', 'index.html');
+  try {
+    const devPortalHtml = await readFile(devPortalFile, 'utf8');
+    if (!devPortalHtml.includes('API Documentation') || !devPortalHtml.includes('OpenAPI') || !devPortalHtml.includes('MCP Server')) {
+      errors.push('developers/index.html: missing key developer resources (API, OpenAPI, MCP)');
+    }
+  } catch {
+    errors.push('developers/index.html: missing Developer Portal page');
+  }
+
   const trustPages = ['about', 'contact', 'privacy'];
   for (const page of trustPages) {
     const trustPageFile = path.join(DIST, page, 'index.html');

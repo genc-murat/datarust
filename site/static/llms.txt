@@ -6,6 +6,7 @@ datarust is an ecosystem of independent, pure-Rust crates for machine learning a
 
 ## Developer Resources & AI Endpoints
 
+- [datarust Developer Portal](https://datarust.dev/developers/): Central developer hub indexing API docs, OpenAPI specs, MCP server, and SDK guides.
 - [Model Context Protocol (MCP) Server](https://datarust.dev/docs/mcp/): Comprehensive documentation of the datarust MCP server endpoint (`https://datarust.dev/mcp`) and available tools.
 - [MCP Server Card](https://datarust.dev/.well-known/mcp/server-card.json): Machine-readable SEP-1649 MCP server manifest declaring capabilities and tool metadata.
 - [Smithery MCP Registry](https://smithery.ai/server/@genc-murat/datarust): Verified Smithery listing for automated Claude Desktop / Cursor installation.

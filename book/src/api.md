@@ -1,10 +1,11 @@
-# API Reference (docs.rs)
+# datarust API Documentation & Reference
 
-The complete API reference for datarust is hosted on **[docs.rs](https://docs.rs/datarust)** — the standard home for Rust crate documentation.
+The complete API reference for datarust and datarust-profile is hosted on **[docs.rs/datarust](https://docs.rs/datarust)** and **[docs.rs/datarust-profile](https://docs.rs/datarust-profile)** — the official standard home for Rust crate documentation.
 
-> [**→ Open the full API reference on docs.rs**](https://docs.rs/datarust)
+> [**→ Open the full datarust API reference on docs.rs**](https://docs.rs/datarust)
+> [**→ Open the datarust-profile API reference on docs.rs**](https://docs.rs/datarust-profile)
 
-## What's there
+## What's in the API Documentation
 
 docs.rs builds the rustdoc documentation with **all features enabled** (`serde`, `rayon`, `matrixmultiply`, `datasets`), so you see the complete API surface including:
 

@@ -315,7 +315,7 @@ function icon(name) {
 }
 
 function pageShell({ title, description, pathname, body, bodyClass = '' }) {
-  const fullTitle = title === 'datarust' ? title : `${title} · datarust`;
+  const fullTitle = title === 'datarust' ? 'datarust · Classical ML, Native to Rust (API Docs, OpenAPI, MCP Server)' : `${title} · datarust`;
   const canonical = new URL(pathname, `${SITE_URL}/`).href;
   const authorityLinks = [
     GITHUB_URL,
@@ -500,6 +500,7 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(fullTitle)}</title>
   <meta name="description" content="${escapeHtml(description)}">
+  <meta name="keywords" content="datarust, datarust API docs, datarust OpenAPI, datarust MCP server, datarust developer portal, datarust SDK, Rust machine learning">
   <meta name="theme-color" content="#151514">
   <meta property="og:type" content="website">
   <meta property="og:title" content="${escapeHtml(fullTitle)}">
@@ -531,6 +532,7 @@ ${JSON.stringify(jsonLd, null, 2)}
       <button class="icon-button menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-toggle>${icon('menu')}</button>
       <nav class="site-nav" aria-label="Primary navigation" data-menu>
         ${navLink('Docs', '/docs/', pathname)}
+        ${navLink('Developers', '/developers/', pathname)}
         ${navLink('Field notes', '/blog/', pathname)}
         ${apiDropdown()}
         <a href="${GITHUB_URL}" target="_blank" rel="noreferrer">GitHub</a>
@@ -544,7 +546,7 @@ ${JSON.stringify(jsonLd, null, 2)}
   <main id="main-content">${body}</main>
   <footer class="site-footer">
     <div><a class="brand footer-brand" href="/"><span class="brand-mark">dr</span><span>datarust</span></a><p>A workspace of ML and data-profiling crates for Rust.</p></div>
-    <div class="footer-links"><a href="/docs/quickstart/">Quick start</a><a href="/blog/">Field notes</a><a href="/about/">About</a><a href="/contact/">Contact</a><a href="/privacy/">Privacy</a><a href="${DATARUST_CRATE.cratesUrl}">datarust on crates.io</a><a href="${PROFILE_CRATE.cratesUrl}">profile on crates.io</a><a href="${GITHUB_URL}">Source</a></div>
+    <div class="footer-links"><a href="/docs/quickstart/">Quick start</a><a href="/developers/">Developer Portal</a><a href="/docs/mcp/">MCP Server</a><a href="/docs/api/">API Docs</a><a href="/blog/">Field notes</a><a href="/about/">About</a><a href="/contact/">Contact</a><a href="/privacy/">Privacy</a><a href="${DATARUST_CRATE.cratesUrl}">datarust on crates.io</a><a href="${PROFILE_CRATE.cratesUrl}">profile on crates.io</a><a href="${GITHUB_URL}">Source</a></div>
     <p class="footer-meta">MIT licensed · Built from the Markdown in this repository.</p>
   </footer>
   <dialog class="search-dialog" data-search-dialog>
@@ -802,6 +804,109 @@ function notFoundPage() {
   });
 }
 
+function developerPortalMarkdown() {
+  return `# datarust Developer Portal
+
+Welcome to the official **datarust Developer Portal**. Explore API documentation, OpenAPI specifications, Model Context Protocol (MCP) server endpoints, and SDK crates for pure-Rust classical machine learning.
+
+## 1. datarust API Documentation (Rust docs.rs)
+
+Comprehensive type definitions, traits, and method signatures:
+- **datarust Crate**: [https://docs.rs/datarust](https://docs.rs/datarust) — Classical estimators, scalers, imputers, and pipelines.
+- **datarust-profile Crate**: [https://docs.rs/datarust-profile](https://docs.rs/datarust-profile) — Automated tabular data profiling and EDA.
+- **In-Site API Reference**: [${SITE_URL}/docs/api/](${SITE_URL}/docs/api/)
+
+## 2. datarust OpenAPI Specification 3.1
+
+Machine-readable REST API contract with complete parameter schemas and typed error models:
+- **OpenAPI Schema**: [${SITE_URL}/openapi.json](${SITE_URL}/openapi.json)
+- **Interactive REST Endpoints**: \`/v1/profile\`, \`/v1/train\`, \`/v1/scale\`, \`/v1/evaluate\`, \`/v1/jobs\`
+
+## 3. datarust MCP Server (Model Context Protocol)
+
+Official MCP server for Claude Desktop, Cursor, Antigravity, and autonomous AI agents:
+- **MCP Endpoint**: \`${SITE_URL}/mcp\`
+- **Server Card Manifest**: [${SITE_URL}/.well-known/mcp/server-card.json](${SITE_URL}/.well-known/mcp/server-card.json)
+- **MCP Documentation**: [${SITE_URL}/docs/mcp/](${SITE_URL}/docs/mcp/)
+- **Smithery Registry**: [https://smithery.ai/server/@genc-murat/datarust](https://smithery.ai/server/@genc-murat/datarust)
+
+## 4. datarust SDK & Rust Crates
+
+Add datarust directly to your \`Cargo.toml\`:
+\`\`\`toml
+[dependencies]
+datarust = "0.7"
+datarust-profile = "0.4"
+\`\`\`
+
+## 5. Free Tier & Zero Onboarding Friction
+
+- 100% Free & Open Source under the MIT license.
+- No API keys, accounts, or payment required.
+- Self-serve access and interactive sandbox available immediately.
+`;
+}
+
+function developerPortalPage() {
+  return pageShell({
+    title: 'Developer Portal · API Docs, OpenAPI & MCP Server',
+    description: 'Official developer portal for datarust: API documentation, OpenAPI 3.1 specification, Model Context Protocol (MCP) server, and Rust SDK guides.',
+    pathname: '/developers/',
+    bodyClass: 'docs-page trust-page developer-portal',
+    body: `
+      <article class="prose shell" style="max-width: 820px; margin: 3rem auto; padding: 0 1.5rem;">
+        <p class="eyebrow">Developer Resources &amp; AI Integration</p>
+        <h1>datarust Developer Portal</h1>
+        <p class="lede">The central hub for developers, systems engineers, and autonomous AI agents integrating datarust classical machine learning and data profiling.</p>
+
+        <section style="margin: 2.5rem 0;">
+          <h2>1. datarust API Documentation (Rust docs.rs)</h2>
+          <p>Full Rust API specifications, trait definitions (<code>Estimator</code>, <code>Transformer</code>, <code>Predictor</code>), and runnable doc-tests:</p>
+          <ul>
+            <li><strong><a href="https://docs.rs/datarust" target="_blank" rel="noreferrer">datarust on docs.rs</a></strong>: Estimators, scalers, imputers, PCA, clustering, and pipelines.</li>
+            <li><strong><a href="https://docs.rs/datarust-profile" target="_blank" rel="noreferrer">datarust-profile on docs.rs</a></strong>: One-call tabular dataset profiling and quality reports.</li>
+            <li><strong><a href="/docs/api/">On-Site API Reference Guide</a></strong>: Overview of traits, module structures, and local build instructions.</li>
+          </ul>
+        </section>
+
+        <section style="margin: 2.5rem 0;">
+          <h2>2. datarust OpenAPI 3.1 Specification</h2>
+          <p>Complete machine-readable REST API contracts featuring URI path versioning, rate limiting, idempotency, and typed error responses:</p>
+          <ul>
+            <li><strong><a href="/openapi.json" target="_blank">OpenAPI 3.1.0 Specification (openapi.json)</a></strong>: Direct JSON schema with operationIds and response models.</li>
+            <li><strong>Live Endpoints</strong>: <code>POST /v1/profile</code>, <code>POST /v1/train</code>, <code>POST /v1/scale</code>, <code>POST /v1/jobs</code> (async job pattern), and <code>GET /v1/jobs</code> (paginated).</li>
+          </ul>
+        </section>
+
+        <section style="margin: 2.5rem 0;">
+          <h2>3. datarust MCP Server (Model Context Protocol)</h2>
+          <p>Standardized MCP server for AI coding assistants (Cursor, Claude Desktop, Antigravity, Cline) to run tabular profiling and machine learning:</p>
+          <ul>
+            <li><strong>MCP Endpoint</strong>: <code>https://datarust.dev/mcp</code> (Supports both Streamable HTTP and SSE transports)</li>
+            <li><strong><a href="/.well-known/mcp/server-card.json">SEP-1649 / SEP-2127 Server Card</a></strong>: Manifest declaring tools, resources, capabilities, and server metadata.</li>
+            <li><strong><a href="/docs/mcp/">MCP Server Guide &amp; Tool Reference</a></strong>: Installation instructions, configuration snippets, and tool parameters.</li>
+            <li><strong><a href="https://smithery.ai/server/@genc-murat/datarust" target="_blank" rel="noreferrer">Smithery Registry Listing</a></strong>: Verified registry package for automated 1-click installation.</li>
+          </ul>
+        </section>
+
+        <section style="margin: 2.5rem 0;">
+          <h2>4. datarust SDK &amp; Rust Crates</h2>
+          <p>Pure Rust crates with zero external dependencies by default:</p>
+          <pre><code>[dependencies]
+datarust = "0.7"
+datarust-profile = "0.4"</code></pre>
+          <p>Explore the <a href="/docs/quickstart/">Quick Start Guide</a> or browse the <a href="${GITHUB_URL}">GitHub repository</a>.</p>
+        </section>
+
+        <section style="margin: 2.5rem 0;">
+          <h2>5. Free Tier &amp; Zero Onboarding Friction</h2>
+          <p>datarust is 100% free and open source under the permissive MIT license. No API keys, user registration, or credit cards are required. All endpoints and MCP tools can be tested immediately in self-serve sandbox mode.</p>
+        </section>
+      </article>
+    `,
+  });
+}
+
 function aboutMarkdown() {
   return `# About datarust
 
@@ -1024,6 +1129,7 @@ async function build() {
   await cp(path.join(BLOG_ROOT, 'img'), path.join(DIST, 'blog', 'img'), { recursive: true });
 
   await writePage('/', homePage(posts, docs), homePageMarkdown(posts, docs));
+  await writePage('/developers/', developerPortalPage(), developerPortalMarkdown());
   await writePage('/blog/', blogIndex(posts), blogIndexMarkdown(posts));
   await writePage('/about/', aboutPage(), aboutMarkdown());
   await writePage('/contact/', contactPage(), contactMarkdown());
@@ -1044,6 +1150,7 @@ async function build() {
   }
 
   const searchEntries = [
+    { type: 'Page', title: 'datarust Developer Portal', description: 'Official developer resources: API documentation, OpenAPI 3.1 specification, Model Context Protocol (MCP) server, and Rust SDK.', url: '/developers/', headings: ['datarust API Documentation', 'datarust OpenAPI Specification', 'datarust MCP Server', 'datarust SDK & Rust Crates', 'Free Tier & Zero Onboarding Friction'] },
     { type: 'Page', title: 'About datarust', description: 'Learn about the datarust workspace, mission, open-source maintainers, and pure-Rust architecture.', url: '/about/', headings: ['Mission & Philosophy', 'Workspace Architecture', 'Maintainer & Open Source'] },
     { type: 'Page', title: 'Contact & Community', description: 'Get in touch with the datarust maintainers, ask questions, or report vulnerabilities.', url: '/contact/', headings: ['Community & Support Channels', 'Security & Vulnerability Reporting'] },
     { type: 'Page', title: 'Privacy Policy', description: 'Zero personal data collection, no cookies, and Cloudflare edge hosting details.', url: '/privacy/', headings: ['Zero Personal Data Collection', 'Hosting & Edge Infrastructure', 'Open Source Crate Usage'] },
@@ -1054,6 +1161,7 @@ async function build() {
   await writeFile(path.join(DIST, 'feed.xml'), feedXml(posts));
   await writeFile(path.join(DIST, 'sitemap.xml'), sitemapXml([
     { route: '/', date: null },
+    { route: '/developers/', date: null },
     { route: '/about/', date: null },
     { route: '/contact/', date: null },
     { route: '/privacy/', date: null },

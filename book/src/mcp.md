@@ -1,6 +1,6 @@
-# Model Context Protocol (MCP) Server
+# datarust MCP Server (Model Context Protocol)
 
-`datarust.dev` provides a **Model Context Protocol (MCP)** server enabling AI agents, LLMs, and coding assistants (Cursor, Claude Desktop, Antigravity, Cline) to directly invoke datarust machine learning, preprocessing, and dataset profiling capabilities.
+`datarust.dev` provides an official **datarust Model Context Protocol (MCP)** server enabling AI agents, LLMs, and coding assistants (Cursor, Claude Desktop, Antigravity, Cline) to directly invoke datarust machine learning, preprocessing, and dataset profiling tools.
 
 ## MCP Server Endpoint & Manifest
 

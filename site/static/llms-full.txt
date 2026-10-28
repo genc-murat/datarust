@@ -11,6 +11,11 @@ Crates:
 
 ## 1. AI Capabilities & Developer Endpoints
 
+### datarust Developer Portal
+- **Developer Portal**: `https://datarust.dev/developers/`
+- **Rust API Documentation**: `https://docs.rs/datarust` and `https://datarust.dev/docs/api/`
+- **OpenAPI 3.1 Specification**: `https://datarust.dev/openapi.json`
+
 ### Model Context Protocol (MCP) Server
 - **Endpoint**: `https://datarust.dev/mcp`
 - **Server Card**: `https://datarust.dev/.well-known/mcp/server-card.json`
