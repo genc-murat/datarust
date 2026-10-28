@@ -332,6 +332,15 @@ async function check() {
     if (!homeHtml.includes('"SoftwareApplication"') || !homeHtml.includes('"Organization"')) {
       errors.push('index.html: JSON-LD must contain SoftwareApplication and Organization');
     }
+    if (!homeHtml.includes('"PostalAddress"') || !homeHtml.includes('"address"')) {
+      errors.push('index.html: JSON-LD Organization must contain address (PostalAddress)');
+    }
+    if (!homeHtml.includes('"FAQPage"') || !homeHtml.includes('"BreadcrumbList"')) {
+      errors.push('index.html: JSON-LD must include extended schema types (FAQPage, BreadcrumbList)');
+    }
+    if (!homeHtml.includes('wikipedia.org') || !homeHtml.includes('wikidata.org')) {
+      errors.push('index.html: JSON-LD must include authority sameAs links (Wikipedia, Wikidata)');
+    }
   } catch {
     errors.push('index.html: missing homepage');
   }

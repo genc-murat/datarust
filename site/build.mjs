@@ -317,6 +317,17 @@ function icon(name) {
 function pageShell({ title, description, pathname, body, bodyClass = '' }) {
   const fullTitle = title === 'datarust' ? title : `${title} · datarust`;
   const canonical = new URL(pathname, `${SITE_URL}/`).href;
+  const authorityLinks = [
+    GITHUB_URL,
+    DATARUST_CRATE.cratesUrl,
+    PROFILE_CRATE.cratesUrl,
+    'https://www.linkedin.com/in/gencmurat',
+    'https://en.wikipedia.org/wiki/Rust_(programming_language)',
+    'https://www.wikidata.org/wiki/Q575650',
+    'https://en.wikipedia.org/wiki/Scikit-learn',
+    'https://www.wikidata.org/wiki/Q1936306',
+  ];
+
   const jsonLd = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -334,16 +345,18 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
         '@type': 'Organization',
         '@id': `${SITE_URL}/#organization`,
         'name': 'datarust',
+        'legalName': 'datarust Open Source Project',
         'url': `${SITE_URL}/`,
         'logo': {
           '@type': 'ImageObject',
           'url': `${SITE_URL}/favicon.svg`
         },
-        'sameAs': [
-          GITHUB_URL,
-          DATARUST_CRATE.cratesUrl,
-          PROFILE_CRATE.cratesUrl
-        ],
+        'address': {
+          '@type': 'PostalAddress',
+          'addressLocality': 'Istanbul',
+          'addressCountry': 'TR'
+        },
+        'sameAs': authorityLinks,
         'contactPoint': {
           '@type': 'ContactPoint',
           'contactType': 'technical support',
@@ -368,10 +381,7 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
         'publisher': {
           '@id': `${SITE_URL}/#organization`
         },
-        'sameAs': [
-          GITHUB_URL,
-          DATARUST_CRATE.cratesUrl
-        ],
+        'sameAs': authorityLinks,
         'offers': {
           '@type': 'Offer',
           'price': '0',
@@ -388,6 +398,97 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
         'targetProduct': {
           '@id': `${SITE_URL}/#software`
         }
+      },
+      {
+        '@type': 'FAQPage',
+        '@id': `${SITE_URL}/#faq`,
+        'mainEntity': [
+          {
+            '@type': 'Question',
+            'name': 'What is datarust?',
+            'acceptedAnswer': {
+              '@type': 'Answer',
+              'text': 'datarust is a high-performance classical machine learning and data profiling workspace built in pure Rust with zero external dependencies by default and exact bit-level scikit-learn parity.'
+            }
+          },
+          {
+            '@type': 'Question',
+            'name': 'Does datarust require Python or C runtime dependencies?',
+            'acceptedAnswer': {
+              '@type': 'Answer',
+              'text': 'No. datarust is 100% native safe Rust and compiles to static binaries with zero Python, BLAS, or Fortran dependencies.'
+            }
+          },
+          {
+            '@type': 'Question',
+            'name': 'Is datarust free and open source?',
+            'acceptedAnswer': {
+              '@type': 'Answer',
+              'text': 'Yes. datarust is licensed under the permissive MIT license with no paid tiers, self-serve access, no API keys, and zero usage fees.'
+            }
+          },
+          {
+            '@type': 'Question',
+            'name': 'Does datarust provide an MCP server?',
+            'acceptedAnswer': {
+              '@type': 'Answer',
+              'text': 'Yes. datarust provides an official Model Context Protocol (MCP) endpoint at https://datarust.dev/mcp with tools for dataset profiling, model training, scaling, and evaluation.'
+            }
+          }
+        ]
+      },
+      {
+        '@type': 'BreadcrumbList',
+        '@id': `${SITE_URL}/#breadcrumb`,
+        'itemListElement': [
+          {
+            '@type': 'ListItem',
+            'position': 1,
+            'name': 'Home',
+            'item': `${SITE_URL}/`
+          },
+          {
+            '@type': 'ListItem',
+            'position': 2,
+            'name': 'Documentation',
+            'item': `${SITE_URL}/docs/`
+          },
+          {
+            '@type': 'ListItem',
+            'position': 3,
+            'name': 'Field Notes',
+            'item': `${SITE_URL}/blog/`
+          },
+          {
+            '@type': 'ListItem',
+            'position': 4,
+            'name': 'MCP Server',
+            'item': `${SITE_URL}/docs/mcp/`
+          }
+        ]
+      },
+      {
+        '@type': 'Dataset',
+        '@id': `${SITE_URL}/#datasets`,
+        'name': 'datarust Machine Learning & Profiling Benchmark Datasets',
+        'description': 'Standard tabular reference datasets and scikit-learn numerical validation fixtures in native Rust format.',
+        'license': 'https://creativecommons.org/publicdomain/zero/1.0/',
+        'creator': {
+          '@id': `${SITE_URL}/#organization`
+        }
+      },
+      {
+        '@type': 'TechArticle',
+        '@id': `${SITE_URL}/#article`,
+        'headline': 'Pure Rust Classical Machine Learning & Automated Data Profiling',
+        'description': 'Comprehensive technical architecture, pure-Rust linear algebra routines, and scikit-learn parity verification.',
+        'author': {
+          '@id': `${SITE_URL}/#organization`
+        },
+        'publisher': {
+          '@id': `${SITE_URL}/#organization`
+        },
+        'inLanguage': 'en'
       }
     ]
   };
