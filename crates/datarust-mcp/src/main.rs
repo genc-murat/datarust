@@ -3,9 +3,9 @@
 //! Exposes classical machine learning and data profiling tools over stdio
 //! JSON-RPC 2.0 (compatible with Claude Desktop, Cursor, Glama, and Smithery).
 
-use std::io::{self, BufRead, Write};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::io::{self, BufRead, Write};
 
 use datarust::traits::{Predictor, Transformer};
 use datarust::Matrix;
@@ -166,8 +166,9 @@ fn handle_tool_call(name: &str, args: &Value) -> Result<String, String> {
             let table = read_csv_reader(reader, &CsvReadOptions::default())
                 .map_err(|e| format!("CSV parsing error: {e}"))?;
 
-            let mut profile = datarust_profile::profile_str_matrix(&table.rows, table.header.as_deref())
-                .map_err(|e| format!("Profiling error: {e}"))?;
+            let mut profile =
+                datarust_profile::profile_str_matrix(&table.rows, table.header.as_deref())
+                    .map_err(|e| format!("Profiling error: {e}"))?;
 
             if let Some(target) = target_column {
                 profile = profile.with_target(target);
@@ -188,33 +189,43 @@ fn handle_tool_call(name: &str, args: &Value) -> Result<String, String> {
 
             let mut x_parsed = Vec::with_capacity(x_rows.len());
             for row in x_rows {
-                let row_arr = row.as_array().ok_or_else(|| "Row must be an array of numbers".to_string())?;
+                let row_arr = row
+                    .as_array()
+                    .ok_or_else(|| "Row must be an array of numbers".to_string())?;
                 let mut r = Vec::with_capacity(row_arr.len());
                 for val in row_arr {
-                    r.push(val.as_f64().ok_or_else(|| "Value must be a number".to_string())?);
+                    r.push(
+                        val.as_f64()
+                            .ok_or_else(|| "Value must be a number".to_string())?,
+                    );
                 }
                 x_parsed.push(r);
             }
 
             let mut y_parsed = Vec::with_capacity(y_vec.len());
             for val in y_vec {
-                y_parsed.push(val.as_f64().ok_or_else(|| "Target value must be a number".to_string())?);
+                y_parsed.push(
+                    val.as_f64()
+                        .ok_or_else(|| "Target value must be a number".to_string())?,
+                );
             }
 
-            let matrix = Matrix::from_rows(x_parsed)
-                .map_err(|e| format!("Matrix error: {e}"))?;
+            let matrix = Matrix::from_rows(x_parsed).map_err(|e| format!("Matrix error: {e}"))?;
 
             let mut model = datarust::LinearRegression::new();
-            model.fit(&matrix, &y_parsed)
+            model
+                .fit(&matrix, &y_parsed)
                 .map_err(|e| format!("Fitting error: {e}"))?;
 
-            let predictions = model.predict(&matrix)
+            let predictions = model
+                .predict(&matrix)
                 .map_err(|e| format!("Prediction error: {e}"))?;
 
-            let r2 = datarust::metrics::regression::r2_score(&y_parsed, &predictions)
-                .unwrap_or(0.0);
-            let mse = datarust::metrics::regression::mean_squared_error(&y_parsed, &predictions, true)
-                .unwrap_or(0.0);
+            let r2 =
+                datarust::metrics::regression::r2_score(&y_parsed, &predictions).unwrap_or(0.0);
+            let mse =
+                datarust::metrics::regression::mean_squared_error(&y_parsed, &predictions, true)
+                    .unwrap_or(0.0);
 
             let res = json!({
                 "coefficients": model.coef(),
@@ -234,16 +245,20 @@ fn handle_tool_call(name: &str, args: &Value) -> Result<String, String> {
 
             let mut x_parsed = Vec::with_capacity(x_rows.len());
             for row in x_rows {
-                let row_arr = row.as_array().ok_or_else(|| "Row must be an array of numbers".to_string())?;
+                let row_arr = row
+                    .as_array()
+                    .ok_or_else(|| "Row must be an array of numbers".to_string())?;
                 let mut r = Vec::with_capacity(row_arr.len());
                 for val in row_arr {
-                    r.push(val.as_f64().ok_or_else(|| "Value must be a number".to_string())?);
+                    r.push(
+                        val.as_f64()
+                            .ok_or_else(|| "Value must be a number".to_string())?,
+                    );
                 }
                 x_parsed.push(r);
             }
 
-            let matrix = Matrix::from_rows(x_parsed)
-                .map_err(|e| format!("Matrix error: {e}"))?;
+            let matrix = Matrix::from_rows(x_parsed).map_err(|e| format!("Matrix error: {e}"))?;
 
             let transformed = match method {
                 "minmax" => {
@@ -426,4 +441,39 @@ fn main() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tools_manifest_has_tools() {
+        let manifest = get_tools_manifest();
+        let tools = manifest["tools"].as_array().expect("tools array");
+        assert!(tools.len() >= 4);
+    }
+
+    #[test]
+    fn test_profile_dataset_tool() {
+        let args = json!({
+            "csv_data": "a,b\n1,2\n3,4\n"
+        });
+        let res = handle_tool_call("profile_dataset", &args);
+        assert!(res.is_ok());
+        let output = res.unwrap();
+        assert!(output.contains("\"n_rows\": 2"));
+    }
+
+    #[test]
+    fn test_linear_regression_tool() {
+        let args = json!({
+            "x": [[1.0], [2.0], [3.0]],
+            "y": [2.0, 4.0, 6.0]
+        });
+        let res = handle_tool_call("train_linear_regression", &args);
+        assert!(res.is_ok());
+        let output = res.unwrap();
+        assert!(output.contains("coefficients"));
+    }
 }
