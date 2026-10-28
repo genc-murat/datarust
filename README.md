@@ -18,6 +18,7 @@ and is published independently to crates.io.
 
 - **Website:** <https://datarust.dev>
 - **Docs (book):** [`book/`](book) — rendered at <https://datarust.dev/docs/>
+- **MCP Server:** <https://datarust.dev/docs/mcp/> — listed on [Smithery](https://smithery.ai/server/@genc-murat/datarust) and [mcp.so](https://mcp.so/server/datarust)
 - **Blog:** [`blog/`](blog) — release stories and field notes
 - **Architecture:** [`crates/datarust/ARCHITECTURE.md`](crates/datarust/ARCHITECTURE.md)
 - **Roadmap:** [`crates/datarust/ROADMAP.md`](crates/datarust/ROADMAP.md)

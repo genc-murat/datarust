@@ -16,6 +16,8 @@ Crates:
 - **Server Card**: `https://datarust.dev/.well-known/mcp/server-card.json`
 - **ARD Discovery**: `https://datarust.dev/.well-known/ard.json` (ID: `urn:air:datarust.dev:mcp:datarust`)
 - **Documentation**: `https://datarust.dev/docs/mcp/`
+- **Smithery Registry**: `https://smithery.ai/server/@genc-murat/datarust`
+- **mcp.so Registry**: `https://mcp.so/server/datarust`
 
 Exposed MCP Tools:
 - `profile_dataset`: Computes column descriptive statistics, distribution shapes, quality warnings, target leakage detection, and correlation matrices.

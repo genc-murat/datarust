@@ -34,6 +34,17 @@ Computes regression metrics (MSE, RMSE, MAE, R², max error) or classification m
 
 ## Client Configuration
 
+### Registry Listings & Direct Installation
+
+The datarust MCP server is listed in major MCP directories:
+
+- **Smithery Registry**: [`https://smithery.ai/server/@genc-murat/datarust`](https://smithery.ai/server/@genc-murat/datarust)
+  ```sh
+  npx -y @smithery/cli install @genc-murat/datarust --client claude
+  ```
+- **mcp.so Registry**: [`https://mcp.so/server/datarust`](https://mcp.so/server/datarust)
+- **Agentic Resource Discovery (ARD)**: [`https://datarust.dev/.well-known/ard.json`](https://datarust.dev/.well-known/ard.json)
+
 ### Claude Desktop / Cursor
 Add the datarust MCP server to your configuration (e.g. `claude_desktop_config.json` or Cursor settings):
 

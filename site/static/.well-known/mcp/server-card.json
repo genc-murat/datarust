@@ -5,6 +5,8 @@
     "description": "Scikit-learn-style preprocessing, classical machine learning, and data profiling in Rust"
   },
   "endpoint": "https://datarust.dev/mcp",
+  "documentationUrl": "https://datarust.dev/docs/mcp/",
+  "repositoryUrl": "https://github.com/genc-murat/datarust",
   "capabilities": {
     "tools": {
       "listChanged": false

@@ -1,0 +1,12 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties: {}
+  commandFunction:
+    |- (config) => ({
+      command: 'cargo',
+      args: ['run', '-p', 'datarust-profile', '--bin', 'datarust-profile', '--', '--mcp']
+    })
+  exampleConfig: {}
