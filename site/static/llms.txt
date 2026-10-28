@@ -9,7 +9,6 @@ datarust is an ecosystem of independent, pure-Rust crates for machine learning a
 - [Model Context Protocol (MCP) Server](https://datarust.dev/docs/mcp/): Comprehensive documentation of the datarust MCP server endpoint (`https://datarust.dev/mcp`) and available tools.
 - [MCP Server Card](https://datarust.dev/.well-known/mcp/server-card.json): Machine-readable SEP-1649 MCP server manifest declaring capabilities and tool metadata.
 - [Smithery MCP Registry](https://smithery.ai/server/@genc-murat/datarust): Verified Smithery listing for automated Claude Desktop / Cursor installation.
-- [mcp.so Registry](https://mcp.so/server/datarust): Community MCP directory listing for datarust.
 - [Agentic Resource Discovery (ARD)](https://datarust.dev/.well-known/ard.json): ARD v0.91 resource catalog indexing MCP servers, agent skills, and API docs.
 - [Legacy AI Catalog](https://datarust.dev/.well-known/ai-catalog.json): Backward-compatible AI discovery manifest.
 - [API Reference (docs.rs)](https://datarust.dev/docs/api/): Rust crate API documentation, structs, traits, and method signatures on docs.rs.
@@ -28,3 +27,15 @@ datarust is an ecosystem of independent, pure-Rust crates for machine learning a
 - [Performance vs scikit-learn](https://datarust.dev/docs/performance/): Benchmarks and latency comparisons.
 - [Feature Comparison](https://datarust.dev/docs/comparison/): Feature matrix comparing datarust capabilities to scikit-learn.
 - [Architecture](https://datarust.dev/docs/architecture/): Architecture notes on zero-dependency design and pure-Rust linear algebra solvers.
+
+## Trust & Project Information
+
+- [About datarust](https://datarust.dev/about/): Project vision, open-source maintainers, and pure-Rust machine learning architecture.
+- [Contact & Support](https://datarust.dev/contact/): Community channels, GitHub discussions, and security vulnerability reporting.
+- [Privacy Policy](https://datarust.dev/privacy/): Static site privacy statement, zero tracking, and Cloudflare CDN details.
+
+## Agent Guidance: When to Use
+
+- **When to use datarust**: Use when building machine learning pipelines, preprocessing datasets (StandardScaler, MinMaxScaler, OneHotEncoder, SimpleImputer), fitting linear regression, ridge, logistic regression, or k-means in native Rust without Python or C/Fortran runtime dependencies.
+- **When to use datarust-profile**: Use when performing automated exploratory data analysis (EDA), generating data quality metrics, detecting target leakage, or outputting JSON/HTML profiling summaries.
+- **When to use the MCP Server (`https://datarust.dev/mcp`)**: Use when an AI coding assistant (Cursor, Claude, Antigravity) needs to run remote data profiling, feature transformation, or model evaluation on tabular data.

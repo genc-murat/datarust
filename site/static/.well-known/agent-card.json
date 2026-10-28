@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/a2aproject/spec/main/schemas/agent-card.json",
+  "name": "datarust Agent",
+  "description": "Classical machine learning, feature engineering, and automated dataset profiling agent native to Rust.",
+  "version": "0.1.0",
+  "url": "https://datarust.dev",
+  "documentation": "https://datarust.dev/docs/mcp/",
+  "endpoints": {
+    "mcp": "https://datarust.dev/mcp",
+    "openapi": "https://datarust.dev/openapi.json"
+  },
+  "capabilities": {
+    "tools": true,
+    "resources": true,
+    "prompts": false
+  },
+  "provider": {
+    "name": "datarust",
+    "url": "https://datarust.dev"
+  },
+  "skills": [
+    {
+      "name": "data-profiling",
+      "description": "Automated dataset profiling, quality checks, pairwise relationships, and report generation in Rust with datarust-profile.",
+      "url": "https://datarust.dev/.well-known/agent-skills/data-profiling/SKILL.md"
+    },
+    {
+      "name": "classical-ml",
+      "description": "Scikit-learn-style preprocessing, feature engineering, and classical machine learning estimators in Rust with datarust.",
+      "url": "https://datarust.dev/.well-known/agent-skills/classical-ml/SKILL.md"
+    }
+  ]
+}

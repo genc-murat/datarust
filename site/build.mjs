@@ -317,6 +317,81 @@ function icon(name) {
 function pageShell({ title, description, pathname, body, bodyClass = '' }) {
   const fullTitle = title === 'datarust' ? title : `${title} · datarust`;
   const canonical = new URL(pathname, `${SITE_URL}/`).href;
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'WebSite',
+        '@id': `${SITE_URL}/#website`,
+        'url': `${SITE_URL}/`,
+        'name': 'datarust',
+        'description': 'Scikit-learn-style preprocessing and classical machine learning in pure Rust.',
+        'publisher': {
+          '@id': `${SITE_URL}/#organization`
+        }
+      },
+      {
+        '@type': 'Organization',
+        '@id': `${SITE_URL}/#organization`,
+        'name': 'datarust',
+        'url': `${SITE_URL}/`,
+        'logo': {
+          '@type': 'ImageObject',
+          'url': `${SITE_URL}/favicon.svg`
+        },
+        'sameAs': [
+          GITHUB_URL,
+          DATARUST_CRATE.cratesUrl,
+          PROFILE_CRATE.cratesUrl
+        ],
+        'contactPoint': {
+          '@type': 'ContactPoint',
+          'contactType': 'technical support',
+          'url': `${SITE_URL}/contact/`,
+          'email': 'murat@datarust.dev'
+        }
+      },
+      {
+        '@type': 'SoftwareApplication',
+        '@id': `${SITE_URL}/#software`,
+        'name': 'datarust',
+        'applicationCategory': 'DeveloperApplication',
+        'applicationSubCategory': 'Machine Learning Library',
+        'operatingSystem': 'All',
+        'url': `${SITE_URL}/`,
+        'description': 'Scikit-learn-style preprocessing, classical machine learning algorithms, and automated data profiling native to Rust.',
+        'softwareVersion': DATARUST_CRATE.version || '0.1.0',
+        'license': 'https://opensource.org/licenses/MIT',
+        'author': {
+          '@id': `${SITE_URL}/#organization`
+        },
+        'publisher': {
+          '@id': `${SITE_URL}/#organization`
+        },
+        'sameAs': [
+          GITHUB_URL,
+          DATARUST_CRATE.cratesUrl
+        ],
+        'offers': {
+          '@type': 'Offer',
+          'price': '0',
+          'priceCurrency': 'USD'
+        }
+      },
+      {
+        '@type': 'SoftwareSourceCode',
+        '@id': `${SITE_URL}/#sourcecode`,
+        'name': 'datarust',
+        'programmingLanguage': 'Rust',
+        'codeRepository': GITHUB_URL,
+        'license': 'https://opensource.org/licenses/MIT',
+        'targetProduct': {
+          '@id': `${SITE_URL}/#software`
+        }
+      }
+    ]
+  };
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -342,6 +417,9 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
   <link rel="alternate" type="application/atom+xml" title="datarust field notes" href="/feed.xml">
   <link rel="preload" href="/assets/styles.css" as="style">
   <link rel="stylesheet" href="/assets/styles.css">
+  <script type="application/ld+json">
+${JSON.stringify(jsonLd, null, 2)}
+  </script>
   <script src="/assets/app.js" defer></script>
 </head>
 <body class="${bodyClass}">
@@ -365,7 +443,7 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
   <main id="main-content">${body}</main>
   <footer class="site-footer">
     <div><a class="brand footer-brand" href="/"><span class="brand-mark">dr</span><span>datarust</span></a><p>A workspace of ML and data-profiling crates for Rust.</p></div>
-    <div class="footer-links"><a href="/docs/quickstart/">Quick start</a><a href="/blog/">Field notes</a><a href="${DATARUST_CRATE.cratesUrl}">datarust on crates.io</a><a href="${PROFILE_CRATE.cratesUrl}">profile on crates.io</a><a href="${GITHUB_URL}">Source</a></div>
+    <div class="footer-links"><a href="/docs/quickstart/">Quick start</a><a href="/blog/">Field notes</a><a href="/about/">About</a><a href="/contact/">Contact</a><a href="/privacy/">Privacy</a><a href="${DATARUST_CRATE.cratesUrl}">datarust on crates.io</a><a href="${PROFILE_CRATE.cratesUrl}">profile on crates.io</a><a href="${GITHUB_URL}">Source</a></div>
     <p class="footer-meta">MIT licensed · Built from the Markdown in this repository.</p>
   </footer>
   <dialog class="search-dialog" data-search-dialog>
@@ -615,6 +693,174 @@ function notFoundPage() {
   });
 }
 
+function aboutMarkdown() {
+  return `# About datarust
+
+datarust is an open-source machine learning and data profiling ecosystem built entirely in pure Rust, designed for performance, correctness, and zero runtime dependencies.
+
+## Mission & Philosophy
+
+Traditional machine learning pipelines frequently rely on complex runtime environments, C/Fortran shared libraries, and fragile Python bindings. The mission of datarust is to give systems engineers and data practitioners first-class classical machine learning estimators, scalers, imputers, and automated data profiling native to Rust.
+
+- **Zero external dependencies by default:** Safe, pure-Rust linear algebra and numerical solvers.
+- **Bit-level parity:** Strictly verified against scikit-learn reference baselines for numerical equivalence.
+- **Embedded & Serverless Ready:** Instant cold-start execution on Cloudflare Workers, AWS Lambda, and edge devices.
+
+## Workspace Architecture
+
+- **datarust:** Preprocessing (StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder, SimpleImputer), decomposition (PCA), classical estimators (LinearRegression, Ridge, LogisticRegression, KMeans), and pipelines (Pipeline, ColumnTransformer).
+- **datarust-profile:** Automated dataset profiling, comprehensive column statistics, data quality alerts, pairwise correlation matrices, and report generation.
+
+## Maintainer & Open Source
+
+datarust is developed and maintained by Murat Genç and open-source contributors under the MIT License on GitHub: ${GITHUB_URL}.
+`;
+}
+
+function aboutPage() {
+  return pageShell({
+    title: 'About datarust',
+    description: 'Learn about the datarust workspace, mission, open-source maintainers, and pure-Rust machine learning architecture.',
+    pathname: '/about/',
+    bodyClass: 'docs-page trust-page',
+    body: `
+      <article class="prose shell" style="max-width: 760px; margin: 3rem auto; padding: 0 1.5rem;">
+        <h1>About datarust</h1>
+        <p class="lede">datarust is an open-source machine learning and data profiling ecosystem built entirely in pure Rust, designed for performance, correctness, and zero runtime dependencies.</p>
+        
+        <h2>Mission &amp; Philosophy</h2>
+        <p>Traditional machine learning pipelines frequently rely on complex runtime environments, C/Fortran shared libraries, and fragile Python bindings. The mission of datarust is to give systems engineers and data practitioners first-class classical machine learning estimators, scalers, imputers, and automated data profiling native to Rust.</p>
+        <p>Our guiding design principles are:</p>
+        <ul>
+          <li><strong>Zero external dependencies by default:</strong> Safe, pure-Rust linear algebra routines (SVD, QR, Cholesky, LU, Gram-Schmidt) without BLAS/LAPACK linking requirements.</li>
+          <li><strong>Bit-level parity:</strong> Our algorithms are strictly tested against scikit-learn reference baselines to ensure numerical equivalence.</li>
+          <li><strong>Embedded and Serverless Readiness:</strong> Fast compilation, minimal binary footprints, and instant cold-start execution on Cloudflare Workers, AWS Lambda, and constrained edge devices.</li>
+        </ul>
+
+        <h2>Workspace Architecture</h2>
+        <p>The workspace consists of two primary crates:</p>
+        <ul>
+          <li><strong>datarust:</strong> Fast preprocessing (StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder, SimpleImputer), decomposition (PCA, TruncatedSVD), classical estimators (LinearRegression, Ridge, LogisticRegression, KMeans), and composite pipelines (Pipeline, ColumnTransformer).</li>
+          <li><strong>datarust-profile:</strong> Automated dataset profiling, comprehensive column statistics, data quality alerts, pairwise correlation matrices (Pearson, Cramér's V, point-biserial), and self-contained HTML/JSON report generation.</li>
+        </ul>
+
+        <h2>Maintainer &amp; Open Source</h2>
+        <p>datarust is developed and maintained by <a href="https://github.com/genc-murat" target="_blank" rel="noreferrer">Murat Genç</a> and open-source contributors. The codebase is distributed under the permissive <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noreferrer">MIT License</a>. Development takes place publicly on <a href="${GITHUB_URL}" target="_blank" rel="noreferrer">GitHub</a>.</p>
+      </article>
+    `,
+  });
+}
+
+function contactMarkdown() {
+  return `# Contact & Community
+
+We welcome questions, bug reports, feature requests, and community contributions across multiple official channels.
+
+## Community & Support Channels
+
+- **GitHub Discussions:** ${GITHUB_URL}/discussions
+- **GitHub Issues:** ${GITHUB_URL}/issues
+- **Direct Maintainer Contact:** murat@datarust.dev
+
+## Security & Vulnerability Reporting
+
+Please report security issues confidentially to security@datarust.dev or murat@datarust.dev with reproducible details.
+`;
+}
+
+function contactPage() {
+  return pageShell({
+    title: 'Contact & Community',
+    description: 'Get in touch with the datarust maintainers, ask questions, report bugs, or submit security disclosures.',
+    pathname: '/contact/',
+    bodyClass: 'docs-page trust-page',
+    body: `
+      <article class="prose shell" style="max-width: 760px; margin: 3rem auto; padding: 0 1.5rem;">
+        <h1>Contact &amp; Community</h1>
+        <p class="lede">We welcome questions, bug reports, feature requests, and community contributions across multiple official channels.</p>
+
+        <h2>Community &amp; Support Channels</h2>
+        <ul>
+          <li><strong>GitHub Discussions:</strong> For questions, architectural discussions, and sharing projects built with datarust, visit <a href="${GITHUB_URL}/discussions" target="_blank" rel="noreferrer">GitHub Discussions</a>.</li>
+          <li><strong>Issue Tracker:</strong> If you discovered a bug, numerical discrepancy with scikit-learn, or have a feature proposal, open an issue on the <a href="${GITHUB_URL}/issues" target="_blank" rel="noreferrer">GitHub Issue Tracker</a>.</li>
+          <li><strong>Email:</strong> You can contact the maintainer directly at <a href="mailto:murat@datarust.dev">murat@datarust.dev</a>.</li>
+        </ul>
+
+        <h2>Security &amp; Vulnerability Reporting</h2>
+        <p>We take software security and data integrity seriously. If you discover a potential security vulnerability or memory safety issue in any of the workspace crates or MCP services:</p>
+        <ul>
+          <li>Please send a confidential email to <a href="mailto:security@datarust.dev">security@datarust.dev</a> (or <a href="mailto:murat@datarust.dev">murat@datarust.dev</a>).</li>
+          <li>Include detailed steps to reproduce, affected versions, and system environment.</li>
+          <li>Please allow up to 48 hours for an initial response before public disclosure.</li>
+        </ul>
+      </article>
+    `,
+  });
+}
+
+function privacyMarkdown() {
+  return `# Privacy Policy
+
+Last updated: October 2026. This privacy policy describes how datarust treats visitor information.
+
+## Zero Personal Data Collection
+
+datarust is committed to user privacy. We do not require account registration, do not use tracking cookies, and do not collect, monetize, or sell any personal data.
+
+- **No Cookies:** We do not store or read tracking cookies, marketing cookies, or third-party advertising identifiers.
+- **No Third-Party Analytics:** We do not load Google Analytics, Meta Pixel, or any third-party behavioral trackers.
+- **Client-Side Processing:** All interactive calculators, profiling demonstrations, and search dialogs run entirely locally in your browser using Web APIs.
+
+## Hosting & Edge Infrastructure
+
+datarust.dev is hosted via Cloudflare Pages and Cloudflare Workers edge network. Requests are subject to standard transient edge logging solely for security and DDoS mitigation. The hosted MCP server endpoint (https://datarust.dev/mcp) processes data transiently in memory with zero persistence.
+
+## Open Source Crate Usage
+
+The datarust and datarust-profile Rust crates run completely offline on your own machines with zero telemetry or network calls.
+
+## Contact
+
+If you have any questions about this Privacy Policy, please reach out via murat@datarust.dev or visit our Contact page.
+`;
+}
+
+function privacyPage() {
+  return pageShell({
+    title: 'Privacy Policy',
+    description: 'datarust privacy notice regarding zero tracking, no cookies, edge hosting, and offline crate execution.',
+    pathname: '/privacy/',
+    bodyClass: 'docs-page trust-page',
+    body: `
+      <article class="prose shell" style="max-width: 760px; margin: 3rem auto; padding: 0 1.5rem;">
+        <h1>Privacy Policy</h1>
+        <p class="lede">Last updated: October 2026. This privacy policy describes how datarust (<a href="${SITE_URL}/">${SITE_URL}</a>) treats visitor information.</p>
+
+        <h2>Zero Personal Data Collection</h2>
+        <p>datarust is committed to user privacy. We do not require account registration, do not use tracking cookies, and do not collect, monetize, or sell any personal data.</p>
+        <ul>
+          <li><strong>No Cookies:</strong> We do not store or read tracking cookies, marketing cookies, or third-party advertising identifiers.</li>
+          <li><strong>No Third-Party Analytics:</strong> We do not load Google Analytics, Meta Pixel, or any third-party behavioral trackers.</li>
+          <li><strong>Client-Side Processing:</strong> All interactive calculators, profiling demonstrations, and search dialogs run entirely locally in your browser using Web APIs.</li>
+        </ul>
+
+        <h2>Hosting &amp; Edge Infrastructure</h2>
+        <p>datarust.dev is hosted via Cloudflare Pages and Cloudflare Workers edge network. When you request a page or query an API/MCP endpoint:</p>
+        <ul>
+          <li>Cloudflare standard edge infrastructure processes network requests and may transiently log standard HTTP metadata (such as IP address, user-agent, request timestamp, and requested URL) solely for operational security, DDoS protection, and rate limiting.</li>
+          <li>The hosted MCP endpoint (<code>https://datarust.dev/mcp</code>) processes submitted dataset matrices transiently in memory to return profiling summaries or predictions, and does not store or persist uploaded dataset rows to any database or external storage.</li>
+        </ul>
+
+        <h2>Open Source Crate Usage</h2>
+        <p>The <code>datarust</code> and <code>datarust-profile</code> Rust crates run completely offline on your own machines with zero telemetry or network calls.</p>
+
+        <h2>Contact</h2>
+        <p>If you have any questions about this Privacy Policy, please reach out via <a href="mailto:murat@datarust.dev">murat@datarust.dev</a> or visit our <a href="/contact/">Contact page</a>.</p>
+      </article>
+    `,
+  });
+}
+
 async function writePage(route, html, markdown) {
   const destination = route === '/'
     ? path.join(DIST, 'index.html')
@@ -670,6 +916,9 @@ async function build() {
 
   await writePage('/', homePage(posts, docs), homePageMarkdown(posts, docs));
   await writePage('/blog/', blogIndex(posts), blogIndexMarkdown(posts));
+  await writePage('/about/', aboutPage(), aboutMarkdown());
+  await writePage('/contact/', contactPage(), contactMarkdown());
+  await writePage('/privacy/', privacyPage(), privacyMarkdown());
   await writePage('/404.html', notFoundPage(), notFoundMarkdown());
 
   for (const [index, page] of docs.pages.entries()) {
@@ -685,8 +934,10 @@ async function build() {
     await writePage(post.route, blogPage(post, index, neighbors), post.markdown);
   }
 
-
   const searchEntries = [
+    { type: 'Page', title: 'About datarust', description: 'Learn about the datarust workspace, mission, open-source maintainers, and pure-Rust architecture.', url: '/about/', headings: ['Mission & Philosophy', 'Workspace Architecture', 'Maintainer & Open Source'] },
+    { type: 'Page', title: 'Contact & Community', description: 'Get in touch with the datarust maintainers, ask questions, or report vulnerabilities.', url: '/contact/', headings: ['Community & Support Channels', 'Security & Vulnerability Reporting'] },
+    { type: 'Page', title: 'Privacy Policy', description: 'Zero personal data collection, no cookies, and Cloudflare edge hosting details.', url: '/privacy/', headings: ['Zero Personal Data Collection', 'Hosting & Edge Infrastructure', 'Open Source Crate Usage'] },
     ...docs.pages.map((page) => ({ type: 'Docs', title: page.title, description: page.description, url: page.route, headings: page.toc.map((item) => item.text) })),
     ...posts.map((post) => ({ type: post.number ? `Field note ${String(post.number).padStart(2, '0')}` : 'Release story', title: post.title, description: post.description, url: post.route, headings: post.toc.map((item) => item.text) })),
   ];
@@ -694,6 +945,9 @@ async function build() {
   await writeFile(path.join(DIST, 'feed.xml'), feedXml(posts));
   await writeFile(path.join(DIST, 'sitemap.xml'), sitemapXml([
     { route: '/', date: null },
+    { route: '/about/', date: null },
+    { route: '/contact/', date: null },
+    { route: '/privacy/', date: null },
     { route: '/docs/', date: docs.pages[0]?.date },
     { route: '/blog/', date: orderedPosts.at(-1)?.date },
     ...docs.pages.slice(1).map((page) => ({ route: page.route, date: page.date })),

@@ -43,7 +43,6 @@ The datarust MCP server is listed in major MCP directories:
   ```sh
   npx -y @smithery/cli install @genc-murat/datarust --client claude
   ```
-- **mcp.so Registry**: [`https://mcp.so/server/datarust`](https://mcp.so/server/datarust)
 - **Agentic Resource Discovery (ARD)**: [`https://datarust.dev/.well-known/ard.json`](https://datarust.dev/.well-known/ard.json)
 
 ### Claude Desktop / Cursor

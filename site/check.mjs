@@ -287,6 +287,43 @@ async function check() {
     errors.push('assets/app.js: missing client application JavaScript bundle');
   }
 
+  const agentCardFile = path.join(DIST, '.well-known', 'agent-card.json');
+  try {
+    const agentCardRaw = await readFile(agentCardFile, 'utf8');
+    const agentCard = JSON.parse(agentCardRaw);
+    if (!agentCard.name || !agentCard.description || !agentCard.endpoints || !agentCard.endpoints.mcp) {
+      errors.push('.well-known/agent-card.json: missing required fields (name, description, endpoints.mcp)');
+    }
+  } catch (err) {
+    errors.push(`.well-known/agent-card.json: failed to read or parse A2A agent card (${err.message})`);
+  }
+
+  const trustPages = ['about', 'contact', 'privacy'];
+  for (const page of trustPages) {
+    const trustPageFile = path.join(DIST, page, 'index.html');
+    try {
+      const content = await readFile(trustPageFile, 'utf8');
+      if (content.length < 500) {
+        errors.push(`${page}/index.html: trust page has insufficient content`);
+      }
+    } catch {
+      errors.push(`${page}/index.html: missing trust anchor page`);
+    }
+  }
+
+  const homeFile = path.join(DIST, 'index.html');
+  try {
+    const homeHtml = await readFile(homeFile, 'utf8');
+    if (!homeHtml.includes('application/ld+json')) {
+      errors.push('index.html: missing JSON-LD structured data');
+    }
+    if (!homeHtml.includes('"SoftwareApplication"') || !homeHtml.includes('"Organization"')) {
+      errors.push('index.html: JSON-LD must contain SoftwareApplication and Organization');
+    }
+  } catch {
+    errors.push('index.html: missing homepage');
+  }
+
   if (errors.length) {
 
 
