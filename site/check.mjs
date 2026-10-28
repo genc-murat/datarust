@@ -197,6 +197,15 @@ async function check() {
     if (!openapi.openapi || !openapi.paths || !openapi.info) {
       errors.push('openapi.json: missing required openapi, paths, or info object');
     }
+    if (!openapi.components?.schemas?.ErrorResponse) {
+      errors.push('openapi.json: missing typed ErrorResponse schema model');
+    }
+    if (!openapi.components?.parameters?.IdempotencyKey) {
+      errors.push('openapi.json: missing Idempotency-Key parameter definition');
+    }
+    if (!openapi.paths['/jobs'] || !openapi.paths['/jobs/{job_id}']) {
+      errors.push('openapi.json: missing async-job pattern endpoints (/jobs and /jobs/{job_id})');
+    }
   } catch (err) {
     errors.push(`openapi.json: failed to read or parse openapi schema (${err.message})`);
   }

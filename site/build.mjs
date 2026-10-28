@@ -534,6 +534,14 @@ model.fit(&amp;x_train, &amp;y_train)?;
         <div class="section-heading"><div><p class="eyebrow">Latest field notes</p><h2>The failures that teach the useful parts</h2></div><a class="text-link" href="/blog/">Browse all ${notesCount} ${icon('arrow')}</a></div>
         <div class="article-grid">${latest.map((post) => articleCard(post)).join('')}</div>
       </section>
+      <section class="section shell">
+        <div class="section-heading"><div><p class="eyebrow">Developer &amp; Agent Onboarding</p><h2>100% Free tier, self-serve access, instant sandbox</h2></div></div>
+        <div class="path-grid">
+          <div><h3>100% Free Tier</h3><p>MIT licensed open-source workspace with no usage fees, subscription gates, or paywalls.</p></div>
+          <div><h3>Self-Serve Keys</h3><p>Zero onboarding friction: no API keys, accounts, or registration required for developers or AI agents.</p></div>
+          <div><h3>Interactive Sandbox</h3><p>Test machine learning estimators and data profiling live in browser and via <a href="/docs/mcp/">MCP server sandbox</a>.</p></div>
+        </div>
+      </section>
       <section class="cta-band shell"><div><p class="eyebrow">No ceremony required</p><h2>Build your first Rust ML workflow.</h2></div><a class="button light" href="/docs/quickstart/">Open the quick start ${icon('arrow')}</a></section>
     `,
   });

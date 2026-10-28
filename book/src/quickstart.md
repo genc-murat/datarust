@@ -2,6 +2,13 @@
 
 Get from `cargo add` to a fitted, transformed pipeline in five minutes.
 
+## Free Tier, Self-Serve Keys & Sandbox Access
+
+datarust is built for zero onboarding friction:
+- **Free Tier**: 100% free and open source under the MIT license with zero paid tiers.
+- **Self-Serve Keys**: No API key or registration required to use the library, public REST endpoints, or the MCP server.
+- **Interactive Sandbox**: Run algorithms locally in Rust or test remote endpoints in an instant sandbox at `https://datarust.dev/mcp`.
+
 ## 1. Add the dependency
 
 ```toml

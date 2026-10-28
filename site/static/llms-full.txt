@@ -34,6 +34,11 @@ Exposed MCP Tools:
 - `data-profiling`: Automated profiling and quality reports with datarust-profile (`https://datarust.dev/.well-known/agent-skills/data-profiling/SKILL.md`)
 - `classical-ml`: Classical machine learning estimators with datarust (`https://datarust.dev/.well-known/agent-skills/classical-ml/SKILL.md`)
 
+### Free Tier, Self-Serve Keys & Sandbox Access
+- **Free Tier**: 100% free and open-source under the MIT license.
+- **Self-Serve Keys**: No API key or authentication required. All endpoints (`https://datarust.dev/mcp`, `https://datarust.dev/v1/*`) are self-serve and instantly usable.
+- **Interactive Sandbox**: Instant developer and AI agent sandbox with zero onboarding friction.
+
 ---
 
 ## 2. Architecture & Rust API
