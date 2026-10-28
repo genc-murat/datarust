@@ -177,6 +177,9 @@ async function check() {
     if (!card.name || !card.description || !card.version) {
       errors.push('.well-known/mcp/server-card.json: root name, description, and version are required');
     }
+    if (!card.icon && !card.iconUrl) {
+      errors.push('.well-known/mcp/server-card.json: root icon/iconUrl property is required');
+    }
     if (!card.serverUrl) {
       errors.push('.well-known/mcp/server-card.json: root serverUrl property is required');
     }

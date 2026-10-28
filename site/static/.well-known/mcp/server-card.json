@@ -2,6 +2,15 @@
   "name": "datarust",
   "displayName": "datarust MCP Server",
   "description": "Scikit-learn-style preprocessing, classical machine learning, and data profiling in Rust",
+  "icon": "https://datarust.dev/favicon.svg",
+  "iconUrl": "https://datarust.dev/favicon.svg",
+  "icons": [
+    {
+      "src": "https://datarust.dev/favicon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": "64x64"
+    }
+  ],
   "version": "0.7.0",
   "serverUrl": "https://datarust.dev/mcp",
   "endpoint": "https://datarust.dev/mcp",
@@ -10,7 +19,9 @@
   "serverInfo": {
     "name": "datarust",
     "version": "0.7.0",
-    "description": "Scikit-learn-style preprocessing, classical machine learning, and data profiling in Rust"
+    "description": "Scikit-learn-style preprocessing, classical machine learning, and data profiling in Rust",
+    "icon": "https://datarust.dev/favicon.svg",
+    "iconUrl": "https://datarust.dev/favicon.svg"
   },
   "capabilities": {
     "tools": {

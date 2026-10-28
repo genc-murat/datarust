@@ -1,7 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/a2aproject/spec/main/schemas/agent-card.json",
   "name": "datarust Agent",
+  "displayName": "datarust Agent",
   "description": "Classical machine learning, feature engineering, and automated dataset profiling agent native to Rust.",
+  "icon": "https://datarust.dev/favicon.svg",
+  "iconUrl": "https://datarust.dev/favicon.svg",
   "version": "0.1.0",
   "url": "https://datarust.dev",
   "documentation": "https://datarust.dev/docs/mcp/",
