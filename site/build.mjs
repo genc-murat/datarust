@@ -336,6 +336,7 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="${escapeHtml(`${SITE_URL}/og.png`)}">
   <link rel="canonical" href="${escapeHtml(canonical)}">
+  <link rel="ard" type="application/json" href="/.well-known/ard.json">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="alternate" type="application/atom+xml" title="datarust field notes" href="/feed.xml">

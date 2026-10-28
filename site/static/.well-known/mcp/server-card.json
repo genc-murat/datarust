@@ -1,7 +1,7 @@
 {
   "serverInfo": {
     "name": "datarust",
-    "version": "0.6.5",
+    "version": "0.7.0",
     "description": "Scikit-learn-style preprocessing, classical machine learning, and data profiling in Rust"
   },
   "endpoint": "https://datarust.dev/mcp",

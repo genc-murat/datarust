@@ -201,6 +201,42 @@ async function check() {
     errors.push(`.well-known/agent-skills/index.json: failed to read or parse Agent Skills index (${err.message})`);
   }
 
+  const ardFile = path.join(DIST, '.well-known', 'ard.json');
+  try {
+    const ardRaw = await readFile(ardFile, 'utf8');
+    const ard = JSON.parse(ardRaw);
+    if (!ard.specVersion) {
+      errors.push('.well-known/ard.json: specVersion is required');
+    }
+    if (!ard.host || !ard.host.displayName) {
+      errors.push('.well-known/ard.json: host.displayName is required');
+    }
+    if (!Array.isArray(ard.entries) || ard.entries.length === 0) {
+      errors.push('.well-known/ard.json: entries array is missing or empty');
+    } else {
+      for (const entry of ard.entries) {
+        if (!entry.identifier || !entry.displayName || !entry.type) {
+          errors.push(`.well-known/ard.json: entry ${entry.displayName || entry.identifier || 'unknown'} missing required fields (identifier, displayName, type)`);
+        }
+        if (!entry.identifier?.startsWith('urn:air:')) {
+          errors.push(`.well-known/ard.json: identifier ${entry.identifier} must start with urn:air:`);
+        }
+        if (!entry.url && !entry.data) {
+          errors.push(`.well-known/ard.json: entry ${entry.identifier} must have url or data`);
+        }
+      }
+    }
+  } catch (err) {
+    errors.push(`.well-known/ard.json: failed to read or parse ARD manifest (${err.message})`);
+  }
+
+  const legacyCatalogFile = path.join(DIST, '.well-known', 'ai-catalog.json');
+  try {
+    await access(legacyCatalogFile);
+  } catch {
+    errors.push('.well-known/ai-catalog.json: missing legacy fallback manifest');
+  }
+
   const appJsFile = path.join(DIST, 'assets', 'app.js');
   try {
     const appJsContent = await readFile(appJsFile, 'utf8');

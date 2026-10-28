@@ -1,0 +1,122 @@
+{
+  "specVersion": "1.0",
+  "host": {
+    "displayName": "datarust",
+    "documentationUrl": "https://datarust.dev/docs/",
+    "logoUrl": "https://datarust.dev/favicon.svg"
+  },
+  "entries": [
+    {
+      "identifier": "urn:air:datarust.dev:mcp:datarust",
+      "displayName": "datarust MCP Server",
+      "type": "application/mcp-server-card+json",
+      "url": "https://datarust.dev/.well-known/mcp/server-card.json",
+      "description": "Model Context Protocol server for datarust: scikit-learn-style preprocessing, classical machine learning estimators, and data profiling in Rust.",
+      "version": "0.7.0",
+      "capabilities": [
+        "train_model",
+        "predict",
+        "preprocess",
+        "profile_dataset",
+        "evaluate_metrics"
+      ],
+      "representativeQueries": [
+        "train a decision tree or random forest model in Rust",
+        "generate a data profiling report for a CSV dataset",
+        "scikit-learn equivalent machine learning pipeline in Rust",
+        "scale numerical features with standard scaler in Rust"
+      ],
+      "tags": [
+        "machine-learning",
+        "mcp",
+        "rust",
+        "data-profiling",
+        "preprocessing",
+        "scikit-learn"
+      ],
+      "updatedAt": "2026-10-28T00:00:00Z"
+    },
+    {
+      "identifier": "urn:air:datarust.dev:skills:data-profiling",
+      "displayName": "datarust Data Profiling Skill",
+      "type": "application/agent-skills+json",
+      "url": "https://datarust.dev/.well-known/agent-skills/data-profiling/SKILL.md",
+      "description": "Automated dataset profiling, distribution statistics, pairwise relationships (Pearson, Cramér's V, point-biserial), target leakage hints, and quality reports with datarust-profile.",
+      "version": "0.4.0",
+      "capabilities": [
+        "dataset_profiling",
+        "correlation_analysis",
+        "data_quality_checks",
+        "leakage_detection"
+      ],
+      "representativeQueries": [
+        "profile a dataset to find missing values, skewness, and correlations",
+        "check data quality and detect target leakage in Rust",
+        "compute Cramér's V and Pearson correlation heatmap"
+      ],
+      "tags": [
+        "data-profiling",
+        "quality-checks",
+        "eda",
+        "rust",
+        "agent-skill"
+      ],
+      "updatedAt": "2026-10-28T00:00:00Z"
+    },
+    {
+      "identifier": "urn:air:datarust.dev:skills:classical-ml",
+      "displayName": "datarust Classical ML Skill",
+      "type": "application/agent-skills+json",
+      "url": "https://datarust.dev/.well-known/agent-skills/classical-ml/SKILL.md",
+      "description": "Scikit-learn-style preprocessing, feature engineering, and classical machine learning estimators (decision trees, random forests, linear models, clustering) in Rust with datarust.",
+      "version": "0.7.0",
+      "capabilities": [
+        "preprocessing",
+        "linear_regression",
+        "logistic_regression",
+        "random_forest",
+        "decision_tree",
+        "kmeans_clustering",
+        "pipeline"
+      ],
+      "representativeQueries": [
+        "build a machine learning pipeline in Rust",
+        "fit a random forest classifier bit-exact to scikit-learn in Rust",
+        "encode categorical features and scale inputs in Rust"
+      ],
+      "tags": [
+        "machine-learning",
+        "scikit-learn",
+        "rust",
+        "classification",
+        "regression",
+        "clustering",
+        "agent-skill"
+      ],
+      "updatedAt": "2026-10-28T00:00:00Z"
+    },
+    {
+      "identifier": "urn:air:datarust.dev:api:catalog",
+      "displayName": "datarust API Catalog",
+      "type": "application/linkset+json",
+      "url": "https://datarust.dev/.well-known/api-catalog",
+      "description": "RFC 9727 API catalog linking to datarust and datarust-profile API documentation on docs.rs and crate releases.",
+      "version": "0.7.0",
+      "capabilities": [
+        "api_documentation",
+        "crate_reference"
+      ],
+      "representativeQueries": [
+        "find datarust Rust API documentation on docs.rs",
+        "datarust crates.io packages and API links"
+      ],
+      "tags": [
+        "api",
+        "documentation",
+        "rust",
+        "docs-rs"
+      ],
+      "updatedAt": "2026-10-28T00:00:00Z"
+    }
+  ]
+}
