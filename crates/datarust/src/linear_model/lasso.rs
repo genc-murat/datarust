@@ -6,7 +6,7 @@
 //!
 //! The L1 penalty drives some coefficients to **exactly zero**, producing a
 //! sparse model that performs implicit feature selection. This is the key
-//! difference from [`Ridge`](crate::Ridge) (L2), which only shrinks.
+//! difference from [`Ridge`] (L2), which only shrinks.
 //!
 //! Solved by **coordinate descent** with soft-thresholding: each coefficient is
 //! updated in turn while the others are held fixed, using the precomputed Gram

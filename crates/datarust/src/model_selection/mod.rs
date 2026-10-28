@@ -1,7 +1,7 @@
 //! Model-selection utilities mirroring `sklearn.model_selection`.
 //!
 //! Provides train/test splitting, K-fold cross-validation splitters, and a
-//! generic [`cross_val_score`] that works with any [`Predictor`](crate::traits::Predictor)
+//! generic [`cross_val_score`] that works with any [`Predictor`]
 //! + `Clone` estimator. A shared PRNG lives in [`crate::rng`] (re-exported
 //! here as [`rng`](crate::model_selection::rng) for backwards compatibility).
 

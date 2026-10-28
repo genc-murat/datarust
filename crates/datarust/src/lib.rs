@@ -22,7 +22,7 @@
 //! - [`function_transformer`] — wrap arbitrary functions as a Transformer
 //! - [`stats`] — column and 1-D statistics, covariance and correlation matrices
 //! - [`matrix`] — `Matrix`, `StrMatrix` and `SparseMatrix` data containers
-//! - [`serialize`] — JSON save/load (requires the `serde` feature)
+//! - `serialize` — JSON save/load (requires the `serde` feature)
 //! - [`transformer_kind`] — type-erased `TransformerKind` enum wrapper
 //! - [`categorical_kind`] — type-erased `CategoricalTransformerKind` enum wrapper for encoders
 //! - [`target_kind`] — type-erased `TargetTransformerKind` enum wrapper for supervised encoders
@@ -45,7 +45,7 @@
 //!
 //! # Features
 //!
-//! - `serde` — enables JSON serialization via [`serialize`].
+//! - `serde` — enables JSON serialization via `serialize`.
 //! - `rayon` — enables parallel column/row operations for large datasets.
 //! - `matrixmultiply` — enables a tuned pure-Rust GEMM (no system BLAS) for
 //!   `Matrix::matmul` and covariance computation, speeding up PCA and

@@ -4,7 +4,7 @@
 //!
 //! `||Xβ − y||² + α ||β||²`
 //!
-//! Unlike [`LinearRegression`](crate::LinearRegression), the
+//! Unlike [`LinearRegression`], the
 //! `α‖β‖²` penalty guarantees the system matrix `XᵀX + αI` is positive-definite
 //! even when `X` is rank-deficient or collinear, so the Cholesky solver always
 //! succeeds for `α > 0`.
