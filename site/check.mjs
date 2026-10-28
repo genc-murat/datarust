@@ -174,6 +174,15 @@ async function check() {
     if (!card.capabilities) {
       errors.push('.well-known/mcp/server-card.json: capabilities property is required');
     }
+    if (!card.name || !card.description || !card.version) {
+      errors.push('.well-known/mcp/server-card.json: root name, description, and version are required');
+    }
+    if (!card.serverUrl) {
+      errors.push('.well-known/mcp/server-card.json: root serverUrl property is required');
+    }
+    if (!Array.isArray(card.tools) || card.tools.length === 0) {
+      errors.push('.well-known/mcp/server-card.json: root tools array is required');
+    }
   } catch (err) {
     errors.push(`.well-known/mcp/server-card.json: failed to read or parse SEP-1649 MCP server card (${err.message})`);
   }

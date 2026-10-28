@@ -1,12 +1,17 @@
 {
+  "name": "datarust",
+  "displayName": "datarust MCP Server",
+  "description": "Scikit-learn-style preprocessing, classical machine learning, and data profiling in Rust",
+  "version": "0.7.0",
+  "serverUrl": "https://datarust.dev/mcp",
+  "endpoint": "https://datarust.dev/mcp",
+  "documentationUrl": "https://datarust.dev/docs/mcp/",
+  "repositoryUrl": "https://github.com/genc-murat/datarust",
   "serverInfo": {
     "name": "datarust",
     "version": "0.7.0",
     "description": "Scikit-learn-style preprocessing, classical machine learning, and data profiling in Rust"
   },
-  "endpoint": "https://datarust.dev/mcp",
-  "documentationUrl": "https://datarust.dev/docs/mcp/",
-  "repositoryUrl": "https://github.com/genc-murat/datarust",
   "capabilities": {
     "tools": {
       "listChanged": false
@@ -18,5 +23,96 @@
     "prompts": {
       "listChanged": false
     }
-  }
+  },
+  "tools": [
+    {
+      "name": "profile_dataset",
+      "description": "Profiles tabular data from CSV content, generating descriptive statistics, distribution metrics, pairwise correlations, and data quality checks.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "csv_data": {
+            "type": "string",
+            "description": "The CSV content to profile (including header row)"
+          },
+          "target_column": {
+            "type": "string",
+            "description": "Optional name of the target column for leakage detection and associations"
+          }
+        },
+        "required": ["csv_data"]
+      }
+    },
+    {
+      "name": "train_linear_regression",
+      "description": "Fits an ordinary least squares linear regression model on feature matrix X and target vector y.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": { "type": "number" }
+            },
+            "description": "2D array of numeric features (rows x columns)"
+          },
+          "y": {
+            "type": "array",
+            "items": { "type": "number" },
+            "description": "1D array of numeric target values"
+          }
+        },
+        "required": ["x", "y"]
+      }
+    },
+    {
+      "name": "scale_features",
+      "description": "Transforms numerical features using standard, minmax, or robust scaling.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": { "type": "number" }
+            },
+            "description": "2D array of features to scale"
+          },
+          "method": {
+            "type": "string",
+            "enum": ["standard", "minmax", "robust"],
+            "description": "Scaler method to apply (default: 'standard')"
+          }
+        },
+        "required": ["x"]
+      }
+    },
+    {
+      "name": "evaluate_metrics",
+      "description": "Computes regression metrics (R2, MSE, RMSE, MAE) or classification metrics (accuracy).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "y_true": {
+            "type": "array",
+            "items": { "type": "number" },
+            "description": "Ground truth values"
+          },
+          "y_pred": {
+            "type": "array",
+            "items": { "type": "number" },
+            "description": "Predicted values"
+          },
+          "task": {
+            "type": "string",
+            "enum": ["regression", "classification"],
+            "description": "Task type (default: 'regression')"
+          }
+        },
+        "required": ["y_true", "y_pred"]
+      }
+    }
+  ]
 }
