@@ -66,7 +66,8 @@
           "404": { "$ref": "#/components/responses/404NotFound" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
           "429": { "$ref": "#/components/responses/429TooManyRequests" },
-          "500": { "$ref": "#/components/responses/500InternalError" }
+          "500": { "$ref": "#/components/responses/500InternalError" },
+          "default": { "$ref": "#/components/responses/DefaultError" }
         }
       }
     },
@@ -111,7 +112,8 @@
           "404": { "$ref": "#/components/responses/404NotFound" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
           "429": { "$ref": "#/components/responses/429TooManyRequests" },
-          "500": { "$ref": "#/components/responses/500InternalError" }
+          "500": { "$ref": "#/components/responses/500InternalError" },
+          "default": { "$ref": "#/components/responses/DefaultError" }
         }
       }
     },
@@ -156,7 +158,8 @@
           "404": { "$ref": "#/components/responses/404NotFound" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
           "429": { "$ref": "#/components/responses/429TooManyRequests" },
-          "500": { "$ref": "#/components/responses/500InternalError" }
+          "500": { "$ref": "#/components/responses/500InternalError" },
+          "default": { "$ref": "#/components/responses/DefaultError" }
         }
       }
     },
@@ -205,7 +208,11 @@
             }
           },
           "400": { "$ref": "#/components/responses/400BadRequest" },
-          "429": { "$ref": "#/components/responses/429TooManyRequests" }
+          "404": { "$ref": "#/components/responses/404NotFound" },
+          "422": { "$ref": "#/components/responses/422Unprocessable" },
+          "429": { "$ref": "#/components/responses/429TooManyRequests" },
+          "500": { "$ref": "#/components/responses/500InternalError" },
+          "default": { "$ref": "#/components/responses/DefaultError" }
         }
       },
       "post": {
@@ -249,8 +256,11 @@
             }
           },
           "400": { "$ref": "#/components/responses/400BadRequest" },
+          "404": { "$ref": "#/components/responses/404NotFound" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
-          "429": { "$ref": "#/components/responses/429TooManyRequests" }
+          "429": { "$ref": "#/components/responses/429TooManyRequests" },
+          "500": { "$ref": "#/components/responses/500InternalError" },
+          "default": { "$ref": "#/components/responses/DefaultError" }
         }
       }
     },
@@ -284,8 +294,12 @@
               }
             }
           },
+          "400": { "$ref": "#/components/responses/400BadRequest" },
           "404": { "$ref": "#/components/responses/404NotFound" },
-          "429": { "$ref": "#/components/responses/429TooManyRequests" }
+          "422": { "$ref": "#/components/responses/422Unprocessable" },
+          "429": { "$ref": "#/components/responses/429TooManyRequests" },
+          "500": { "$ref": "#/components/responses/500InternalError" },
+          "default": { "$ref": "#/components/responses/DefaultError" }
         }
       }
     }
@@ -356,6 +370,14 @@
       },
       "500InternalError": {
         "description": "Internal server execution error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "DefaultError": {
+        "description": "Unexpected standard error response",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/ErrorResponse" }

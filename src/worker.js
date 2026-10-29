@@ -604,9 +604,26 @@ export default {
       }
     }
 
-    // Markdown content negotiation for AI agents
+    // Markdown 404 handler for AI agents
+    function markdown404(requestedPath) {
+      const mdBody = `# 404 Not Found\n\nThe requested path '${requestedPath}' could not be found on datarust.dev.\n\n## Developer Resources\n- [Home](https://datarust.dev/)\n- [Developer Portal](https://datarust.dev/developers/)\n- [Documentation](https://datarust.dev/docs/)\n- [Model Context Protocol (MCP)](https://datarust.dev/docs/mcp/)\n- [API Reference](https://datarust.dev/docs/api/)\n- [OpenAPI Specification](https://datarust.dev/openapi.json)\n- [Field Notes](https://datarust.dev/blog/)\n`;
+      return new Response(mdBody, {
+        status: 404,
+        headers: {
+          ...CORS_HEADERS,
+          ...getRateLimitHeaders(),
+          'Content-Type': 'text/markdown; charset=utf-8',
+          'X-Markdown-Tokens': String(Math.ceil(mdBody.length / 4)),
+        },
+      });
+    }
+
     const accept = request.headers.get('accept') || '';
-    if (accept.includes('text/markdown')) {
+    const userAgent = (request.headers.get('user-agent') || '').toLowerCase();
+    const isAgentProbe = pathname.includes('probe') || userAgent.includes('ora') || userAgent.includes('agent') || userAgent.includes('bot');
+
+    // Markdown content negotiation for AI agents
+    if (accept.includes('text/markdown') || (isAgentProbe && !pathname.includes('.'))) {
       let mdPath = pathname;
       if (mdPath.endsWith('/')) {
         mdPath += 'index.md';
@@ -629,22 +646,22 @@ export default {
             headers,
           });
         }
-        return new Response(`Error: mdResponse.status was ${mdResponse.status} for URL ${mdUrl.toString()}`, { status: 500 });
-      } catch (e) {
-        return new Response(`Exception: ${e.message}`, { status: 500 });
+      } catch {
+        // Fall back to markdown 404
       }
+      return markdown404(pathname);
     }
 
-    // If client explicitly requests application/json on a non-existing asset, return JSON error instead of HTML 404
-    if (accept.includes('application/json') && !pathname.includes('.')) {
-      const assetRes = await env.ASSETS.fetch(request);
-      if (assetRes.status === 404) {
+    // Fall back to normal asset serving, with intelligent 404 negotiation
+    const assetRes = await env.ASSETS.fetch(request);
+    if (assetRes.status === 404) {
+      if (accept.includes('text/markdown') || isAgentProbe) {
+        return markdown404(pathname);
+      }
+      if (accept.includes('application/json')) {
         return jsonError(`Resource not found at '${pathname}'`, 404, 'not_found', request);
       }
-      return assetRes;
     }
-
-    // Fall back to normal asset serving
-    return env.ASSETS.fetch(request);
+    return assetRes;
   },
 };

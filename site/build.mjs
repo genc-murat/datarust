@@ -787,9 +787,15 @@ ${list}
 function notFoundMarkdown() {
   return `# 404 - Page Not Found
 
-The requested datarust page could not be found.
+The requested datarust page or resource could not be found.
 
+## Developer Resources & Navigation
+- [Home](${SITE_URL}/)
+- [Developer Portal](${SITE_URL}/developers/)
 - [Documentation](${SITE_URL}/docs/)
+- [Model Context Protocol (MCP) Server](${SITE_URL}/docs/mcp/)
+- [API Reference](${SITE_URL}/docs/api/)
+- [OpenAPI 3.1 Specification](${SITE_URL}/openapi.json)
 - [Field Notes](${SITE_URL}/blog/)
 `;
 }

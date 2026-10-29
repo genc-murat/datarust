@@ -206,6 +206,13 @@ async function check() {
     if (!openapi.paths['/jobs'] || !openapi.paths['/jobs/{job_id}']) {
       errors.push('openapi.json: missing async-job pattern endpoints (/jobs and /jobs/{job_id})');
     }
+    for (const [pathKey, pathItem] of Object.entries(openapi.paths)) {
+      for (const [methodKey, op] of Object.entries(pathItem)) {
+        if (!op.responses?.['400'] || !op.responses?.['500'] || !op.responses?.default) {
+          errors.push(`openapi.json: ${pathKey} ${methodKey} missing consistent typed error responses (400, 500, default)`);
+        }
+      }
+    }
   } catch (err) {
     errors.push(`openapi.json: failed to read or parse openapi schema (${err.message})`);
   }
@@ -333,6 +340,16 @@ async function check() {
     }
   } catch (err) {
     errors.push(`.well-known/agent-card.json: failed to read or parse A2A agent card (${err.message})`);
+  }
+
+  const notFoundMdFile = path.join(DIST, '404.md');
+  try {
+    const notFoundMd = await readFile(notFoundMdFile, 'utf8');
+    if (!notFoundMd.includes('# 404') || !notFoundMd.includes('Developer Portal')) {
+      errors.push('404.md: must be an agent-friendly Markdown error body with developer resource links');
+    }
+  } catch {
+    errors.push('404.md: missing agent-friendly Markdown 404 file in dist');
   }
 
   const devPortalFile = path.join(DIST, 'developers', 'index.html');
