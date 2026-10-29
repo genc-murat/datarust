@@ -294,6 +294,23 @@ async function check() {
     errors.push(`.well-known/skills.json: failed to read or parse skills.json (${err.message})`);
   }
 
+  const webBotAuthFile = path.join(DIST, '.well-known', 'http-message-signatures-directory');
+  try {
+    const jwksRaw = await readFile(webBotAuthFile, 'utf8');
+    const jwks = JSON.parse(jwksRaw);
+    if (!Array.isArray(jwks.keys) || jwks.keys.length === 0) {
+      errors.push('.well-known/http-message-signatures-directory: keys array is required and must not be empty');
+    } else {
+      for (const key of jwks.keys) {
+        if (!key.kid || !key.kty || !key.x) {
+          errors.push(`.well-known/http-message-signatures-directory: key ${key.kid || 'unknown'} missing required fields (kid, kty, x)`);
+        }
+      }
+    }
+  } catch (err) {
+    errors.push(`.well-known/http-message-signatures-directory: failed to read or parse JWKS directory (${err.message})`);
+  }
+
   const legacyCatalogFile = path.join(DIST, '.well-known', 'ai-catalog.json');
   try {
     await access(legacyCatalogFile);

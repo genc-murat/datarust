@@ -1,0 +1,14 @@
+{
+  "keys": [
+    {
+      "kid": "datarust-agent-key-1",
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "GIBL8HRxLT7yEBMaA-EpSCzGdRCpmvYmFgwRVAXmJV0",
+      "use": "sig",
+      "alg": "Ed25519"
+    }
+  ],
+  "signature_agent": "https://datarust.dev",
+  "purpose": "ai-agent"
+}

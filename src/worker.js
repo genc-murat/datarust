@@ -1,9 +1,29 @@
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Last-Event-ID, Mcp-Session-Id, Idempotency-Key, X-Idempotency-Key, X-API-Version',
-  'Access-Control-Expose-Headers': 'RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, RateLimit-Policy, Idempotency-Key, Idempotent-Replayed, X-API-Version',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Last-Event-ID, Mcp-Session-Id, Idempotency-Key, X-Idempotency-Key, X-API-Version, Signature-Agent, Signature-Input, Signature',
+  'Access-Control-Expose-Headers': 'RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, RateLimit-Policy, Idempotency-Key, Idempotent-Replayed, X-API-Version, Signature-Agent, Signature-Input, Signature',
   'Access-Control-Max-Age': '86400',
+};
+
+const WEB_BOT_AUTH_HEADERS = {
+  'Signature-Agent': 'https://datarust.dev',
+  'Signature-Input': 'sig1=("@authority");keyid="datarust-agent-key-1";alg="ed25519";tag="web-bot-auth"',
+};
+
+const JWKS_DIRECTORY = {
+  keys: [
+    {
+      kid: 'datarust-agent-key-1',
+      kty: 'OKP',
+      crv: 'Ed25519',
+      x: 'GIBL8HRxLT7yEBMaA-EpSCzGdRCpmvYmFgwRVAXmJV0',
+      use: 'sig',
+      alg: 'Ed25519',
+    },
+  ],
+  signature_agent: 'https://datarust.dev',
+  purpose: 'ai-agent',
 };
 
 function getRateLimitHeaders() {
@@ -16,6 +36,7 @@ function getRateLimitHeaders() {
     'X-RateLimit-Remaining': '999',
     'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + 60),
     'X-API-Version': '1.0',
+    ...WEB_BOT_AUTH_HEADERS,
   };
 }
 
@@ -552,6 +573,22 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const pathname = url.pathname;
+
+    // IETF WebBotAuth HTTP Message Signatures Directory
+    if (pathname === '/.well-known/http-message-signatures-directory' || pathname === '/.well-known/http-message-signatures-directory/') {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
+      }
+      return new Response(JSON.stringify(JWKS_DIRECTORY, null, 2), {
+        status: 200,
+        headers: {
+          ...CORS_HEADERS,
+          ...getRateLimitHeaders(),
+          ...WEB_BOT_AUTH_HEADERS,
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      });
+    }
 
     // NLWeb Natural Language Web Streaming endpoint (/ask)
     if (pathname === '/ask' || pathname === '/ask/') {
