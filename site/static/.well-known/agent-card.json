@@ -1,36 +1,76 @@
 {
-  "$schema": "https://raw.githubusercontent.com/a2aproject/spec/main/schemas/agent-card.json",
+  "$schema": "https://a2a-protocol.org/schemas/v1/agent-card.json",
   "name": "datarust Agent",
-  "displayName": "datarust Agent",
-  "description": "Classical machine learning, feature engineering, and automated dataset profiling agent native to Rust.",
-  "icon": "https://datarust.dev/favicon.svg",
+  "description": "Autonomous classical machine learning, feature preprocessing, and automated dataset profiling agent native to Rust with bit-level scikit-learn parity.",
+  "version": "1.0.0",
+  "documentationUrl": "https://datarust.dev/docs/mcp/",
   "iconUrl": "https://datarust.dev/favicon.svg",
-  "version": "0.1.0",
-  "url": "https://datarust.dev",
-  "documentation": "https://datarust.dev/docs/mcp/",
-  "endpoints": {
-    "mcp": "https://datarust.dev/mcp",
-    "openapi": "https://datarust.dev/openapi.json"
-  },
-  "capabilities": {
-    "tools": true,
-    "resources": true,
-    "prompts": false
-  },
-  "provider": {
-    "name": "datarust",
-    "url": "https://datarust.dev"
-  },
-  "skills": [
+  "supportedInterfaces": [
     {
-      "name": "data-profiling",
-      "description": "Automated dataset profiling, quality checks, pairwise relationships, and report generation in Rust with datarust-profile.",
-      "url": "https://datarust.dev/.well-known/agent-skills/data-profiling/SKILL.md"
+      "url": "https://datarust.dev/mcp",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0",
+      "protocol": "mcp",
+      "transport": "HTTP"
     },
     {
-      "name": "classical-ml",
-      "description": "Scikit-learn-style preprocessing, feature engineering, and classical machine learning estimators in Rust with datarust.",
-      "url": "https://datarust.dev/.well-known/agent-skills/classical-ml/SKILL.md"
+      "url": "https://datarust.dev/v1",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0",
+      "protocol": "rest",
+      "transport": "HTTP"
     }
-  ]
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "defaultInputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "data-profiling",
+      "name": "datarust Data Profiling",
+      "description": "Automated dataset profiling, distribution statistics, pairwise relationships (Pearson, Cramér's V, point-biserial), target leakage hints, and data quality checks with datarust-profile.",
+      "tags": [
+        "data-profiling",
+        "eda",
+        "quality-checks",
+        "rust"
+      ],
+      "examples": [
+        "Profile dataset columns and calculate descriptive statistics",
+        "Detect target leakage between feature columns and label",
+        "Compute pairwise correlation heatmap and quality report"
+      ]
+    },
+    {
+      "id": "classical-ml",
+      "name": "datarust Classical Machine Learning",
+      "description": "Scikit-learn-style preprocessing, feature engineering, and classical machine learning estimators (linear regression, ridge, logistic regression, k-means, decision trees) in Rust with datarust.",
+      "tags": [
+        "machine-learning",
+        "scikit-learn",
+        "preprocessing",
+        "rust"
+      ],
+      "examples": [
+        "Fit an ordinary least squares linear regression model",
+        "Scale numerical features using StandardScaler or RobustScaler",
+        "Build a scikit-learn compatible pipeline in Rust"
+      ]
+    }
+  ],
+  "provider": {
+    "name": "datarust",
+    "url": "https://datarust.dev",
+    "support_contact": "murat@datarust.dev"
+  }
 }

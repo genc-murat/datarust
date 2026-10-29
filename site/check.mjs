@@ -335,8 +335,29 @@ async function check() {
   try {
     const agentCardRaw = await readFile(agentCardFile, 'utf8');
     const agentCard = JSON.parse(agentCardRaw);
-    if (!agentCard.name || !agentCard.description || !agentCard.endpoints || !agentCard.endpoints.mcp) {
-      errors.push('.well-known/agent-card.json: missing required fields (name, description, endpoints.mcp)');
+    if (!agentCard.name || !agentCard.version || !agentCard.description) {
+      errors.push('.well-known/agent-card.json: missing required fields (name, version, description)');
+    }
+    if (!Array.isArray(agentCard.supportedInterfaces) || agentCard.supportedInterfaces.length === 0) {
+      errors.push('.well-known/agent-card.json: supportedInterfaces array is required');
+    } else {
+      for (const iface of agentCard.supportedInterfaces) {
+        if (!iface.url || (!iface.protocolBinding && !iface.transport)) {
+          errors.push('.well-known/agent-card.json: interface missing url or protocolBinding/transport');
+        }
+      }
+    }
+    if (!agentCard.capabilities) {
+      errors.push('.well-known/agent-card.json: missing capabilities object');
+    }
+    if (!Array.isArray(agentCard.skills) || agentCard.skills.length === 0) {
+      errors.push('.well-known/agent-card.json: skills array is missing or empty');
+    } else {
+      for (const skill of agentCard.skills) {
+        if (!skill.id || !skill.name || !skill.description) {
+          errors.push(`.well-known/agent-card.json: skill ${skill.name || skill.id || 'unknown'} missing id, name, or description`);
+        }
+      }
     }
   } catch (err) {
     errors.push(`.well-known/agent-card.json: failed to read or parse A2A agent card (${err.message})`);
