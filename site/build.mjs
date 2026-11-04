@@ -522,6 +522,7 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
   <script type="application/ld+json">
 ${JSON.stringify(jsonLd, null, 2)}
   </script>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3838481724107524" crossorigin="anonymous"></script>
   <script src="/assets/app.js" defer></script>
 </head>
 <body class="${bodyClass}">
