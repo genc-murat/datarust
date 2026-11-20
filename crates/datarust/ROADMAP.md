@@ -160,7 +160,7 @@ document-classification stack.
 
 > *Theme: converge toward scikit-learn positional parity.*
 
-With the foundations in place, v0.9 fills out the algorithm catalog and adds
+With the foundations in place, v0.10 fills out the algorithm catalog and adds
 the data-loading ergonomics that make the library pleasant to adopt.
 
 **Deliverables:**

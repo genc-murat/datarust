@@ -2040,8 +2040,9 @@ and checkboxes):
 |---|---|---|
 | **v0.6** ✅ shipped | Core ML foundations | `Clusterer` trait + `KMeans`, multiclass `LogisticRegression` (softmax), ROC-AUC / PR-AUC, Cohen's kappa, Matthews corrcoef, silhouette score, `Params` trait |
 | **v0.7** ✅ shipped | Tree-based learning | `DecisionTreeClassifier` / `DecisionTreeRegressor` (CART, bit-exact sklearn parity), `RandomForestClassifier` / `RandomForestRegressor`, `feature_importances`, public `Rng` |
-| **v0.8** | Model selection & text | `GridSearchCV`, `CountVectorizer` / `TfidfVectorizer`, sparse-matrix arithmetic, `KNeighbors`, Naive Bayes |
-| **v0.9** | Depth & breadth | `GradientBoosting` / `AdaBoost`, `ExtraTrees` / `Bagging`, `SVC` (SMO), `DBSCAN`, `ElasticNet`, `NMF` |
+| **v0.8** | Model selection & ensemble completion | `GridSearchCV` / `RandomizedSearchCV`, `ExtraTrees` / `Bagging`, `KNeighbors`, `validation_curve` / `learning_curve` |
+| **v0.9** | Text & sparse | Sparse-matrix arithmetic, `CountVectorizer` / `TfidfVectorizer` / `HashingVectorizer`, Naive Bayes |
+| **v0.10** | Depth & breadth | `GradientBoosting` / `AdaBoost`, `SVC` (SMO), `DBSCAN`, `ElasticNet`, `NMF` |
 | **v1.0** | Stability | API freeze, legacy-API cleanup, `ARCHITECTURE.md` refresh, full public-API audit, SemVer commitment |
 
 **Explicitly out of scope:** GPU compute, distributed training, deep learning

@@ -21,24 +21,35 @@ This repository contains the official MCP server implementation in [`crates/data
 
 ### Running Locally (Stdio)
 
+Install the published crate and run the binary:
+
+```sh
+cargo install datarust-mcp
+datarust-mcp
+```
+
+Or run from a checkout:
+
 ```sh
 cargo run --release -p datarust-mcp
 ```
 
 ### Claude Desktop / Cursor Setup
 
-Add to your `claude_desktop_config.json`:
+Add to your `claude_desktop_config.json` (using the installed binary):
 
 ```json
 {
   "mcpServers": {
     "datarust": {
-      "command": "cargo",
-      "args": ["run", "--release", "--manifest-path", "/path/to/datarust/Cargo.toml", "-p", "datarust-mcp"]
+      "command": "datarust-mcp"
     }
   }
 }
 ```
+
+To run from a checkout instead, use `"command": "cargo"` with
+`"args": ["run", "--release", "--manifest-path", "/path/to/datarust/Cargo.toml", "-p", "datarust-mcp"]`.
 
 ### Available Tools
 - `profile_dataset`: Profiles CSV data, computing descriptive stats, distribution shapes, and quality checks.
