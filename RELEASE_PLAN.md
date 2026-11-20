@@ -1,7 +1,9 @@
 # Release Plan — next cycle (0.8 / 0.9)
 
 Status: v0.8 split approved by the user 2026-11-20; roadmaps renumbered the
-same day. Living document; update checkboxes as work lands.
+same day. M0 hygiene done and `datarust-mcp` 0.1.0 published to crates.io
+2026-11-20 (local tag `mcp-v0.1.0`; commits/tags not pushed). Living
+document; update checkboxes as work lands.
 Canonical algorithm roadmaps stay in `crates/datarust/ROADMAP.md` and
 `crates/datarust-profile/ROADMAP.md`; this file sequences the *releases*.
 
@@ -11,7 +13,7 @@ Canonical algorithm roadmaps stay in `crates/datarust/ROADMAP.md` and
 |---|---|---|---|
 | `datarust` | 0.7.0 (2026-09-14) | crates.io ✅ | **0.8.0** |
 | `datarust-profile` | 0.4.0 (2026-09-13) | crates.io ✅ | **0.5.0** |
-| `datarust-mcp` | 0.7.0 (unpublished placeholder) | crates.io ❌ (404) | **0.1.0** (first publish) |
+| `datarust-mcp` | 0.1.0 (2026-11-20) | crates.io ✅ | **0.2.0** (after 0.8.0) |
 
 Since the 0.7.0 release commit (`70fb8cc`), 20 commits landed — almost all
 site/agent-ecosystem work (live MCP HTTP/SSE worker, OpenAPI 3.1, A2A agent
@@ -19,14 +21,13 @@ card, Web Bot Auth, SEO, developer portal, AdSense). That work is already
 deployed and does **not** gate the crate releases. The only unreleased crate
 code is the new `datarust-mcp` crate itself plus clippy/doc fixes.
 
-Hygiene gaps found:
+Hygiene gaps found — **all resolved 2026-11-20 (M0)**:
 
-- **`v0.7.0` git tag is missing** (latest tag is `v0.6.5`). Backfill on
-  `70fb8cc` before tagging anything new.
-- `datarust-mcp` cannot be published as-is: both path dependencies lack
-  `version` keys, and the crate has no `LICENSE` or `CHANGELOG.md`.
-- `crates/datarust-profile/ROADMAP.md` header still says "Where we are today
-  (v0.3.0)" and the v0.5 section body says "v0.4 promotes" — both stale.
+- `v0.7.0` git tag backfilled on `70fb8cc` (local annotated tag; not pushed).
+- `datarust-mcp` publish blockers fixed: `version` keys on both path deps,
+  `LICENSE` + `CHANGELOG.md` added; dry-run verified, 0.1.0 published.
+- Profile ROADMAP header corrected to v0.4.0; "v0.4 promotes" → "v0.5
+  promotes".
 
 ## Key scope decision (approved 2026-11-20): split roadmap v0.8 into two releases
 
@@ -180,8 +181,9 @@ workspace `[patch.crates-io]` and dependency versions stay consistent.
 - [ ] Parity tests: PSI against hand-computed references; pandas/ydata
       reference values where applicable. Streaming-mode comparison is out of
       scope for 0.5.
-- [ ] Fix the stale roadmap header (v0.3.0 → v0.4.0) and the "v0.4 promotes"
-      sentence in the v0.5 section; check the v0.5 boxes as items land.
+- [x] Fix the stale roadmap header (v0.3.0 → v0.4.0) and the "v0.4 promotes"
+      sentence in the v0.5 section (done in M0, 2026-11-20); check the v0.5
+      boxes as items land.
 - [ ] Book `profile/` pages + `blog/medium-profile-v0.5.md`.
 
 Size: M.
@@ -193,7 +195,7 @@ Size: M.
 Unblock and ship this **before** 0.8.0 — it is independent, and the ecosystem
 visibility (Smithery listing, agent configs) already points at it.
 
-- [ ] Packaging fixes (publish blockers):
+- [x] Packaging fixes (publish blockers):
   - Add `version` keys to both path deps:
     `datarust = { path = "../datarust", version = "0.7", features = ["serde"] }`
     and `datarust-profile = { path = "../datarust-profile", version = "0.4", features = ["serde", "csv"] }`
@@ -201,11 +203,13 @@ visibility (Smithery listing, agent configs) already points at it.
   - Add `LICENSE` (MIT, same text as sibling crates) and `CHANGELOG.md`.
   - Verify `cargo publish --dry-run -p datarust-mcp` (the workspace
     `[patch.crates-io]` is ignored on publish).
-- [ ] Version decision: publish as **0.1.0** — the current 0.7.0 is an
-      unpublished placeholder; 0.1.0 signals a first release honestly.
-- [ ] README: `cargo install datarust-mcp` instructions alongside the
-      cargo-run setup; verify the Smithery listing resolves the published
-      crate.
+  - crates.io keywords must be <20 chars: `model-context-protocol` (22)
+    was rejected on first upload; replaced with `llm`.
+- [x] Version decision: published as **0.1.0** (2026-11-20) — the old 0.7.0
+      was an unpublished placeholder; 0.1.0 signals a first release honestly.
+- [x] README: `cargo install datarust-mcp` instructions alongside the
+      cargo-run setup.
+- [ ] Verify the Smithery listing resolves the published crate.
 - [ ] Follow-up (0.2.0, after 0.8.0): expose the new APIs as tools
       (`train_random_forest` / tree tools, `grid_search`), and keep tool
       parity with the live HTTP/SSE worker in `src/worker.js`.
@@ -234,8 +238,9 @@ Observed conventions from the 0.6.x / 0.7.0 releases:
 9. Site: `npm run build && npm run check`, deploy worker (`wrangler deploy`).
 10. Publish in dependency order: `datarust` → `datarust-profile` →
     `datarust-mcp`; dry-run each first.
-11. Tag `vX.Y.Z` (backfill the missing `v0.7.0` tag on `70fb8cc` first) and
-    push tags; verify crates.io + docs.rs renders.
+11. Tag `vX.Y.Z` for core releases (`v0.7.0` backfilled on `70fb8cc`
+    2026-11-20); crate-prefixed tags for side crates (`mcp-v0.1.0`). Push
+    tags; verify crates.io + docs.rs renders.
 
 ## Risks
 
@@ -255,6 +260,6 @@ Observed conventions from the 0.6.x / 0.7.0 releases:
 
 ## Suggested order of work
 
-M0 hygiene (tag backfill, roadmap header fixes, MCP packaging) → Track D
-publish → M1 → M2 → M3 → **0.8.0 cut** → Track C in parallel anywhere after
-M0 → **profile 0.5.0 cut** → M4 → M5 → M6 → **0.9.0 cut** → MCP 0.2.0 tools.
+~~M0 hygiene~~ ✅ → ~~Track D publish~~ ✅ (`datarust-mcp` 0.1.0, 2026-11-20)
+→ **M1 (next)** → M2 → M3 → **0.8.0 cut** → Track C in parallel →
+**profile 0.5.0 cut** → M4 → M5 → M6 → **0.9.0 cut** → MCP 0.2.0 tools.
