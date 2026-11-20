@@ -20,6 +20,7 @@
 - [Trees](./guide/trees.md)
 - [Ensembles](./guide/ensembles.md)
 - [Clustering](./guide/cluster.md)
+- [Nearest Neighbors](./guide/neighbors.md)
 - [Metrics](./guide/metrics.md)
 - [Model Selection](./guide/model-selection.md)
 - [Compose: Pipeline & ColumnTransformer](./guide/compose.md)

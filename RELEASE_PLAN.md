@@ -110,12 +110,16 @@ design spike before writing search code).
 
 ### M3 — Neighbors
 
-- [ ] `src/neighbors/`: `KNeighborsClassifier` / `KNeighborsRegressor`,
+- [x] `src/neighbors/`: `KNeighborsClassifier` / `KNeighborsRegressor`,
       brute-force first, reusing the distance infrastructure behind
-      `KnnImputer`. `weights = uniform | distance`, sklearn tie-breaking.
-      Ball/KD-tree acceleration is explicitly post-0.8.
-- [ ] Parity fixtures (iris / diabetes, tie-heavy cases), proptest
-      invariants, book `guide/neighbors.md` + SUMMARY entry.
+      `KnnImputer` (shared `KnnWeights`). `weights = uniform | distance`,
+      sklearn tie-breaking incl. the winner-takes-all zero-distance rule
+      (`_get_weights`) and smallest-class vote ties. Ball/KD-tree
+      acceleration is explicitly post-0.8.
+- [x] Parity fixtures (iris / diabetes, tie-heavy cases: equidistant corner
+      ties, two coincident zero-distance winners), proptest invariants
+      (k=1 memorization, proba rows sum to 1, predictions within target
+      range, determinism), book `guide/neighbors.md` + SUMMARY entry.
 
 Size: S–M.
 

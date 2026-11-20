@@ -132,7 +132,7 @@ release (v0.9). v0.8 also lands the two ensembles carried over from v0.7.
       (`get_params` / `set_params`) from v0.6 and the existing `cross_val_score`
       loop. Must support pipeline parameter addressing (`step__param` naming).
 - [x] `validation_curve` and `learning_curve` diagnostics.
-- [ ] `src/neighbors/` module: `KNeighborsClassifier`, `KNeighborsRegressor`
+- [x] `src/neighbors/` module: `KNeighborsClassifier`, `KNeighborsRegressor`
       (reuses the distance infrastructure already present in `KnnImputer`).
 
 ### v0.9 — Text & sparse

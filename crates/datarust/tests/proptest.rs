@@ -444,4 +444,112 @@ proptest! {
         // A proper binary tree always has leaves = internal nodes + 1.
         prop_assert_eq!(tree.n_leaves() * 2 - 1, tree.n_nodes());
     }
+
+    #[test]
+    fn knn_classifier_k1_memorizes_training_labels(data in arb_matrix()) {
+        use datarust::neighbors::KNeighborsClassifier;
+        use datarust::traits::Predictor;
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        // Label derived from row content, so duplicate rows carry the same
+        // label and k=1 memorization holds even on collapsed points.
+        let y: Vec<f64> = data
+            .iter()
+            .map(|r| (r.iter().sum::<f64>() > 0.0) as i32 as f64)
+            .collect();
+        let mut clf = KNeighborsClassifier::new().with_n_neighbors(1);
+        clf.fit(&x, &y).unwrap();
+        let pred = clf.predict(&x).unwrap();
+        prop_assert_eq!(pred, y);
+    }
+
+    #[test]
+    fn knn_classifier_proba_rows_sum_to_one(data in arb_matrix(), use_distance in prop::bool::ANY) {
+        use datarust::imputer::KnnWeights;
+        use datarust::neighbors::KNeighborsClassifier;
+        use datarust::traits::{PredictProba, Predictor};
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        let y: Vec<f64> = data
+            .iter()
+            .map(|r| (r.iter().sum::<f64>() > 0.0) as i32 as f64)
+            .collect();
+        let weights = if use_distance {
+            KnnWeights::Distance
+        } else {
+            KnnWeights::Uniform
+        };
+        let mut clf = KNeighborsClassifier::new()
+            .with_n_neighbors(3.min(x.nrows()))
+            .with_weights(weights);
+        clf.fit(&x, &y).unwrap();
+        let proba = clf.predict_proba(&x).unwrap();
+        for i in 0..proba.nrows() {
+            let total: f64 = (0..proba.ncols()).map(|c| proba.get(i, c)).sum();
+            prop_assert!((total - 1.0).abs() < 1e-9, "row {i} sums to {total}");
+        }
+    }
+
+    #[test]
+    fn knn_regressor_prediction_within_target_range(
+        data in arb_matrix(),
+        use_distance in prop::bool::ANY,
+    ) {
+        use datarust::imputer::KnnWeights;
+        use datarust::neighbors::KNeighborsRegressor;
+        use datarust::traits::Predictor;
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        let y: Vec<f64> = data.iter().map(|r| r[0] * 10.0 + r[1]).collect();
+        let lo = y.iter().cloned().fold(f64::INFINITY, f64::min);
+        let hi = y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let weights = if use_distance {
+            KnnWeights::Distance
+        } else {
+            KnnWeights::Uniform
+        };
+        let mut reg = KNeighborsRegressor::new()
+            .with_n_neighbors(3.min(x.nrows()))
+            .with_weights(weights);
+        reg.fit(&x, &y).unwrap();
+        let pred = reg.predict(&x).unwrap();
+        for (i, p) in pred.iter().enumerate() {
+            prop_assert!(
+                *p >= lo - 1e-9 && *p <= hi + 1e-9,
+                "pred[{i}] {p} outside [{lo}, {hi}]"
+            );
+        }
+    }
+
+    #[test]
+    fn knn_predictions_are_deterministic(data in arb_matrix(), use_distance in prop::bool::ANY) {
+        use datarust::imputer::KnnWeights;
+        use datarust::neighbors::{KNeighborsClassifier, KNeighborsRegressor};
+        use datarust::traits::Predictor;
+        use datarust::Matrix;
+        let x = Matrix::new(data.clone()).unwrap();
+        let y: Vec<f64> = data
+            .iter()
+            .map(|r| (r.iter().sum::<f64>() > 0.0) as i32 as f64)
+            .collect();
+        let weights = if use_distance {
+            KnnWeights::Distance
+        } else {
+            KnnWeights::Uniform
+        };
+        let k = 3.min(x.nrows());
+
+        let mut a = KNeighborsClassifier::new().with_n_neighbors(k).with_weights(weights);
+        a.fit(&x, &y).unwrap();
+        let mut b = KNeighborsClassifier::new().with_n_neighbors(k).with_weights(weights);
+        b.fit(&x, &y).unwrap();
+        prop_assert_eq!(a.predict(&x).unwrap(), b.predict(&x).unwrap());
+
+        let yr: Vec<f64> = data.iter().map(|r| r[0] * 10.0 + r[1]).collect();
+        let mut ra = KNeighborsRegressor::new().with_n_neighbors(k).with_weights(weights);
+        ra.fit(&x, &yr).unwrap();
+        let mut rb = KNeighborsRegressor::new().with_n_neighbors(k).with_weights(weights);
+        rb.fit(&x, &yr).unwrap();
+        prop_assert_eq!(ra.predict(&x).unwrap(), rb.predict(&x).unwrap());
+    }
 }

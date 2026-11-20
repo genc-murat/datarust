@@ -84,6 +84,8 @@ pub mod matrix;
 pub mod metrics;
 /// Model selection: train_test_split, KFold, cross_val_score.
 pub mod model_selection;
+/// k-Nearest-Neighbor estimators (brute-force Euclidean).
+pub mod neighbors;
 /// Sequential transformer pipelines.
 pub mod pipeline;
 /// Generate polynomial feature combinations.
@@ -122,6 +124,7 @@ pub use model_selection::{
     GridSearchCV, KFold, ParamDistribution, ParamGrid, ParamSpace, RandomizedSearchCV,
     StratifiedKFold, TrainTestSplit,
 };
+pub use neighbors::{KNeighborsClassifier, KNeighborsRegressor};
 pub use pipeline::{Pipeline, SupervisedPipeline};
 pub use rng::Rng;
 pub use target_kind::TargetTransformerKind;

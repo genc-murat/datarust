@@ -193,3 +193,48 @@ fn column_transformer_params_round_trip() {
     assert!(ct.set_params("nope__with_mean", PV::Bool(true)).is_err());
     assert!(ct.set_params("remainder", PV::Int(2)).is_err());
 }
+
+#[test]
+fn grid_search_tunes_knn_neighbors_and_weights() {
+    use datarust::metrics::classification::accuracy_score;
+    use datarust::neighbors::KNeighborsClassifier;
+    use datarust::traits::{Classifier, Params};
+
+    // Two separable clusters with a noisy borderline pair; larger k wins on
+    // this noiseless data.
+    let rows: Vec<Vec<f64>> = (0..24)
+        .map(|i| {
+            let i = i as f64;
+            vec![i, (i / 3.0).sin()]
+        })
+        .collect();
+    let y: Vec<f64> = rows.iter().map(|r| (r[0] > 11.0) as i32 as f64).collect();
+    let x = Matrix::new(rows).unwrap();
+
+    let mut gs = GridSearchCV::new(
+        KNeighborsClassifier::new(),
+        vec![
+            ("n_neighbors", vec![PV::Int(1), PV::Int(3), PV::Int(5)]),
+            ("weights", vec![PV::Int(0), PV::Int(1)]), // Uniform / Distance
+        ],
+        accuracy_score,
+    )
+    .with_cv(KFold::new().with_n_splits(3));
+    gs.fit(&x, &y).unwrap();
+
+    assert_eq!(gs.cv_results().unwrap().params.len(), 6);
+    assert!(gs.best_score().unwrap() > 0.9);
+
+    // Round-trip through set_params mirrors the search's own addressing.
+    let mut knn = KNeighborsClassifier::new();
+    knn.set_params("n_neighbors", PV::Int(3)).unwrap();
+    knn.set_params("weights", PV::Int(1)).unwrap();
+    let weights = knn
+        .get_params()
+        .into_iter()
+        .find(|(n, _)| *n == "weights")
+        .map(|(_, v)| v);
+    assert_eq!(weights, Some(PV::Int(1)));
+    knn.fit(&x, &y).unwrap();
+    assert!(knn.score(&x, &y).unwrap() > 0.9);
+}
