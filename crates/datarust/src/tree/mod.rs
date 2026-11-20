@@ -244,15 +244,24 @@ impl TreeOptions {
     }
 
     /// Shared `Params` entries.
-    fn shared_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn shared_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         vec![
-            ("min_samples_split", ParamValue::Int(self.min_samples_split)),
-            ("min_samples_leaf", ParamValue::Int(self.min_samples_leaf)),
             (
-                "min_impurity_decrease",
+                "min_samples_split".into(),
+                ParamValue::Int(self.min_samples_split),
+            ),
+            (
+                "min_samples_leaf".into(),
+                ParamValue::Int(self.min_samples_leaf),
+            ),
+            (
+                "min_impurity_decrease".into(),
                 ParamValue::Float(self.min_impurity_decrease),
             ),
-            ("random_state", ParamValue::Int(self.random_state as usize)),
+            (
+                "random_state".into(),
+                ParamValue::Int(self.random_state as usize),
+            ),
         ]
     }
 }

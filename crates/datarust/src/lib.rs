@@ -118,7 +118,9 @@ pub use linear_model::{
 };
 pub use matrix::{Matrix, SparseMatrix, StrMatrix};
 pub use model_selection::{
-    cross_val_score, train_test_split, KFold, StratifiedKFold, TrainTestSplit,
+    cross_val_score, learning_curve, train_test_split, validation_curve, CrossValidator,
+    GridSearchCV, KFold, ParamDistribution, ParamGrid, ParamSpace, RandomizedSearchCV,
+    StratifiedKFold, TrainTestSplit,
 };
 pub use pipeline::{Pipeline, SupervisedPipeline};
 pub use rng::Rng;

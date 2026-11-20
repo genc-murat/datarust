@@ -1,6 +1,8 @@
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
-use crate::traits::{Classifier, Estimator, FeatureNames, PredictProba, Predictor, Regressor};
+use crate::traits::{
+    Classifier, Estimator, FeatureNames, ParamValue, Params, PredictProba, Predictor, Regressor,
+};
 use crate::transformer_kind::TransformerKind;
 use crate::Transformer;
 
@@ -224,6 +226,42 @@ impl Default for Pipeline {
     }
 }
 
+impl Params for Pipeline {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        let mut params: Vec<(std::borrow::Cow<'static, str>, ParamValue)> = Vec::new();
+        for (step_name, step) in &self.steps {
+            for (param_name, value) in step.get_params() {
+                params.push((
+                    std::borrow::Cow::Owned(format!("{}__{}", step_name, param_name)),
+                    value,
+                ));
+            }
+        }
+        params
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        if let Some(pos) = name.find("__") {
+            let step_name = &name[..pos];
+            let param_name = &name[pos + 2..];
+            let step = self
+                .steps
+                .iter_mut()
+                .find(|(n, _)| n == step_name)
+                .map(|(_, t)| t)
+                .ok_or_else(|| {
+                    DatarustError::InvalidInput(format!("unknown step '{}' in Pipeline", step_name))
+                })?;
+            step.set_params(param_name, value)
+        } else {
+            Err(DatarustError::InvalidInput(format!(
+                "unknown parameter '{}' for Pipeline. Use 'step__param' syntax.",
+                name
+            )))
+        }
+    }
+}
+
 impl Transformer for Pipeline {
     fn name(&self) -> &'static str {
         "Pipeline"
@@ -297,6 +335,26 @@ pub struct SupervisedPipeline<E> {
     transformers: Pipeline,
     estimator: E,
     fitted: bool,
+}
+impl<E: Params> Params for SupervisedPipeline<E> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        let mut params = self.transformers.get_params();
+        for (param_name, value) in self.estimator.get_params() {
+            params.push((
+                std::borrow::Cow::Owned(format!("estimator__{}", param_name)),
+                value,
+            ));
+        }
+        params
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        if let Some(param) = name.strip_prefix("estimator__") {
+            self.estimator.set_params(param, value)
+        } else {
+            self.transformers.set_params(name, value)
+        }
+    }
 }
 
 impl<E> SupervisedPipeline<E> {

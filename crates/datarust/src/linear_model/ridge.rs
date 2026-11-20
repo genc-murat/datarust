@@ -13,7 +13,7 @@ use crate::error::{DatarustError, Result};
 use crate::linalg::cholesky;
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::{Estimator, Predictor, Regressor};
+use crate::traits::{Estimator, ParamValue, Params, Predictor, Regressor};
 
 /// Solver strategy for [`Ridge`].
 ///
@@ -62,6 +62,55 @@ pub struct Ridge {
     intercept_: f64,
     n_features_in_: usize,
     fitted: bool,
+}
+impl Params for Ridge {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        vec![
+            ("alpha".into(), ParamValue::Float(self.alpha)),
+            ("fit_intercept".into(), ParamValue::Bool(self.fit_intercept)),
+            (
+                "solver".into(),
+                ParamValue::Int(match self.solver {
+                    crate::linear_model::RidgeSolver::Cholesky => 0,
+                    crate::linear_model::RidgeSolver::Svd => 1,
+                }),
+            ),
+        ]
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        match (name, value) {
+            ("alpha", ParamValue::Float(a)) if a >= 0.0 => {
+                self.alpha = a;
+                self.fitted = false;
+                Ok(())
+            }
+            ("alpha", ParamValue::Float(_)) => Err(DatarustError::InvalidInput(
+                "alpha must be non-negative".into(),
+            )),
+            ("fit_intercept", ParamValue::Bool(b)) => {
+                self.fit_intercept = b;
+                self.fitted = false;
+                Ok(())
+            }
+            ("solver", ParamValue::Int(0)) => {
+                self.solver = crate::linear_model::RidgeSolver::Cholesky;
+                self.fitted = false;
+                Ok(())
+            }
+            ("solver", ParamValue::Int(1)) => {
+                self.solver = crate::linear_model::RidgeSolver::Svd;
+                self.fitted = false;
+                Ok(())
+            }
+            ("solver", _) => Err(DatarustError::InvalidInput(
+                "solver expects Int(0)=Cholesky or Int(1)=Svd".into(),
+            )),
+            _ => Err(DatarustError::InvalidInput(format!(
+                "unknown parameter '{name}' for Ridge"
+            ))),
+        }
+    }
 }
 
 impl Default for Ridge {

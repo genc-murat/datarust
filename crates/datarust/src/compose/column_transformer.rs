@@ -3,7 +3,10 @@ use crate::encoder::OneHotEncoder;
 use crate::error::{DatarustError, Result};
 use crate::matrix::{Matrix, StrMatrix};
 use crate::target_kind::TargetTransformerKind;
-use crate::traits::{default_input_names, CategoricalTransformer, FeatureNames, TargetTransformer};
+use crate::traits::{
+    default_input_names, CategoricalTransformer, FeatureNames, ParamValue, Params,
+    TargetTransformer,
+};
 use crate::transformer_kind::TransformerKind;
 use crate::Transformer;
 
@@ -651,6 +654,75 @@ impl ColumnTransformer {
 impl Default for ColumnTransformer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Params for ColumnTransformer {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        let mut params: Vec<(std::borrow::Cow<'static, str>, ParamValue)> = Vec::new();
+        params.push((
+            "remainder".into(),
+            ParamValue::Int(match self.remainder {
+                Remainder::Drop => 0,
+                Remainder::Passthrough => 1,
+            }),
+        ));
+        for spec in &self.specs {
+            let (name, tk) = match spec {
+                ColumnSpec::Numeric {
+                    name, transformer, ..
+                } => (name, transformer),
+                _ => continue,
+            };
+            for (param_name, value) in tk.get_params() {
+                params.push((
+                    std::borrow::Cow::Owned(format!("{}__{}", name, param_name)),
+                    value,
+                ));
+            }
+        }
+        params
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        if let Some(pos) = name.find("__") {
+            let step_name = &name[..pos];
+            let param_name = &name[pos + 2..];
+            for spec in self.specs.iter_mut() {
+                if let ColumnSpec::Numeric {
+                    name, transformer, ..
+                } = spec
+                {
+                    if name == step_name {
+                        return transformer.set_params(param_name, value);
+                    }
+                }
+            }
+            Err(DatarustError::InvalidInput(format!(
+                "unknown step '{}' in ColumnTransformer",
+                step_name
+            )))
+        } else {
+            match name {
+                "remainder" => match value {
+                    ParamValue::Int(0) => {
+                        self.remainder = Remainder::Drop;
+                        Ok(())
+                    }
+                    ParamValue::Int(1) => {
+                        self.remainder = Remainder::Passthrough;
+                        Ok(())
+                    }
+                    _ => Err(DatarustError::InvalidInput(
+                        "remainder expects Int(0)=Drop or Int(1)=Passthrough".into(),
+                    )),
+                },
+                _ => Err(DatarustError::InvalidInput(format!(
+                    "unknown parameter '{}' for ColumnTransformer",
+                    name
+                ))),
+            }
+        }
     }
 }
 

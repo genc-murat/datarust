@@ -40,7 +40,11 @@ pub enum ParamValue {
 /// hyperparameters should be searchable.
 pub trait Params {
     /// Returns the current hyperparameters as `(name, value)` pairs.
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)>;
+    ///
+    /// Leaf estimators use statically known names (`Cow::Borrowed`); composites
+    /// such as [`Pipeline`](crate::Pipeline) compose nested `step__param` names
+    /// (`Cow::Owned`).
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)>;
 
     /// Applies a named hyperparameter. Returns an error if `name` is unknown or
     /// `value` is the wrong type for that parameter.

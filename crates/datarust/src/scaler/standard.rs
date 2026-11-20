@@ -1,7 +1,7 @@
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::{default_input_names, FeatureNames};
+use crate::traits::{default_input_names, FeatureNames, ParamValue, Params};
 use crate::Transformer;
 
 /// Standardize features by removing the mean and scaling to unit variance.
@@ -21,6 +21,33 @@ pub struct StandardScaler {
     mean: Vec<f64>,
     std: Vec<f64>,
     fitted: bool,
+}
+
+impl Params for StandardScaler {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        vec![
+            ("with_mean".into(), ParamValue::Bool(self.with_mean)),
+            ("with_std".into(), ParamValue::Bool(self.with_std)),
+        ]
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        match (name, value) {
+            ("with_mean", ParamValue::Bool(b)) => {
+                self.with_mean = b;
+                self.fitted = false;
+                Ok(())
+            }
+            ("with_std", ParamValue::Bool(b)) => {
+                self.with_std = b;
+                self.fitted = false;
+                Ok(())
+            }
+            _ => Err(DatarustError::InvalidInput(format!(
+                "unknown parameter '{name}' for StandardScaler"
+            ))),
+        }
+    }
 }
 
 impl StandardScaler {

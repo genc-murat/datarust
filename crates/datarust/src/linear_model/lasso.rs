@@ -15,7 +15,7 @@
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::{Estimator, Predictor, Regressor};
+use crate::traits::{Estimator, ParamValue, Params, Predictor, Regressor};
 
 /// Lasso regression with L1 regularization, solved via coordinate descent.
 ///
@@ -51,6 +51,53 @@ pub struct Lasso {
     n_features_in_: usize,
     n_iter_: usize,
     fitted: bool,
+}
+impl Params for Lasso {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        vec![
+            ("alpha".into(), ParamValue::Float(self.alpha)),
+            ("fit_intercept".into(), ParamValue::Bool(self.fit_intercept)),
+            ("max_iter".into(), ParamValue::Int(self.max_iter)),
+            ("tol".into(), ParamValue::Float(self.tol)),
+        ]
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        match (name, value) {
+            ("alpha", ParamValue::Float(a)) if a >= 0.0 => {
+                self.alpha = a;
+                self.fitted = false;
+                Ok(())
+            }
+            ("alpha", ParamValue::Float(_)) => Err(DatarustError::InvalidInput(
+                "alpha must be non-negative".into(),
+            )),
+            ("fit_intercept", ParamValue::Bool(b)) => {
+                self.fit_intercept = b;
+                self.fitted = false;
+                Ok(())
+            }
+            ("max_iter", ParamValue::Int(n)) if n >= 1 => {
+                self.max_iter = n;
+                self.fitted = false;
+                Ok(())
+            }
+            ("max_iter", ParamValue::Int(_)) => {
+                Err(DatarustError::InvalidInput("max_iter must be >= 1".into()))
+            }
+            ("tol", ParamValue::Float(t)) if t > 0.0 => {
+                self.tol = t;
+                self.fitted = false;
+                Ok(())
+            }
+            ("tol", ParamValue::Float(_)) => {
+                Err(DatarustError::InvalidInput("tol must be positive".into()))
+            }
+            _ => Err(DatarustError::InvalidInput(format!(
+                "unknown parameter '{name}' for Lasso"
+            ))),
+        }
+    }
 }
 
 impl Default for Lasso {

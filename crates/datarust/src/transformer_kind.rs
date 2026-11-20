@@ -15,6 +15,7 @@ use crate::scaler::{
 };
 use crate::selection::{SelectKBest, VarianceThreshold};
 use crate::traits::FeatureNames;
+use crate::traits::{ParamValue, Params};
 use crate::Transformer;
 
 /// Concrete transformer variant, used to serialize / deserialize pipeline
@@ -225,6 +226,29 @@ impl FeatureNames for TransformerKind {
             Self::KnnImputer(t) => t.feature_names_out(input_features),
             Self::SelectKBest(t) => t.feature_names_out(input_features),
             Self::FunctionTransformer(t) => t.feature_names_out(input_features),
+        }
+    }
+}
+
+impl Params for TransformerKind {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        match self {
+            Self::StandardScaler(t) => t.get_params(),
+            Self::MinMaxScaler(t) => t.get_params(),
+            Self::RobustScaler(t) => t.get_params(),
+            _ => vec![],
+        }
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        match self {
+            Self::StandardScaler(t) => t.set_params(name, value),
+            Self::MinMaxScaler(t) => t.set_params(name, value),
+            Self::RobustScaler(t) => t.set_params(name, value),
+            _ => Err(DatarustError::InvalidInput(format!(
+                "{} does not implement Params",
+                self.tag()
+            ))),
         }
     }
 }

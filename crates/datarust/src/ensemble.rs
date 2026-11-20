@@ -239,22 +239,34 @@ impl ForestOptions {
         }
     }
 
-    fn params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         vec![
-            ("n_estimators", ParamValue::Int(self.n_estimators)),
-            ("max_depth", ParamValue::Int(self.max_depth.unwrap_or(0))),
-            ("min_samples_split", ParamValue::Int(self.min_samples_split)),
-            ("min_samples_leaf", ParamValue::Int(self.min_samples_leaf)),
+            ("n_estimators".into(), ParamValue::Int(self.n_estimators)),
             (
-                "min_impurity_decrease",
+                "max_depth".into(),
+                ParamValue::Int(self.max_depth.unwrap_or(0)),
+            ),
+            (
+                "min_samples_split".into(),
+                ParamValue::Int(self.min_samples_split),
+            ),
+            (
+                "min_samples_leaf".into(),
+                ParamValue::Int(self.min_samples_leaf),
+            ),
+            (
+                "min_impurity_decrease".into(),
                 ParamValue::Float(self.min_impurity_decrease),
             ),
             (
-                "max_features",
+                "max_features".into(),
                 ParamValue::Int(max_features_code(self.max_features)),
             ),
-            ("bootstrap", ParamValue::Bool(self.bootstrap)),
-            ("random_state", ParamValue::Int(self.random_state as usize)),
+            ("bootstrap".into(), ParamValue::Bool(self.bootstrap)),
+            (
+                "random_state".into(),
+                ParamValue::Int(self.random_state as usize),
+            ),
         ]
     }
 }
@@ -630,10 +642,10 @@ impl PredictProba for RandomForestClassifier {
 }
 
 impl Params for RandomForestClassifier {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         let mut params = self.options.params();
         params.push((
-            "criterion",
+            "criterion".into(),
             ParamValue::Int(match self.criterion {
                 Criterion::Gini => 0,
                 Criterion::Entropy => 1,
@@ -880,7 +892,7 @@ impl Regressor for RandomForestRegressor {
 }
 
 impl Params for RandomForestRegressor {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         self.options.params()
     }
 
@@ -1075,7 +1087,7 @@ impl PredictProba for ExtraTreesClassifier {
 }
 
 impl Params for ExtraTreesClassifier {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         self.inner.get_params()
     }
 
@@ -1232,7 +1244,7 @@ impl Regressor for ExtraTreesRegressor {
 }
 
 impl Params for ExtraTreesRegressor {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         self.inner.get_params()
     }
 
@@ -1588,17 +1600,20 @@ impl PredictProba for BaggingClassifier {
 }
 
 impl Params for BaggingClassifier {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         let mut params = self.base.get_params();
-        params.push(("n_estimators", ParamValue::Int(self.n_estimators)));
-        params.push(("max_samples", self.max_samples.to_param_value()));
-        params.push(("max_features", self.max_features.to_param_value()));
-        params.push(("bootstrap", ParamValue::Bool(self.bootstrap)));
+        params.push(("n_estimators".into(), ParamValue::Int(self.n_estimators)));
+        params.push(("max_samples".into(), self.max_samples.to_param_value()));
+        params.push(("max_features".into(), self.max_features.to_param_value()));
+        params.push(("bootstrap".into(), ParamValue::Bool(self.bootstrap)));
         params.push((
-            "bootstrap_features",
+            "bootstrap_features".into(),
             ParamValue::Bool(self.bootstrap_features),
         ));
-        params.push(("random_state", ParamValue::Int(self.random_state as usize)));
+        params.push((
+            "random_state".into(),
+            ParamValue::Int(self.random_state as usize),
+        ));
         params
     }
 
@@ -1875,17 +1890,20 @@ impl Regressor for BaggingRegressor {
 }
 
 impl Params for BaggingRegressor {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         let mut params = self.base.get_params();
-        params.push(("n_estimators", ParamValue::Int(self.n_estimators)));
-        params.push(("max_samples", self.max_samples.to_param_value()));
-        params.push(("max_features", self.max_features.to_param_value()));
-        params.push(("bootstrap", ParamValue::Bool(self.bootstrap)));
+        params.push(("n_estimators".into(), ParamValue::Int(self.n_estimators)));
+        params.push(("max_samples".into(), self.max_samples.to_param_value()));
+        params.push(("max_features".into(), self.max_features.to_param_value()));
+        params.push(("bootstrap".into(), ParamValue::Bool(self.bootstrap)));
         params.push((
-            "bootstrap_features",
+            "bootstrap_features".into(),
             ParamValue::Bool(self.bootstrap_features),
         ));
-        params.push(("random_state", ParamValue::Int(self.random_state as usize)));
+        params.push((
+            "random_state".into(),
+            ParamValue::Int(self.random_state as usize),
+        ));
         params
     }
 

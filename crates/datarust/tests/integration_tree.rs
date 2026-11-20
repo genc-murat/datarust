@@ -385,7 +385,7 @@ fn params_round_trip_and_unknown_param() {
     // Round-trip through set_params.
     let mut clone = DecisionTreeClassifier::new();
     for (k, v) in params {
-        clone.set_params(k, v).unwrap();
+        clone.set_params(&k, v).unwrap();
     }
     let mut x = Vec::new();
     let mut y = Vec::new();
@@ -423,7 +423,7 @@ fn regressor_params_preserve_max_features() {
 
     let mut restored = DecisionTreeRegressor::new();
     for (name, value) in params {
-        restored.set_params(name, value).unwrap();
+        restored.set_params(&name, value).unwrap();
     }
 
     let x = Matrix::new(vec![
@@ -471,7 +471,7 @@ fn classifier_rejects_regression_criterion_at_fit() {
     let params = clf.get_params();
     let mut restored = DecisionTreeClassifier::new();
     for (name, value) in params {
-        restored.set_params(name, value).unwrap();
+        restored.set_params(&name, value).unwrap();
     }
     let err = restored.fit(&x, &y).unwrap_err();
     assert!(matches!(err, DatarustError::InvalidInput(_)), "got {err:?}");

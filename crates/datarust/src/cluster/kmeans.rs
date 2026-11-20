@@ -404,12 +404,12 @@ impl KMeans {
 }
 
 impl Params for KMeans {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         vec![
-            ("n_clusters", ParamValue::Int(self.n_clusters)),
-            ("max_iter", ParamValue::Int(self.max_iter)),
-            ("tol", ParamValue::Float(self.tol)),
-            ("n_init", ParamValue::Int(self.n_init)),
+            ("n_clusters".into(), ParamValue::Int(self.n_clusters)),
+            ("max_iter".into(), ParamValue::Int(self.max_iter)),
+            ("tol".into(), ParamValue::Float(self.tol)),
+            ("n_init".into(), ParamValue::Int(self.n_init)),
         ]
     }
 
@@ -697,10 +697,10 @@ mod tests {
         assert_eq!(
             model.get_params(),
             vec![
-                ("n_clusters", ParamValue::Int(8)),
-                ("max_iter", ParamValue::Int(300)),
-                ("tol", ParamValue::Float(1e-4)),
-                ("n_init", ParamValue::Int(10)),
+                ("n_clusters".into(), ParamValue::Int(8)),
+                ("max_iter".into(), ParamValue::Int(300)),
+                ("tol".into(), ParamValue::Float(1e-4)),
+                ("n_init".into(), ParamValue::Int(10)),
             ]
         );
     }

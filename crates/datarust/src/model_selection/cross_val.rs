@@ -2,10 +2,10 @@
 
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
-use crate::model_selection::kfold::KFold;
+use crate::model_selection::cross_validator::CrossValidator;
 use crate::traits::Predictor;
 
-/// Evaluate an estimator by K-fold cross-validation.
+/// Evaluate an estimator by cross-validation.
 ///
 /// For each fold the estimator is cloned, fit on the training split, and scored
 /// on the test split using the provided `scorer` function. Returns one score
@@ -15,6 +15,8 @@ use crate::traits::Predictor;
 /// [`r2_score`](crate::metrics::regression::r2_score) for regression or
 /// [`accuracy_score`](crate::metrics::classification::accuracy_score) for
 /// classification. The estimator must implement [`Predictor`] and [`Clone`].
+/// The cross-validator implements [`CrossValidator`] (see [`KFold`] and
+/// [`StratifiedKFold`]).
 ///
 /// ```rust
 /// use datarust::linear_model::LinearRegression;
@@ -32,15 +34,16 @@ use crate::traits::Predictor;
 /// assert_eq!(scores.len(), 3);
 /// # Ok::<_, Box<dyn std::error::Error>>(())
 /// ```
-pub fn cross_val_score<T, F>(
+pub fn cross_val_score<T, S, F>(
     estimator: &T,
     x: &Matrix,
     y: &[f64],
-    cv: &KFold,
+    cv: &S,
     scorer: F,
 ) -> Result<Vec<f64>>
 where
     T: Predictor + Clone,
+    S: CrossValidator + ?Sized,
     F: Fn(&[f64], &[f64]) -> Result<f64>,
 {
     let n = x.nrows();
@@ -51,7 +54,7 @@ where
         });
     }
     let mut scores = Vec::new();
-    for (train_idx, test_idx) in cv.split(n)? {
+    for (train_idx, test_idx) in cv.split(x, y)? {
         let x_train = x.select_rows(&train_idx)?;
         let x_test = x.select_rows(&test_idx)?;
         let y_train: Vec<f64> = train_idx.iter().map(|&i| y[i]).collect();
@@ -71,6 +74,7 @@ mod tests {
     use crate::linear_model::{LinearRegression, LogisticRegression};
     use crate::metrics::classification::accuracy_score;
     use crate::metrics::regression::r2_score;
+    use crate::model_selection::kfold::KFold;
 
     fn regression_data(n: usize) -> (Matrix, Vec<f64>) {
         let rows: Vec<Vec<f64>> = (0..n)

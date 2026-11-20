@@ -1,7 +1,7 @@
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::{default_input_names, FeatureNames};
+use crate::traits::{default_input_names, FeatureNames, ParamValue, Params};
 use crate::Transformer;
 
 /// Scale features to a given range, mirroring `sklearn.preprocessing.MinMaxScaler`.
@@ -29,6 +29,48 @@ pub struct MinMaxScaler {
     fitted: bool,
 }
 
+impl Params for MinMaxScaler {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        vec![
+            (
+                "feature_range_lo".into(),
+                ParamValue::Float(self.feature_range.0),
+            ),
+            (
+                "feature_range_hi".into(),
+                ParamValue::Float(self.feature_range.1),
+            ),
+        ]
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        match (name, value) {
+            ("feature_range_lo", ParamValue::Float(lo)) => {
+                if lo.is_finite() {
+                    self.feature_range.0 = lo;
+                    Ok(())
+                } else {
+                    Err(DatarustError::InvalidInput(
+                        "feature_range_lo must be finite".into(),
+                    ))
+                }
+            }
+            ("feature_range_hi", ParamValue::Float(hi)) => {
+                if hi.is_finite() {
+                    self.feature_range.1 = hi;
+                    Ok(())
+                } else {
+                    Err(DatarustError::InvalidInput(
+                        "feature_range_hi must be finite".into(),
+                    ))
+                }
+            }
+            _ => Err(DatarustError::InvalidInput(format!(
+                "unknown parameter '{name}' for MinMaxScaler"
+            ))),
+        }
+    }
+}
 impl MinMaxScaler {
     /// Creates a new scaler with the default `[0, 1]` range.
     pub fn new() -> Self {

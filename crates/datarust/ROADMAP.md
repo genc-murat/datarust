@@ -126,12 +126,12 @@ release (v0.9). v0.8 also lands the two ensembles carried over from v0.7.
       (random splits; carried over from v0.7).
 - [x] `src/ensemble.rs`: `Bagging` meta-estimator (works with any
       `Predictor`; carried over from v0.7).
-- [ ] `Params` for `Pipeline` / `ColumnTransformer` with nested
+- [x] `Params` for `Pipeline` / `ColumnTransformer` with nested
       `step__param` addressing — prerequisite for pipeline parameter grids.
-- [ ] `GridSearchCV` and `RandomizedSearchCV` — built on the `Params` trait
+- [x] `GridSearchCV` and `RandomizedSearchCV` — built on the `Params` trait
       (`get_params` / `set_params`) from v0.6 and the existing `cross_val_score`
       loop. Must support pipeline parameter addressing (`step__param` naming).
-- [ ] `validation_curve` and `learning_curve` diagnostics.
+- [x] `validation_curve` and `learning_curve` diagnostics.
 - [ ] `src/neighbors/` module: `KNeighborsClassifier`, `KNeighborsRegressor`
       (reuses the distance infrastructure already present in `KnnImputer`).
 

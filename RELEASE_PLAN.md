@@ -78,26 +78,32 @@ Size: M (kernel reuse; the work is RNG-stream fidelity + fixtures).
 
 ### M2 — Hyperparameter search & diagnostics
 
-- [ ] `Params` for `Pipeline` / `ColumnTransformer` (today only trees,
+- [x] `Params` for `Pipeline` / `ColumnTransformer` (today only trees,
       forests, and KMeans implement it; linear models carry the methods).
       Nested `step__param` addressing, including inside `ColumnTransformer`
-      transformer lists. Settle the estimator-duplication design first:
-      `GridSearchCV<E: Estimator + Params + Clone>` vs. rebuild-from-params;
-      check `Clone` coverage across estimators before committing.
-- [ ] `GridSearchCV` on top of `Params` + `cross_val_score`
+      transformer lists. Settled the estimator-duplication design:
+      `GridSearchCV<E: Predictor + Params + Clone>`; all estimators are
+      `Clone`. `get_params` returns `Cow<'static, str>` names so compositional
+      `step__param` keys never leak memory (rejected `Box::leak`).
+- [x] `GridSearchCV` on top of `Params` + `cross_val_score`
       (`src/model_selection/cross_val.rs:35`): exhaustive product,
       `cv_results_`-style table, tie-break to first best candidate, `refit`
-      best-estimator behavior, pipeline param grids.
-- [ ] `RandomizedSearchCV`: `n_iter` sampling over param distributions via
-      the shared `Rng` (`src/rng.rs`). Bit-exact stream parity with sklearn's
-      `ParameterSampler` is a stretch goal; document the sampling contract
-      either way.
-- [ ] `validation_curve` and `learning_curve` diagnostics reusing the CV loop.
-- [ ] Parity fixtures for search ordering/tie-breaks and curve values;
+      best-estimator behavior, pipeline param grids. Built on the new
+      `CrossValidator` trait (KFold / StratifiedKFold implement it; custom
+      splitters plug into `cross_val_score` and both searches).
+- [x] `RandomizedSearchCV`: `n_iter` sampling over param distributions via
+      the shared `Rng` (`src/rng.rs`). Sampling contract documented
+      (`Choices`-only spaces sample without replacement from the product;
+      otherwise with replacement per parameter); sklearn `ParameterSampler`
+      stream parity explicitly not attempted.
+- [x] `validation_curve` and `learning_curve` diagnostics reusing the CV loop.
+- [x] Parity fixtures for search ordering/tie-breaks and curve values;
       integration tests with a `Pipeline` grid (`scaler__with_mean`-style
-      addressing).
-- [ ] Book: extend `guide/model-selection.md`; runnable example in
-      `examples/`.
+      addressing). `tests/search_parity.rs` matches sklearn 1.6.1 scores,
+      ranks, tie-break `best_index`, and curve values within 1e-8;
+      `tests/integration_search.rs` covers nested pipeline addressing.
+- [x] Book: extend `guide/model-selection.md`; runnable example in
+      `examples/` (`examples/hyperparameter_search.rs`).
 
 Size: L (the API-design milestone of the release; do the `Params`/clone
 design spike before writing search code).

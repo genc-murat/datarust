@@ -19,7 +19,7 @@ use crate::label_space::LabelSpace;
 use crate::linalg::cholesky;
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::{Classifier, Estimator, PredictProba, Predictor};
+use crate::traits::{Classifier, Estimator, ParamValue, Params, PredictProba, Predictor};
 
 /// Solver strategy for [`LogisticRegression`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -81,6 +81,64 @@ pub struct LogisticRegression {
     n_features_in_: usize,
     n_iter_: usize,
     fitted: bool,
+}
+impl Params for LogisticRegression {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        vec![
+            ("fit_intercept".into(), ParamValue::Bool(self.fit_intercept)),
+            (
+                "solver".into(),
+                ParamValue::Int(match self.solver {
+                    crate::linear_model::LogisticSolver::Cholesky => 0,
+                    crate::linear_model::LogisticSolver::Svd => 1,
+                }),
+            ),
+            ("max_iter".into(), ParamValue::Int(self.max_iter)),
+            ("tol".into(), ParamValue::Float(self.tol)),
+        ]
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        let result = match (name, value) {
+            ("fit_intercept", ParamValue::Bool(b)) => {
+                self.fit_intercept = b;
+                None
+            }
+            ("solver", ParamValue::Int(0)) => {
+                self.solver = crate::linear_model::LogisticSolver::Cholesky;
+                None
+            }
+            ("solver", ParamValue::Int(1)) => {
+                self.solver = crate::linear_model::LogisticSolver::Svd;
+                None
+            }
+            ("solver", _) => Some(Err(DatarustError::InvalidInput(
+                "solver expects Int(0)=Cholesky or Int(1)=Svd".into(),
+            ))),
+            ("max_iter", ParamValue::Int(n)) if n >= 1 => {
+                self.max_iter = n;
+                None
+            }
+            ("max_iter", ParamValue::Int(_)) => Some(Err(DatarustError::InvalidInput(
+                "max_iter must be >= 1".into(),
+            ))),
+            ("tol", ParamValue::Float(t)) if t > 0.0 => {
+                self.tol = t;
+                None
+            }
+            ("tol", ParamValue::Float(_)) => Some(Err(DatarustError::InvalidInput(
+                "tol must be positive".into(),
+            ))),
+            _ => Some(Err(DatarustError::InvalidInput(format!(
+                "unknown parameter '{name}' for LogisticRegression"
+            )))),
+        };
+        if let Some(err) = result {
+            return err;
+        }
+        self.fitted = false;
+        Ok(())
+    }
 }
 
 impl Default for LogisticRegression {
@@ -635,41 +693,6 @@ impl LogisticRegression {
 
 impl Estimator for LogisticRegression {}
 
-impl crate::traits::Params for LogisticRegression {
-    fn get_params(&self) -> Vec<(&'static str, crate::traits::ParamValue)> {
-        use crate::traits::ParamValue;
-        vec![
-            ("max_iter", ParamValue::Int(self.max_iter)),
-            ("tol", ParamValue::Float(self.tol)),
-            ("fit_intercept", ParamValue::Bool(self.fit_intercept)),
-        ]
-    }
-
-    fn set_params(&mut self, name: &str, value: crate::traits::ParamValue) -> Result<()> {
-        use crate::traits::ParamValue;
-        match (name, value) {
-            ("max_iter", ParamValue::Int(0)) => {
-                return Err(DatarustError::InvalidConfig("max_iter must be > 0".into()));
-            }
-            ("max_iter", ParamValue::Int(v)) => self.max_iter = v,
-            ("tol", ParamValue::Float(v)) if !v.is_finite() || v < 0.0 => {
-                return Err(DatarustError::InvalidConfig(format!(
-                    "tol must be finite and >= 0, got {v}"
-                )));
-            }
-            ("tol", ParamValue::Float(v)) => self.tol = v,
-            ("fit_intercept", ParamValue::Bool(v)) => self.fit_intercept = v,
-            (other, _) => {
-                return Err(DatarustError::InvalidInput(format!(
-                    "LogisticRegression has no tunable parameter '{other}'"
-                )));
-            }
-        }
-        self.fitted = false;
-        Ok(())
-    }
-}
-
 impl Predictor for LogisticRegression {
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         let n = x.nrows();
@@ -899,18 +922,19 @@ mod tests {
         let mut model = LogisticRegression::new();
         assert!(matches!(
             model.set_params("max_iter", ParamValue::Int(0)),
-            Err(DatarustError::InvalidConfig(_))
+            Err(DatarustError::InvalidInput(_))
         ));
         assert!(matches!(
             model.set_params("tol", ParamValue::Float(f64::NAN)),
-            Err(DatarustError::InvalidConfig(_))
+            Err(DatarustError::InvalidInput(_))
         ));
         assert_eq!(
             model.get_params(),
             vec![
-                ("max_iter", ParamValue::Int(100)),
-                ("tol", ParamValue::Float(1e-4)),
-                ("fit_intercept", ParamValue::Bool(true)),
+                ("fit_intercept".into(), ParamValue::Bool(true)),
+                ("solver".into(), ParamValue::Int(0)), // Cholesky
+                ("max_iter".into(), ParamValue::Int(100)),
+                ("tol".into(), ParamValue::Float(1e-4)),
             ]
         );
     }

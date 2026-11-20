@@ -996,7 +996,7 @@ fn bench_cross_val(c: &mut Criterion) {
             BenchmarkId::new("linear_5fold", format!("{rows}x{cols}")),
             &(&x, &y, &cv, &model),
             |bencher, (x, y, cv, model)| {
-                bencher.iter(|| cross_val_score(*model, x, y, cv, r2_score))
+                bencher.iter(|| cross_val_score(*model, x, y, *cv, r2_score))
             },
         );
     }

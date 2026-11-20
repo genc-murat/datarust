@@ -237,14 +237,17 @@ impl PredictProba for DecisionTreeClassifier {
 }
 
 impl Params for DecisionTreeClassifier {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         let mut params = self.options.shared_params();
-        params.push(("criterion", ParamValue::Int(self.criterion_code())));
+        params.push(("criterion".into(), ParamValue::Int(self.criterion_code())));
         params.push((
-            "max_depth",
+            "max_depth".into(),
             ParamValue::Int(self.options.max_depth.unwrap_or(0)),
         ));
-        params.push(("max_features", ParamValue::Int(self.max_features_code())));
+        params.push((
+            "max_features".into(),
+            ParamValue::Int(self.max_features_code()),
+        ));
         params
     }
 
@@ -505,13 +508,16 @@ impl Regressor for DecisionTreeRegressor {
 }
 
 impl Params for DecisionTreeRegressor {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         let mut params = self.options.shared_params();
         params.push((
-            "max_depth",
+            "max_depth".into(),
             ParamValue::Int(self.options.max_depth.unwrap_or(0)),
         ));
-        params.push(("max_features", ParamValue::Int(self.max_features_code())));
+        params.push((
+            "max_features".into(),
+            ParamValue::Int(self.max_features_code()),
+        ));
         params
     }
 

@@ -95,13 +95,13 @@ fn bootstrap_false_uses_each_training_row_once_and_params_round_trip() {
         .iter()
         .all(|samples| samples == &(0..x.nrows()).collect::<Vec<_>>()));
     for params in model.get_params() {
-        model.set_params(params.0, params.1).unwrap();
+        model.set_params(&params.0, params.1).unwrap();
     }
     // Params encode max_features as 0=all, 1=sqrt, 2=log2, k+2=Count(k);
     // Int(4) therefore round-trips Count(2) set above.
     assert!(model
         .get_params()
-        .contains(&("max_features", ParamValue::Int(4))));
+        .contains(&("max_features".into(), ParamValue::Int(4))));
 }
 
 #[test]

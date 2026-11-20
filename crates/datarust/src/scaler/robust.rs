@@ -1,7 +1,7 @@
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
 use crate::stats;
-use crate::traits::{default_input_names, FeatureNames};
+use crate::traits::{default_input_names, FeatureNames, ParamValue, Params};
 use crate::Transformer;
 
 /// Scale features using statistics that are robust to outliers, mirroring
@@ -32,6 +32,65 @@ pub struct RobustScaler {
     center: Vec<f64>,
     scale: Vec<f64>,
     fitted: bool,
+}
+impl Params for RobustScaler {
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
+        vec![
+            (
+                "with_centering".into(),
+                ParamValue::Bool(self.with_centering),
+            ),
+            ("with_scaling".into(), ParamValue::Bool(self.with_scaling)),
+            (
+                "quantile_range_lo".into(),
+                ParamValue::Float(self.quantile_range.0),
+            ),
+            (
+                "quantile_range_hi".into(),
+                ParamValue::Float(self.quantile_range.1),
+            ),
+        ]
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        match (name, value) {
+            ("with_centering", ParamValue::Bool(b)) => {
+                self.with_centering = b;
+                self.fitted = false;
+                Ok(())
+            }
+            ("with_scaling", ParamValue::Bool(b)) => {
+                self.with_scaling = b;
+                self.fitted = false;
+                Ok(())
+            }
+            ("quantile_range_lo", ParamValue::Float(lo)) => {
+                if lo.is_finite() {
+                    self.quantile_range.0 = lo;
+                    self.fitted = false;
+                    Ok(())
+                } else {
+                    Err(DatarustError::InvalidInput(
+                        "quantile_range_lo must be finite".into(),
+                    ))
+                }
+            }
+            ("quantile_range_hi", ParamValue::Float(hi)) => {
+                if hi.is_finite() {
+                    self.quantile_range.1 = hi;
+                    self.fitted = false;
+                    Ok(())
+                } else {
+                    Err(DatarustError::InvalidInput(
+                        "quantile_range_hi must be finite".into(),
+                    ))
+                }
+            }
+            _ => Err(DatarustError::InvalidInput(format!(
+                "unknown parameter '{name}' for RobustScaler"
+            ))),
+        }
+    }
 }
 
 impl RobustScaler {
