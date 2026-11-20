@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/genc-murat/datarust"
 homepage = "https://datarust.dev"
 readme = "README.md"
-keywords = ["mcp", "model-context-protocol", "machine-learning", "data-profiling", "rust"]
+keywords = ["mcp", "llm", "machine-learning", "data-profiling", "rust"]
 categories = ["command-line-utilities", "science"]
 
 [dependencies]
