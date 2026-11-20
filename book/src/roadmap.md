@@ -66,30 +66,40 @@ Shipped: `src/tree/` (`DecisionTreeClassifier` / `DecisionTreeRegressor`,
 (`RandomForestClassifier` / `RandomForestRegressor` with on-demand
 `estimators_samples()`), and the public `Rng` promoted from
 `model_selection`. `ExtraTrees` and a generic `Bagging` meta-estimator
-remain planned for a later phase, as do out-of-bag scoring and parallel
-forest fitting.
+are carried into v0.8; out-of-bag scoring and parallel forest fitting remain
+planned for later.
 
-### v0.8 — Model selection & text
+### v0.8 — Model selection & ensemble completion
 
 **Why this comes second.** Once the algorithm catalog is broader, the next
-bottleneck is *tuning* and *NLP*. `GridSearchCV` builds directly on the
-`Params` trait (`get_params`/`set_params`) shipped in v0.6. Text vectorizers
-depend on sparse matrix arithmetic, which today does not exist — so this phase
-widens `SparseMatrix` from read-only storage into a real linear-algebra type.
+bottleneck is *tuning*. `GridSearchCV` builds directly on the `Params` trait
+(`get_params`/`set_params`) shipped in v0.6 and needs no new numerical
+kernels — so it ships first, together with the `ExtraTrees` and `Bagging`
+ensembles carried over from the tree phase and `KNeighbors` classifiers.
+Text features were split into v0.9 because they depend on sparse matrix
+arithmetic, a substantial kernel effort that deserves its own release.
 
 Highlights: `GridSearchCV`/`RandomizedSearchCV`, `validation_curve`/
-`learning_curve`, `CountVectorizer`/`TfidfVectorizer`, `KNeighbors`, and
-Naive Bayes — the last three together forming a complete document-classification
-stack.
+`learning_curve`, `ExtraTrees`, `Bagging`, and `KNeighbors`.
 
-### v0.9 — Depth & breadth
+### v0.9 — Text & sparse
+
+**Why text gets its own phase.** Text vectorizers depend on sparse matrix
+arithmetic, which today does not exist — this phase widens `SparseMatrix`
+from read-only storage into a real linear-algebra type, then builds the NLP
+stack on top of it.
+
+Highlights: sparse × dense / sparse + sparse arithmetic,
+`CountVectorizer`/`TfidfVectorizer`/`HashingVectorizer`, and Naive Bayes —
+together forming a complete document-classification stack.
+
+### v0.10 — Depth & breadth
 
 **Why this is late.** These are high-value but lower-leverage than the
-foundational phases. Many users will be productive with v0.7–0.8 alone.
+foundational phases. Many users will be productive with v0.7–0.9 alone.
 
 Highlights: `GradientBoosting`/`AdaBoost`/`Voting`/`Stacking`,
-`ExtraTrees` and the `Bagging` meta-estimator carried over from the tree
-phase, `LinearSVC`/`SVC` (SMO solver, pure Rust),
+`LinearSVC`/`SVC` (SMO solver, pure Rust),
 `DBSCAN`/`AgglomerativeClustering`, `ElasticNet`/`SGDClassifier`,
 `NMF`/`FactorAnalysis`.
 

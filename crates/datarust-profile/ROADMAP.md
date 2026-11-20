@@ -5,7 +5,7 @@ This document tracks the path from the initial release (v0.1.0) toward a
 ecosystem (v1.0). It is a living document — priorities may shift, but the
 principles and the destination stay fixed.
 
-> **Where we are today (v0.3.0):** one-call profiling of numeric `Matrix`,
+> **Where we are today (v0.4.0):** one-call profiling of numeric `Matrix`,
 > categorical `StrMatrix`, and mixed tables; per-column descriptive
 > statistics (count, missing, mean, std, five-number summary, skewness,
 > kurtosis, equal-width histogram, cardinality, top value, imbalance ratio);
@@ -16,9 +16,12 @@ principles and the destination stay fixed.
 > Outliers, Imbalance, HighCorrelation, TargetLeakage) with configurable thresholds;
 > a self-contained HTML report with per-column card layout, CSS bar charts,
 > and correlation heatmaps (no dependencies) and a JSON report behind the `serde`
-> feature; a `_flat` fast path for `profile_matrix`. Built on `datarust::stats`
-> primitives plus local distributional & association helpers, zero external dependencies
-> by default.
+> feature; a `_flat` fast path for `profile_matrix`; and (v0.4) a pure-Rust
+> CSV reader with one-call `from_csv` entry points, a single-pass streaming
+> profiler, a terminal-table renderer, and the `datarust-profile` CLI — all
+> behind optional feature flags. Built on `datarust::stats` primitives plus
+> local distributional & association helpers, zero external dependencies by
+> default.
 
 ## Guiding principles
 
@@ -194,7 +197,7 @@ zero-dep default.
 > *Theme: missing data is first-class, and datasets are compared, not just
 > profiled.*
 
-Missing values are profiled only as a count today. v0.4 promotes them to a
+Missing values are profiled only as a count today. v0.5 promotes them to a
 structured analysis, and adds the dataset-comparison capability that
 ydata-profiling users reach for when tracking data drift between releases.
 

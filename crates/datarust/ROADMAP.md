@@ -77,7 +77,7 @@ against seeded fixtures) and the shared RNG the ensembles will need.
 - ✅ `src/ensemble.rs`: `RandomForestClassifier` / `RandomForestRegressor`
   (bootstrap aggregation, per-split feature subsampling, deterministic
   sklearn-parity sampling and predictions)
-- ⏳ `src/ensemble.rs`: `ExtraTrees*` and generic `Bagging` remain planned
+- → `src/ensemble.rs`: `ExtraTrees*` and generic `Bagging` carried into v0.8
 
 ---
 
@@ -100,44 +100,63 @@ shared crate-internal utility.
 - [x] `src/tree/` module: `DecisionTreeClassifier` and `DecisionTreeRegressor`
       (CART splitter; Gini / entropy / MSE criteria; max depth, min samples
       split, min samples leaf).
-- [x] `src/ensemble.rs` module:
-  - [x] `RandomForestClassifier` / `RandomForestRegressor` (bagging +
-        random feature subsampling).
-  - [ ] `ExtraTreesClassifier` / `ExtraTreesRegressor` (random splits).
-  - [ ] `Bagging` meta-estimator (works with any `Predictor`).
+- [x] `src/ensemble.rs` module: `RandomForestClassifier` /
+      `RandomForestRegressor` (bagging + random feature subsampling).
+      `ExtraTrees*` and the generic `Bagging` meta-estimator are carried
+      into v0.8.
 - [x] Tree-based `feature_importances_` output (normalized impurity
       reduction, numpy-summation-exact); `FeatureNames` support follows with
       the DataFrame-style API work.
 - [x] Promote the internal PRNG to a shared, seedable utility so ensembles can
       build deterministic bootstrap samples (`src/rng.rs`, public `Rng`).
 
-### v0.8 — Model selection & text
+### v0.8 — Model selection & ensemble completion
 
-> *Theme: the missing pieces of production ML workflows.*
+> *Theme: rigorous tuning, and closing the tree-based learning story.*
 
-Without hyperparameter search, text vectorization, and a couple more
-classifiers, datarust cannot serve NLP or rigorous model-tuning workflows.
-This phase also broadens sparse-matrix support, which text features depend on.
+Split out of the original "Model selection & text" phase (sequenced in
+`RELEASE_PLAN.md` at the workspace root): hyperparameter search is the
+most-requested missing piece and needs no new numerical kernels, while text
+features depend on a substantial sparse-arithmetic kernel that gets its own
+release (v0.9). v0.8 also lands the two ensembles carried over from v0.7.
 
 **Deliverables:**
 
+- [ ] `src/ensemble.rs`: `ExtraTreesClassifier` / `ExtraTreesRegressor`
+      (random splits; carried over from v0.7).
+- [ ] `src/ensemble.rs`: `Bagging` meta-estimator (works with any
+      `Predictor`; carried over from v0.7).
+- [ ] `Params` for `Pipeline` / `ColumnTransformer` with nested
+      `step__param` addressing — prerequisite for pipeline parameter grids.
 - [ ] `GridSearchCV` and `RandomizedSearchCV` — built on the `Params` trait
       (`get_params` / `set_params`) from v0.6 and the existing `cross_val_score`
       loop. Must support pipeline parameter addressing (`step__param` naming).
 - [ ] `validation_curve` and `learning_curve` diagnostics.
+- [ ] `src/neighbors/` module: `KNeighborsClassifier`, `KNeighborsRegressor`
+      (reuses the distance infrastructure already present in `KnnImputer`).
+
+### v0.9 — Text & sparse
+
+> *Theme: the NLP stack, on a real sparse linear-algebra foundation.*
+
+The second half of the original "Model selection & text" phase. Sparse CSR
+arithmetic lands first because TF-IDF output and large one-hot features
+depend on it; the vectorizers and naive Bayes then form a complete
+document-classification stack.
+
+**Deliverables:**
+
+- [ ] Sparse-matrix arithmetic: sparse × dense matrix multiplication and
+      sparse + sparse addition (needed for TF-IDF output and large one-hot
+      features). Today `SparseMatrix` is read-only CSR with no linear algebra.
 - [ ] `src/feature_extraction/text/` module:
   - [ ] `CountVectorizer` (tokenizer, n-grams, vocabulary).
   - [ ] `TfidfTransformer` and `TfidfVectorizer`.
   - [ ] `HashingVectorizer` (stateless).
-- [ ] Sparse-matrix arithmetic: sparse × dense matrix multiplication and
-      sparse + sparse addition (needed for TF-IDF output and large one-hot
-      features). Today `SparseMatrix` is read-only CSR with no linear algebra.
-- [ ] `src/neighbors/` module: `KNeighborsClassifier`, `KNeighborsRegressor`
-      (reuses the distance infrastructure already present in `KnnImputer`).
 - [ ] `src/naive_bayes/` module: `GaussianNB` and `MultinomialNB` — the natural
       pairing with the text vectorizers for document classification.
 
-### v0.9 — Depth & breadth
+### v0.10 — Depth & breadth
 
 > *Theme: converge toward scikit-learn positional parity.*
 
