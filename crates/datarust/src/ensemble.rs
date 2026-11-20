@@ -1601,23 +1601,30 @@ impl PredictProba for BaggingClassifier {
 
 impl Params for BaggingClassifier {
     fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
-        let mut params = self.base.get_params();
-        params.push(("n_estimators".into(), ParamValue::Int(self.n_estimators)));
-        params.push(("max_samples".into(), self.max_samples.to_param_value()));
-        params.push(("max_features".into(), self.max_features.to_param_value()));
-        params.push(("bootstrap".into(), ParamValue::Bool(self.bootstrap)));
-        params.push((
-            "bootstrap_features".into(),
-            ParamValue::Bool(self.bootstrap_features),
-        ));
-        params.push((
-            "random_state".into(),
-            ParamValue::Int(self.random_state as usize),
-        ));
+        let mut params = vec![
+            ("n_estimators".into(), ParamValue::Int(self.n_estimators)),
+            ("max_samples".into(), self.max_samples.to_param_value()),
+            ("max_features".into(), self.max_features.to_param_value()),
+            ("bootstrap".into(), ParamValue::Bool(self.bootstrap)),
+            (
+                "bootstrap_features".into(),
+                ParamValue::Bool(self.bootstrap_features),
+            ),
+            (
+                "random_state".into(),
+                ParamValue::Int(self.random_state as usize),
+            ),
+        ];
+        for (name, value) in self.base.get_params() {
+            params.push((std::borrow::Cow::Owned(format!("estimator__{name}")), value));
+        }
         params
     }
 
     fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        if let Some(base_name) = name.strip_prefix("estimator__") {
+            return self.base.set_params(base_name, value);
+        }
         match name {
             "n_estimators" => {
                 self.n_estimators = match value {
@@ -1658,7 +1665,10 @@ impl Params for BaggingClassifier {
                 };
             }
             _ => {
-                self.base.set_params(name, value)?;
+                return Err(DatarustError::InvalidInput(format!(
+                    "unknown parameter '{name}' for BaggingClassifier (base estimator \
+                     parameters use the 'estimator__' prefix)"
+                )));
             }
         }
         Ok(())
@@ -1891,23 +1901,30 @@ impl Regressor for BaggingRegressor {
 
 impl Params for BaggingRegressor {
     fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
-        let mut params = self.base.get_params();
-        params.push(("n_estimators".into(), ParamValue::Int(self.n_estimators)));
-        params.push(("max_samples".into(), self.max_samples.to_param_value()));
-        params.push(("max_features".into(), self.max_features.to_param_value()));
-        params.push(("bootstrap".into(), ParamValue::Bool(self.bootstrap)));
-        params.push((
-            "bootstrap_features".into(),
-            ParamValue::Bool(self.bootstrap_features),
-        ));
-        params.push((
-            "random_state".into(),
-            ParamValue::Int(self.random_state as usize),
-        ));
+        let mut params = vec![
+            ("n_estimators".into(), ParamValue::Int(self.n_estimators)),
+            ("max_samples".into(), self.max_samples.to_param_value()),
+            ("max_features".into(), self.max_features.to_param_value()),
+            ("bootstrap".into(), ParamValue::Bool(self.bootstrap)),
+            (
+                "bootstrap_features".into(),
+                ParamValue::Bool(self.bootstrap_features),
+            ),
+            (
+                "random_state".into(),
+                ParamValue::Int(self.random_state as usize),
+            ),
+        ];
+        for (name, value) in self.base.get_params() {
+            params.push((std::borrow::Cow::Owned(format!("estimator__{name}")), value));
+        }
         params
     }
 
     fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        if let Some(base_name) = name.strip_prefix("estimator__") {
+            return self.base.set_params(base_name, value);
+        }
         match name {
             "n_estimators" => {
                 self.n_estimators = match value {
@@ -1948,7 +1965,10 @@ impl Params for BaggingRegressor {
                 };
             }
             _ => {
-                self.base.set_params(name, value)?;
+                return Err(DatarustError::InvalidInput(format!(
+                    "unknown parameter '{name}' for BaggingRegressor (base estimator \
+                     parameters use the 'estimator__' prefix)"
+                )));
             }
         }
         Ok(())
@@ -2189,5 +2209,69 @@ mod tests {
                 .any(|indices| indices.contains(&8)),
             "row 8 never entered any bootstrap sample"
         );
+    }
+
+    #[test]
+    fn bagging_params_expose_base_via_estimator_prefix() {
+        let mut bagging = BaggingClassifier::new();
+        let params = bagging.get_params();
+
+        // Own params stay unprefixed; base params arrive under `estimator__`.
+        assert!(params.iter().any(|(name, _)| *name == "n_estimators"));
+        assert!(params
+            .iter()
+            .any(|(name, _)| *name == "estimator__max_depth"));
+        // No collisions: exactly one `max_features` (the bagging one).
+        assert_eq!(
+            params
+                .iter()
+                .filter(|(name, _)| *name == "max_features")
+                .count(),
+            1
+        );
+        assert!(params
+            .iter()
+            .any(|(name, _)| *name == "estimator__max_features"));
+
+        // Base tree max_depth is reachable — previously shadowed by the
+        // unprefixed merge.
+        bagging
+            .set_params("estimator__max_depth", ParamValue::Int(4))
+            .unwrap();
+        bagging
+            .set_params("estimator__min_samples_leaf", ParamValue::Int(2))
+            .unwrap();
+        let depth = bagging
+            .get_params()
+            .into_iter()
+            .find(|(name, _)| *name == "estimator__max_depth")
+            .map(|(_, v)| v);
+        assert_eq!(depth, Some(ParamValue::Int(4)));
+
+        assert!(bagging.set_params("nonsense", ParamValue::Int(1)).is_err());
+    }
+
+    #[test]
+    fn bagging_grid_search_tunes_base_estimator() {
+        use crate::metrics::classification::accuracy_score;
+        use crate::model_selection::{GridSearchCV, KFold};
+
+        let (x, y) = simple_data();
+        let mut gs = GridSearchCV::new(
+            BaggingClassifier::new().with_n_estimators(9),
+            vec![
+                (
+                    "estimator__max_depth",
+                    vec![ParamValue::Int(1), ParamValue::Int(3)],
+                ),
+                ("n_estimators", vec![ParamValue::Int(5), ParamValue::Int(9)]),
+            ],
+            accuracy_score,
+        )
+        .with_cv(KFold::new().with_n_splits(3));
+        gs.fit(&x, &y).unwrap();
+
+        assert_eq!(gs.cv_results().unwrap().params.len(), 4);
+        assert!(gs.best_score().unwrap() > 0.0);
     }
 }

@@ -188,6 +188,25 @@ let samples = bag.estimators_samples();
 let features = bag.estimators_features();
 ```
 
+### Base-estimator parameters (`estimator__` prefix)
+
+Like sklearn, the bagging estimators address the base tree's hyperparameters
+through an `estimator__` prefix, so ensemble-level names never collide with
+base-level ones (`max_features` exists on both sides):
+
+```rust
+use datarust::traits::{Params, ParamValue};
+
+let mut bag = BaggingClassifier::new();
+bag.set_params("estimator__max_depth", ParamValue::Int(4))?;
+bag.set_params("n_estimators", ParamValue::Int(25))?;
+assert!(bag.get_params().iter().any(|(n, _)| *n == "estimator__max_features"));
+```
+
+This makes bagging fully tunable through `GridSearchCV` /
+`RandomizedSearchCV` — a grid can mix `"n_estimators"` (the ensemble) with
+`"estimator__max_depth"` (each member tree).
+
 ## Scope (this first release)
 
 Out of bag scoring, weighted fits, and parallel tree fitting are
