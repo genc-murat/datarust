@@ -1,11 +1,15 @@
-//! Random-forest classifiers and regressors built from the CART tree kernel.
+//! Random-forest and extremely-randomized-tree ensembles built from the
+//! CART tree kernel.
 //!
 //! Each forest fits independent [`DecisionTreeClassifier`] or
-//! [`DecisionTreeRegressor`] estimators on bootstrap samples. Feature
-//! subsampling is delegated to the tree splitter, so `max_features` is
-//! applied independently at every split, matching scikit-learn's forest
-//! semantics. The forest itself aggregates class probabilities by averaging
-//! trees and regression predictions by their arithmetic mean.
+//! [`DecisionTreeRegressor`] estimators on bootstrap samples; the
+//! [`ExtraTreesClassifier`] / [`ExtraTreesRegressor`] variants fit on the
+//! full sample by default and draw one random threshold per candidate
+//! feature instead of scanning midpoints. Feature subsampling is delegated
+//! to the tree splitter, so `max_features` is applied independently at
+//! every split, matching scikit-learn's forest semantics. The forest itself
+//! aggregates class probabilities by averaging trees and regression
+//! predictions by their arithmetic mean.
 //!
 //! The implementation is dense-input and single-output, like the v0.7 tree
 //! module. Missing values, sample weights, out-of-bag scoring, and parallel
@@ -94,6 +98,7 @@ struct ForestOptions {
     max_features: MaxFeatures,
     bootstrap: bool,
     random_state: u64,
+    random_split: bool,
 }
 
 impl ForestOptions {
@@ -159,7 +164,8 @@ impl ForestOptions {
             .with_min_samples_leaf(self.min_samples_leaf)
             .with_min_impurity_decrease(self.min_impurity_decrease)
             .with_max_features(self.max_features)
-            .with_random_state(seed);
+            .with_random_state(seed)
+            .with_random_split(self.random_split);
         tree = tree.with_max_depth(self.max_depth);
         tree
     }
@@ -170,7 +176,8 @@ impl ForestOptions {
             .with_min_samples_leaf(self.min_samples_leaf)
             .with_min_impurity_decrease(self.min_impurity_decrease)
             .with_max_features(self.max_features)
-            .with_random_state(seed);
+            .with_random_state(seed)
+            .with_random_split(self.random_split);
         tree = tree.with_max_depth(self.max_depth);
         tree
     }
@@ -263,6 +270,7 @@ impl Default for ForestOptions {
             max_features: MaxFeatures::All,
             bootstrap: true,
             random_state: 0,
+            random_split: false,
         }
     }
 }
@@ -365,6 +373,8 @@ pub struct RandomForestClassifier {
     classes: Option<LabelSpace>,
     trees: Vec<DecisionTreeClassifier>,
     tree_seeds: Vec<u64>,
+    /// Estimator label used in error messages; ExtraTrees delegates here.
+    name: &'static str,
 }
 
 impl Default for RandomForestClassifier {
@@ -375,6 +385,9 @@ impl Default for RandomForestClassifier {
 
 impl RandomForestClassifier {
     /// Creates a classifier with scikit-learn-style defaults.
+    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
+    /// on the full sample, all features.
+    #[doc(hidden)]
     pub fn new() -> Self {
         Self {
             options: ForestOptions {
@@ -387,6 +400,7 @@ impl RandomForestClassifier {
             classes: None,
             trees: Vec::new(),
             tree_seeds: Vec::new(),
+            name: "RandomForestClassifier",
         }
     }
 
@@ -483,7 +497,7 @@ impl RandomForestClassifier {
     /// trees, matching sklearn's `feature_importances_` behavior.
     pub fn feature_importances(&self) -> Result<Vec<f64>> {
         if self.trees.is_empty() {
-            return Err(DatarustError::NotFitted("RandomForestClassifier".into()));
+            return Err(DatarustError::NotFitted(self.name.into()));
         }
         let mut all_importances = Vec::new();
         for tree in &self.trees {
@@ -511,11 +525,11 @@ impl RandomForestClassifier {
     fn fit_impl(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         validate_forest_input(x, y, &self.options)?;
         if matches!(self.criterion, Criterion::SquaredError) {
-            return Err(DatarustError::InvalidInput(
-                "RandomForestClassifier requires Criterion::Gini or Criterion::Entropy; \
-                 Criterion::SquaredError is regression-only"
-                    .into(),
-            ));
+            return Err(DatarustError::InvalidInput(format!(
+                "{} requires Criterion::Gini or Criterion::Entropy; \
+                 Criterion::SquaredError is regression-only",
+                self.name
+            )));
         }
         let classes = LabelSpace::fit(y)?;
         let mut stream = LegacyRandomState::new(self.options.random_state);
@@ -542,7 +556,7 @@ impl RandomForestClassifier {
         let classes = self
             .classes
             .as_ref()
-            .ok_or_else(|| DatarustError::NotFitted("RandomForestClassifier".into()))?;
+            .ok_or_else(|| DatarustError::NotFitted(self.name.into()))?;
         validate_prediction_shape(x, self.n_features)?;
         let n = x.nrows();
         let k = classes.len();
@@ -648,7 +662,8 @@ impl Params for RandomForestClassifier {
             }
             _ => {
                 return Err(DatarustError::InvalidInput(format!(
-                    "unknown parameter '{name}' for RandomForestClassifier"
+                    "unknown parameter '{name}' for {}",
+                    self.name
                 )));
             }
         }
@@ -668,6 +683,8 @@ pub struct RandomForestRegressor {
     n_samples: usize,
     trees: Vec<DecisionTreeRegressor>,
     tree_seeds: Vec<u64>,
+    /// Estimator label used in error messages; ExtraTrees delegates here.
+    name: &'static str,
 }
 
 impl Default for RandomForestRegressor {
@@ -678,6 +695,9 @@ impl Default for RandomForestRegressor {
 
 impl RandomForestRegressor {
     /// Creates a regressor with scikit-learn-style defaults.
+    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
+    /// on the full sample, all features.
+    #[doc(hidden)]
     pub fn new() -> Self {
         Self {
             options: ForestOptions::default(),
@@ -685,6 +705,7 @@ impl RandomForestRegressor {
             n_samples: 0,
             trees: Vec::new(),
             tree_seeds: Vec::new(),
+            name: "RandomForestRegressor",
         }
     }
 
@@ -741,6 +762,11 @@ impl RandomForestRegressor {
         self.trees.len()
     }
 
+    /// Number of features seen at fit time.
+    pub fn n_features_in(&self) -> usize {
+        self.n_features
+    }
+
     /// Borrow the fitted decision trees.
     pub fn trees(&self) -> &[DecisionTreeRegressor] {
         &self.trees
@@ -763,7 +789,7 @@ impl RandomForestRegressor {
     /// trees, matching sklearn's `feature_importances_` behavior.
     pub fn feature_importances(&self) -> Result<Vec<f64>> {
         if self.trees.is_empty() {
-            return Err(DatarustError::NotFitted("RandomForestRegressor".into()));
+            return Err(DatarustError::NotFitted(self.name.into()));
         }
         let mut all_importances = Vec::new();
         for tree in &self.trees {
@@ -826,7 +852,7 @@ impl Predictor for RandomForestRegressor {
 
     fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
         if self.trees.is_empty() {
-            return Err(DatarustError::NotFitted("RandomForestRegressor".into()));
+            return Err(DatarustError::NotFitted(self.name.into()));
         }
         validate_prediction_shape(x, self.n_features)?;
         let mut out = vec![0.0; x.nrows()];
@@ -849,7 +875,7 @@ impl Predictor for RandomForestRegressor {
 
 impl Regressor for RandomForestRegressor {
     fn name(&self) -> &'static str {
-        "RandomForestRegressor"
+        self.name
     }
 }
 
@@ -869,7 +895,8 @@ impl Params for RandomForestRegressor {
             }
         }
         Err(DatarustError::InvalidInput(format!(
-            "unknown parameter '{name}' for RandomForestRegressor"
+            "unknown parameter '{name}' for {}",
+            self.name
         )))
     }
 }
@@ -879,6 +906,1110 @@ fn normalize_importances(values: &mut [f64]) {
     if total > 0.0 {
         for value in values {
             *value /= total;
+        }
+    }
+}
+
+/// Extremely-randomized-tree classifier (scikit-learn's
+/// `ExtraTreesClassifier`).
+///
+/// Like [`RandomForestClassifier`], but each split draws a single random
+/// threshold between the feature's min and max instead of scanning all
+/// midpoints, and trees are fitted on the full sample by default
+/// (`bootstrap = false`). Defaults: 100 trees,
+/// `max_features = sqrt(n_features)`, Gini criterion.
+///
+/// ```rust
+/// use datarust::ensemble::ExtraTreesClassifier;
+/// use datarust::traits::{PredictProba, Predictor};
+/// use datarust::Matrix;
+///
+/// let x = Matrix::new(vec![
+///     vec![0.0, 0.0], vec![0.0, 1.0],
+///     vec![1.0, 0.0], vec![1.0, 1.0],
+/// ])?;
+/// let y = vec![0.0, 1.0, 1.0, 0.0];
+/// let mut forest = ExtraTreesClassifier::new()
+///     .with_n_estimators(25)
+///     .with_random_state(7);
+/// forest.fit(&x, &y)?;
+/// assert_eq!(forest.predict(&x)?.len(), 4);
+/// assert_eq!(forest.predict_proba(&x)?.ncols(), 2);
+/// # Ok::<_, Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Clone)]
+pub struct ExtraTreesClassifier {
+    inner: RandomForestClassifier,
+}
+
+impl Default for ExtraTreesClassifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExtraTreesClassifier {
+    /// Creates a classifier with scikit-learn-style ExtraTrees defaults
+    /// (100 non-bootstrap trees, sqrt feature subsampling, Gini).
+    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
+    /// on the full sample, all features.
+    #[doc(hidden)]
+    pub fn new() -> Self {
+        let mut inner = RandomForestClassifier::new().with_bootstrap(false);
+        inner.name = "ExtraTreesClassifier";
+        inner.options.random_split = true;
+        Self { inner }
+    }
+
+    /// Sets the number of trees.
+    pub fn with_n_estimators(mut self, n: usize) -> Self {
+        self.inner = self.inner.with_n_estimators(n);
+        self
+    }
+
+    /// Sets the tree split criterion (`Gini` or `Entropy`).
+    /// `Criterion::SquaredError` is regression-only and is rejected by
+    /// `fit`.
+    pub fn with_criterion(mut self, criterion: Criterion) -> Self {
+        self.inner = self.inner.with_criterion(criterion);
+        self
+    }
+
+    /// Sets the maximum depth of each tree (`None` means unlimited).
+    pub fn with_max_depth(mut self, depth: Option<usize>) -> Self {
+        self.inner = self.inner.with_max_depth(depth);
+        self
+    }
+
+    /// Sets the minimum samples required to split a node.
+    pub fn with_min_samples_split(mut self, n: usize) -> Self {
+        self.inner = self.inner.with_min_samples_split(n);
+        self
+    }
+
+    /// Sets the minimum samples required in each leaf.
+    pub fn with_min_samples_leaf(mut self, n: usize) -> Self {
+        self.inner = self.inner.with_min_samples_leaf(n);
+        self
+    }
+
+    /// Sets the minimum impurity decrease required for a split.
+    pub fn with_min_impurity_decrease(mut self, value: f64) -> Self {
+        self.inner = self.inner.with_min_impurity_decrease(value);
+        self
+    }
+
+    /// Sets the number of features considered at each split.
+    pub fn with_max_features(mut self, value: MaxFeatures) -> Self {
+        self.inner = self.inner.with_max_features(value);
+        self
+    }
+
+    /// Enables or disables bootstrap sampling (disabled by default).
+    pub fn with_bootstrap(mut self, bootstrap: bool) -> Self {
+        self.inner = self.inner.with_bootstrap(bootstrap);
+        self
+    }
+
+    /// Sets the deterministic forest seed.
+    pub fn with_random_state(mut self, seed: u64) -> Self {
+        self.inner = self.inner.with_random_state(seed);
+        self
+    }
+
+    /// Number of fitted trees.
+    pub fn n_estimators(&self) -> usize {
+        self.inner.n_estimators()
+    }
+
+    /// Number of features seen during fitting.
+    pub fn n_features_in(&self) -> usize {
+        self.inner.n_features_in()
+    }
+
+    /// Borrow the fitted decision trees.
+    pub fn trees(&self) -> &[DecisionTreeClassifier] {
+        self.inner.trees()
+    }
+
+    /// Sorted original class labels.
+    pub fn classes(&self) -> Option<&[f64]> {
+        self.inner.classes()
+    }
+
+    /// Row indices used to fit each tree (identity order unless bootstrap
+    /// is enabled); see [`RandomForestClassifier::estimators_samples`].
+    pub fn estimators_samples(&self) -> Vec<Vec<usize>> {
+        self.inner.estimators_samples()
+    }
+
+    /// Mean normalized impurity reduction across the non-trivial fitted
+    /// trees, matching sklearn's `feature_importances_` behavior.
+    pub fn feature_importances(&self) -> Result<Vec<f64>> {
+        self.inner.feature_importances()
+    }
+}
+
+impl Estimator for ExtraTreesClassifier {}
+
+impl Predictor for ExtraTreesClassifier {
+    fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        self.inner.fit(x, y)
+    }
+
+    fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
+        self.inner.predict(x)
+    }
+
+    fn is_fitted(&self) -> bool {
+        self.inner.is_fitted()
+    }
+}
+
+impl Classifier for ExtraTreesClassifier {}
+
+impl PredictProba for ExtraTreesClassifier {
+    fn predict_proba(&self, x: &Matrix) -> Result<Matrix> {
+        self.inner.predict_proba(x)
+    }
+}
+
+impl Params for ExtraTreesClassifier {
+    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+        self.inner.get_params()
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        self.inner.set_params(name, value)
+    }
+}
+
+/// Extremely-randomized-tree regressor (scikit-learn's
+/// `ExtraTreesRegressor`).
+///
+/// Like [`RandomForestRegressor`], but each split draws a single random
+/// threshold between the feature's min and max, and trees are fitted on the
+/// full sample by default (`bootstrap = false`). Defaults: 100 trees, all
+/// features considered at each split, squared-error criterion.
+///
+/// ```rust
+/// use datarust::ensemble::ExtraTreesRegressor;
+/// use datarust::traits::Predictor;
+/// use datarust::Matrix;
+///
+/// let x = Matrix::new(vec![
+///     vec![0.0, 0.0], vec![0.0, 1.0],
+///     vec![1.0, 0.0], vec![1.0, 1.0],
+/// ])?;
+/// let y = vec![0.0, 1.0, 1.0, 2.0];
+/// let mut forest = ExtraTreesRegressor::new()
+///     .with_n_estimators(25)
+///     .with_random_state(7);
+/// forest.fit(&x, &y)?;
+/// assert_eq!(forest.predict(&x)?.len(), 4);
+/// # Ok::<_, Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Clone)]
+pub struct ExtraTreesRegressor {
+    inner: RandomForestRegressor,
+}
+
+impl Default for ExtraTreesRegressor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExtraTreesRegressor {
+    /// Creates a regressor with scikit-learn-style ExtraTrees defaults
+    /// (100 non-bootstrap trees, all features, squared error).
+    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
+    /// on the full sample, all features.
+    #[doc(hidden)]
+    pub fn new() -> Self {
+        let mut inner = RandomForestRegressor::new().with_bootstrap(false);
+        inner.name = "ExtraTreesRegressor";
+        inner.options.random_split = true;
+        Self { inner }
+    }
+
+    /// Sets the number of trees.
+    pub fn with_n_estimators(mut self, n: usize) -> Self {
+        self.inner = self.inner.with_n_estimators(n);
+        self
+    }
+
+    /// Sets the maximum depth of each tree (`None` means unlimited).
+    pub fn with_max_depth(mut self, depth: Option<usize>) -> Self {
+        self.inner = self.inner.with_max_depth(depth);
+        self
+    }
+
+    /// Sets the minimum samples required to split a node.
+    pub fn with_min_samples_split(mut self, n: usize) -> Self {
+        self.inner = self.inner.with_min_samples_split(n);
+        self
+    }
+
+    /// Sets the minimum samples required in each leaf.
+    pub fn with_min_samples_leaf(mut self, n: usize) -> Self {
+        self.inner = self.inner.with_min_samples_leaf(n);
+        self
+    }
+
+    /// Sets the minimum impurity decrease required for a split.
+    pub fn with_min_impurity_decrease(mut self, value: f64) -> Self {
+        self.inner = self.inner.with_min_impurity_decrease(value);
+        self
+    }
+
+    /// Sets the number of features considered at each split.
+    pub fn with_max_features(mut self, value: MaxFeatures) -> Self {
+        self.inner = self.inner.with_max_features(value);
+        self
+    }
+
+    /// Enables or disables bootstrap sampling (disabled by default).
+    pub fn with_bootstrap(mut self, bootstrap: bool) -> Self {
+        self.inner = self.inner.with_bootstrap(bootstrap);
+        self
+    }
+
+    /// Sets the deterministic forest seed.
+    pub fn with_random_state(mut self, seed: u64) -> Self {
+        self.inner = self.inner.with_random_state(seed);
+        self
+    }
+
+    /// Number of fitted trees.
+    pub fn n_estimators(&self) -> usize {
+        self.inner.n_estimators()
+    }
+
+    /// Number of features seen during fitting.
+    pub fn n_features_in(&self) -> usize {
+        self.inner.n_features_in()
+    }
+
+    /// Borrow the fitted decision trees.
+    pub fn trees(&self) -> &[DecisionTreeRegressor] {
+        self.inner.trees()
+    }
+
+    /// Row indices used to fit each tree (identity order unless bootstrap
+    /// is enabled); see [`RandomForestRegressor::estimators_samples`].
+    pub fn estimators_samples(&self) -> Vec<Vec<usize>> {
+        self.inner.estimators_samples()
+    }
+
+    /// Mean normalized impurity reduction across the non-trivial fitted
+    /// trees, matching sklearn's `feature_importances_` behavior.
+    pub fn feature_importances(&self) -> Result<Vec<f64>> {
+        self.inner.feature_importances()
+    }
+}
+
+impl Estimator for ExtraTreesRegressor {}
+
+impl Predictor for ExtraTreesRegressor {
+    fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        self.inner.fit(x, y)
+    }
+
+    fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
+        self.inner.predict(x)
+    }
+
+    fn is_fitted(&self) -> bool {
+        self.inner.is_fitted()
+    }
+}
+
+impl Regressor for ExtraTreesRegressor {
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
+}
+
+impl Params for ExtraTreesRegressor {
+    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+        self.inner.get_params()
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        self.inner.set_params(name, value)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sampling utilities for Bagging
+// ---------------------------------------------------------------------------
+
+/// Fisher-Yates shuffle of `arange(n)`, matching numpy's legacy
+/// `RandomState.permutation`.
+fn shuffled_arange(state: &mut LegacyRandomState, n: usize) -> Vec<usize> {
+    let mut arr: Vec<usize> = (0..n).collect();
+    for i in (1..n).rev() {
+        let j = state.randint(i + 1);
+        arr.swap(i, j);
+    }
+    arr
+}
+
+/// Tracking-selection SWOR: draws uniformly until the desired count of
+/// distinct values is reached. Order is insertion order (draw order),
+/// matching sklearn's set-based implementation.
+fn tracking_selection(
+    state: &mut LegacyRandomState,
+    n_population: usize,
+    n_samples: usize,
+) -> Vec<usize> {
+    let mut out = Vec::with_capacity(n_samples);
+    let mut selected = vec![false; n_population];
+    while out.len() < n_samples {
+        let j = state.randint(n_population);
+        if !selected[j] {
+            selected[j] = true;
+            out.push(j);
+        }
+    }
+    out
+}
+
+/// Reservoir-sampling SWOR (sklearn's `_sample_without_replacement_with_reservoir_sampling`).
+fn reservoir_swor(
+    state: &mut LegacyRandomState,
+    n_population: usize,
+    n_samples: usize,
+) -> Vec<usize> {
+    let mut out: Vec<usize> = (0..n_samples).collect();
+    for i in n_samples..n_population {
+        let j = state.randint(i + 1);
+        if j < n_samples {
+            out[j] = i;
+        }
+    }
+    out
+}
+
+/// Auto-dispatched SWOR matching sklearn's `sample_without_replacement`.
+fn sample_without_replacement(
+    state: &mut LegacyRandomState,
+    n_population: usize,
+    n_samples: usize,
+) -> Vec<usize> {
+    if n_samples == 0 {
+        return vec![];
+    }
+    if n_samples >= n_population {
+        // `>=` so that ratio 1.0 returns the identity (reservoir
+        // short-circuit) without consuming random state.
+        return (0..n_population).collect();
+    }
+    let ratio = n_samples as f64 / n_population as f64;
+    if ratio > 0.01 && ratio < 0.99 {
+        let perm = shuffled_arange(state, n_population);
+        perm[..n_samples].to_vec()
+    } else if ratio < 0.2 {
+        tracking_selection(state, n_population, n_samples)
+    } else {
+        reservoir_swor(state, n_population, n_samples)
+    }
+}
+
+/// Bincount: for each `indices[i]`, increment the count at slot `indices[i]`.
+fn bincount(indices: &[usize], n: usize) -> Vec<f64> {
+    let mut counts = vec![0.0; n];
+    for &i in indices {
+        counts[i] += 1.0;
+    }
+    counts
+}
+
+// ---------------------------------------------------------------------------
+// BaggingClassifier / BaggingRegressor
+// ---------------------------------------------------------------------------
+
+/// Bagging meta-estimator for classification (sklearn's
+/// `BaggingClassifier`), built on [`DecisionTreeClassifier`] as the base
+/// estimator.
+///
+/// Each tree is fitted on a bootstrap (or random subset) of the training
+/// data, with an optional random feature subset per estimator.
+/// Predictions average the class probabilities across all estimators.
+#[derive(Debug, Clone)]
+pub struct BaggingClassifier {
+    base: DecisionTreeClassifier,
+    n_estimators: usize,
+    max_samples: BaggingMaxSamples,
+    max_features: BaggingMaxFeatures,
+    bootstrap: bool,
+    bootstrap_features: bool,
+    random_state: u64,
+
+    // Fitted state
+    estimators_: Vec<DecisionTreeClassifier>,
+    estimators_samples_: Vec<Vec<usize>>,
+    estimators_features_: Vec<Vec<usize>>,
+    classes_: LabelSpace,
+    n_features_: usize,
+}
+
+impl Default for BaggingClassifier {
+    fn default() -> Self {
+        Self {
+            base: DecisionTreeClassifier::default(),
+            n_estimators: 10,
+            max_samples: BaggingMaxSamples::Fraction(1.0),
+            max_features: BaggingMaxFeatures::Fraction(1.0),
+            bootstrap: true,
+            bootstrap_features: false,
+            random_state: 0,
+            estimators_: Vec::new(),
+            estimators_samples_: Vec::new(),
+            estimators_features_: Vec::new(),
+            classes_: LabelSpace::fit(&[0.0]).unwrap(),
+            n_features_: 0,
+        }
+    }
+}
+
+impl BaggingClassifier {
+    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
+    /// on the full sample, all features.
+    #[doc(hidden)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_n_estimators(mut self, n: usize) -> Self {
+        self.n_estimators = n;
+        self
+    }
+
+    pub fn with_max_samples(mut self, value: BaggingMaxSamples) -> Self {
+        self.max_samples = value;
+        self
+    }
+
+    pub fn with_max_features(mut self, value: BaggingMaxFeatures) -> Self {
+        self.max_features = value;
+        self
+    }
+
+    pub fn with_bootstrap(mut self, bootstrap: bool) -> Self {
+        self.bootstrap = bootstrap;
+        self
+    }
+
+    pub fn with_bootstrap_features(mut self, v: bool) -> Self {
+        self.bootstrap_features = v;
+        self
+    }
+
+    pub fn with_random_state(mut self, seed: u64) -> Self {
+        self.random_state = seed;
+        self
+    }
+
+    pub fn with_max_depth(mut self, depth: Option<usize>) -> Self {
+        self.base = self.base.with_max_depth(depth);
+        self
+    }
+
+    pub fn estimators(&self) -> &[DecisionTreeClassifier] {
+        &self.estimators_
+    }
+
+    pub fn estimators_samples(&self) -> &[Vec<usize>] {
+        &self.estimators_samples_
+    }
+
+    pub fn estimators_features(&self) -> &[Vec<usize>] {
+        &self.estimators_features_
+    }
+
+    pub fn n_classes(&self) -> usize {
+        self.classes_.len()
+    }
+}
+
+impl Estimator for BaggingClassifier {}
+
+impl Predictor for BaggingClassifier {
+    fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        let n_samples = x.nrows();
+        let n_features = x.ncols();
+        self.n_features_ = n_features;
+
+        self.classes_ = LabelSpace::fit(y)?;
+
+        let n_draw_samples = self.max_samples.resolve(n_samples)?;
+        let n_draw_features = self.max_features.resolve(n_features)?;
+
+        let mut rng = LegacyRandomState::new(self.random_state);
+
+        for _ in 0..self.n_estimators {
+            let forest_seed = rng.seed31();
+            // sklearn's `_set_random_states` derives a fresh seed for the
+            // base estimator from the forest-level seed, so that setting the
+            // same seed at the forest level changes every tree (just like
+            // `RandomForest`). Feature and sample draws, however, consume
+            // the forest-level seed directly (same `RandomState`).
+            let tree_seed = LegacyRandomState::new(forest_seed).seed31();
+            let mut rs = LegacyRandomState::new(forest_seed);
+
+            // Features first, then samples (matching sklearn's order, both
+            // consuming from the same `RandomState`).
+            let features = if self.bootstrap_features || n_draw_features != n_features {
+                if self.bootstrap_features {
+                    (0..n_draw_features)
+                        .map(|_| rs.randint(n_features))
+                        .collect()
+                } else {
+                    sample_without_replacement(&mut rs, n_features, n_draw_features)
+                }
+            } else {
+                (0..n_features).collect::<Vec<_>>()
+            };
+
+            let sample_indices = if self.bootstrap {
+                (0..n_draw_samples).map(|_| rs.randint(n_samples)).collect()
+            } else {
+                sample_without_replacement(&mut rs, n_samples, n_draw_samples)
+            };
+
+            let x_sub =
+                if features.len() == n_features && (0..n_features).eq(features.iter().copied()) {
+                    x.clone()
+                } else {
+                    x.select_columns(&features)?
+                };
+
+            // Weight path: bincount for bootstrap, zero mask for non-bootstrap.
+            let sample_weight = if self.bootstrap {
+                bincount(&sample_indices, n_samples)
+            } else {
+                let mut w = vec![1.0; n_samples];
+                let mut selected = vec![false; n_samples];
+                for &idx in &sample_indices {
+                    selected[idx] = true;
+                }
+                for (i, w_i) in w.iter_mut().enumerate() {
+                    if !selected[i] {
+                        *w_i = 0.0;
+                    }
+                }
+                w
+            };
+
+            let mut tree = self.base.clone();
+            tree.set_params("random_state", ParamValue::Int(tree_seed as usize))?;
+            tree.fit_weighted_impl(&x_sub, y, Some(sample_weight), Some(self.classes_.clone()))?;
+
+            self.estimators_.push(tree);
+            self.estimators_samples_.push(sample_indices);
+            self.estimators_features_.push(features);
+        }
+
+        Ok(())
+    }
+
+    fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
+        let pred = self.predict_proba(x)?;
+        let n_classes = self.classes_.len();
+        let n_samples = pred.nrows();
+        let proba = pred.as_slice();
+        let mut preds = Vec::with_capacity(n_samples);
+        for i in 0..n_samples {
+            let base = i * n_classes;
+            let mut best_c = 0usize;
+            let mut best_p = proba[base];
+            for c in 1..n_classes {
+                let p = proba[base + c];
+                if p > best_p {
+                    best_p = p;
+                    best_c = c;
+                }
+            }
+            preds.push(self.classes_.labels()[best_c]);
+        }
+        Ok(preds)
+    }
+
+    fn is_fitted(&self) -> bool {
+        !self.estimators_.is_empty()
+    }
+}
+
+impl PredictProba for BaggingClassifier {
+    fn predict_proba(&self, x: &Matrix) -> Result<Matrix> {
+        let n_classes = self.classes_.len();
+        let n_samples = x.nrows();
+        let mut proba = vec![0.0; n_samples * n_classes];
+
+        let n = self.estimators_.len() as f64;
+        for (est, features) in self.estimators_.iter().zip(&self.estimators_features_) {
+            let x_sub = if features.len() == self.n_features_
+                && (0..self.n_features_).eq(features.iter().copied())
+            {
+                x.clone()
+            } else {
+                x.select_columns(features)?
+            };
+            let est_proba = est.predict_proba(&x_sub)?;
+            let est_proba_slice = est_proba.as_slice();
+            let est_classes = est_proba.ncols();
+            for i in 0..n_samples {
+                let base = i * n_classes;
+                let est_base = i * est_classes;
+                for c in 0..est_classes {
+                    proba[base + c] += est_proba_slice[est_base + c];
+                }
+            }
+        }
+
+        for p in &mut proba {
+            *p /= n;
+        }
+        Matrix::from_flat(n_samples, n_classes, proba)
+    }
+}
+
+impl Params for BaggingClassifier {
+    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+        let mut params = self.base.get_params();
+        params.push(("n_estimators", ParamValue::Int(self.n_estimators)));
+        params.push(("max_samples", self.max_samples.to_param_value()));
+        params.push(("max_features", self.max_features.to_param_value()));
+        params.push(("bootstrap", ParamValue::Bool(self.bootstrap)));
+        params.push((
+            "bootstrap_features",
+            ParamValue::Bool(self.bootstrap_features),
+        ));
+        params.push(("random_state", ParamValue::Int(self.random_state as usize)));
+        params
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        match name {
+            "n_estimators" => {
+                self.n_estimators = match value {
+                    ParamValue::Int(v) => v,
+                    _ => {
+                        return Err(DatarustError::InvalidInput(
+                            "n_estimators expects Int".into(),
+                        ))
+                    }
+                };
+            }
+            "max_samples" => self.max_samples = BaggingMaxSamples::from_param_value(value)?,
+            "max_features" => self.max_features = BaggingMaxFeatures::from_param_value(value)?,
+            "bootstrap" => {
+                self.bootstrap = match value {
+                    ParamValue::Bool(b) => b,
+                    _ => return Err(DatarustError::InvalidInput("bootstrap expects Bool".into())),
+                };
+            }
+            "bootstrap_features" => {
+                self.bootstrap_features = match value {
+                    ParamValue::Bool(b) => b,
+                    _ => {
+                        return Err(DatarustError::InvalidInput(
+                            "bootstrap_features expects Bool".into(),
+                        ))
+                    }
+                };
+            }
+            "random_state" => {
+                self.random_state = match value {
+                    ParamValue::Int(v) => v as u64,
+                    _ => {
+                        return Err(DatarustError::InvalidInput(
+                            "random_state expects Int".into(),
+                        ))
+                    }
+                };
+            }
+            _ => {
+                self.base.set_params(name, value)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Classifier for BaggingClassifier {}
+
+// ---------------------------------------------------------------------------
+// BaggingRegressor
+// ---------------------------------------------------------------------------
+
+/// Bagging meta-estimator for regression (sklearn's `BaggingRegressor`),
+/// built on [`DecisionTreeRegressor`] as the base estimator.
+#[derive(Debug, Clone)]
+pub struct BaggingRegressor {
+    base: DecisionTreeRegressor,
+    n_estimators: usize,
+    max_samples: BaggingMaxSamples,
+    max_features: BaggingMaxFeatures,
+    bootstrap: bool,
+    bootstrap_features: bool,
+    random_state: u64,
+
+    // Fitted state
+    estimators_: Vec<DecisionTreeRegressor>,
+    estimators_samples_: Vec<Vec<usize>>,
+    estimators_features_: Vec<Vec<usize>>,
+    n_features_: usize,
+}
+
+impl Default for BaggingRegressor {
+    fn default() -> Self {
+        Self {
+            base: DecisionTreeRegressor::default(),
+            n_estimators: 10,
+            max_samples: BaggingMaxSamples::Fraction(1.0),
+            max_features: BaggingMaxFeatures::Fraction(1.0),
+            bootstrap: true,
+            bootstrap_features: false,
+            random_state: 0,
+            estimators_: Vec::new(),
+            estimators_samples_: Vec::new(),
+            estimators_features_: Vec::new(),
+            n_features_: 0,
+        }
+    }
+}
+
+impl BaggingRegressor {
+    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
+    /// on the full sample, all features.
+    #[doc(hidden)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_n_estimators(mut self, n: usize) -> Self {
+        self.n_estimators = n;
+        self
+    }
+
+    pub fn with_max_samples(mut self, value: BaggingMaxSamples) -> Self {
+        self.max_samples = value;
+        self
+    }
+
+    pub fn with_max_features(mut self, value: BaggingMaxFeatures) -> Self {
+        self.max_features = value;
+        self
+    }
+
+    pub fn with_bootstrap(mut self, bootstrap: bool) -> Self {
+        self.bootstrap = bootstrap;
+        self
+    }
+
+    pub fn with_bootstrap_features(mut self, v: bool) -> Self {
+        self.bootstrap_features = v;
+        self
+    }
+
+    pub fn with_random_state(mut self, seed: u64) -> Self {
+        self.random_state = seed;
+        self
+    }
+
+    pub fn with_max_depth(mut self, depth: Option<usize>) -> Self {
+        self.base = self.base.with_max_depth(depth);
+        self
+    }
+
+    pub fn estimators(&self) -> &[DecisionTreeRegressor] {
+        &self.estimators_
+    }
+
+    pub fn estimators_samples(&self) -> &[Vec<usize>] {
+        &self.estimators_samples_
+    }
+
+    pub fn estimators_features(&self) -> &[Vec<usize>] {
+        &self.estimators_features_
+    }
+}
+
+impl Estimator for BaggingRegressor {}
+
+impl Predictor for BaggingRegressor {
+    fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        let n_samples = x.nrows();
+        let n_features = x.ncols();
+        self.n_features_ = n_features;
+
+        let n_draw_samples = self.max_samples.resolve(n_samples)?;
+        let n_draw_features = self.max_features.resolve(n_features)?;
+
+        let mut rng = LegacyRandomState::new(self.random_state);
+
+        for _ in 0..self.n_estimators {
+            let forest_seed = rng.seed31();
+            // sklearn's `_set_random_states` derives a fresh seed for the
+            // base estimator from the forest-level seed, so that setting the
+            // same seed at the forest level changes every tree (just like
+            // `RandomForest`). Feature and sample draws, however, consume
+            // the forest-level seed directly (same `RandomState`).
+            let tree_seed = LegacyRandomState::new(forest_seed).seed31();
+            let mut rs = LegacyRandomState::new(forest_seed);
+
+            let features = if self.bootstrap_features || n_draw_features != n_features {
+                if self.bootstrap_features {
+                    (0..n_draw_features)
+                        .map(|_| rs.randint(n_features))
+                        .collect()
+                } else {
+                    sample_without_replacement(&mut rs, n_features, n_draw_features)
+                }
+            } else {
+                (0..n_features).collect::<Vec<_>>()
+            };
+
+            let sample_indices = if self.bootstrap {
+                (0..n_draw_samples).map(|_| rs.randint(n_samples)).collect()
+            } else {
+                sample_without_replacement(&mut rs, n_samples, n_draw_samples)
+            };
+
+            let x_sub =
+                if features.len() == n_features && (0..n_features).eq(features.iter().copied()) {
+                    x.clone()
+                } else {
+                    x.select_columns(&features)?
+                };
+
+            let sample_weight = if self.bootstrap {
+                bincount(&sample_indices, n_samples)
+            } else {
+                let mut w = vec![1.0; n_samples];
+                let mut selected = vec![false; n_samples];
+                for &idx in &sample_indices {
+                    selected[idx] = true;
+                }
+                for (i, w_i) in w.iter_mut().enumerate() {
+                    if !selected[i] {
+                        *w_i = 0.0;
+                    }
+                }
+                w
+            };
+
+            let mut tree = self.base.clone();
+            tree.set_params("random_state", ParamValue::Int(tree_seed as usize))?;
+            tree.fit_weighted_impl(&x_sub, y, Some(sample_weight))?;
+
+            self.estimators_.push(tree);
+            self.estimators_samples_.push(sample_indices);
+            self.estimators_features_.push(features);
+        }
+
+        Ok(())
+    }
+
+    fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
+        let n_samples = x.nrows();
+        if self.estimators_.is_empty() {
+            return Err(DatarustError::NotFitted(
+                "BaggingRegressor not fitted".into(),
+            ));
+        }
+        let mut sum = vec![0.0; n_samples];
+        let n = self.estimators_.len() as f64;
+        for (est, features) in self.estimators_.iter().zip(&self.estimators_features_) {
+            let x_sub = if features.len() == self.n_features_
+                && (0..self.n_features_).eq(features.iter().copied())
+            {
+                x.clone()
+            } else {
+                x.select_columns(features)?
+            };
+            let preds = est.predict(&x_sub)?;
+            for (s, p) in sum.iter_mut().zip(preds) {
+                *s += p;
+            }
+        }
+        for v in &mut sum {
+            *v /= n;
+        }
+        Ok(sum)
+    }
+
+    fn is_fitted(&self) -> bool {
+        !self.estimators_.is_empty()
+    }
+}
+
+impl Regressor for BaggingRegressor {
+    fn name(&self) -> &'static str {
+        "BaggingRegressor"
+    }
+}
+
+impl Params for BaggingRegressor {
+    fn get_params(&self) -> Vec<(&'static str, ParamValue)> {
+        let mut params = self.base.get_params();
+        params.push(("n_estimators", ParamValue::Int(self.n_estimators)));
+        params.push(("max_samples", self.max_samples.to_param_value()));
+        params.push(("max_features", self.max_features.to_param_value()));
+        params.push(("bootstrap", ParamValue::Bool(self.bootstrap)));
+        params.push((
+            "bootstrap_features",
+            ParamValue::Bool(self.bootstrap_features),
+        ));
+        params.push(("random_state", ParamValue::Int(self.random_state as usize)));
+        params
+    }
+
+    fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        match name {
+            "n_estimators" => {
+                self.n_estimators = match value {
+                    ParamValue::Int(v) => v,
+                    _ => {
+                        return Err(DatarustError::InvalidInput(
+                            "n_estimators expects Int".into(),
+                        ))
+                    }
+                };
+            }
+            "max_samples" => self.max_samples = BaggingMaxSamples::from_param_value(value)?,
+            "max_features" => self.max_features = BaggingMaxFeatures::from_param_value(value)?,
+            "bootstrap" => {
+                self.bootstrap = match value {
+                    ParamValue::Bool(b) => b,
+                    _ => return Err(DatarustError::InvalidInput("bootstrap expects Bool".into())),
+                };
+            }
+            "bootstrap_features" => {
+                self.bootstrap_features = match value {
+                    ParamValue::Bool(b) => b,
+                    _ => {
+                        return Err(DatarustError::InvalidInput(
+                            "bootstrap_features expects Bool".into(),
+                        ))
+                    }
+                };
+            }
+            "random_state" => {
+                self.random_state = match value {
+                    ParamValue::Int(v) => v as u64,
+                    _ => {
+                        return Err(DatarustError::InvalidInput(
+                            "random_state expects Int".into(),
+                        ))
+                    }
+                };
+            }
+            _ => {
+                self.base.set_params(name, value)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bagging parameter enums
+// ---------------------------------------------------------------------------
+
+/// Value for `max_samples` in Bagging: a float fraction (0 < f ≤ 1) or an
+/// absolute integer count.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BaggingMaxSamples {
+    Fraction(f64),
+    Count(usize),
+}
+
+impl BaggingMaxSamples {
+    pub fn resolve(self, n: usize) -> Result<usize> {
+        match self {
+            Self::Fraction(f) => {
+                let count = (f * n as f64).trunc() as usize;
+                Ok(count.max(1))
+            }
+            Self::Count(c) => {
+                if c == 0 || c > n {
+                    Err(DatarustError::InvalidInput(format!(
+                        "max_samples count {c} must be in [1, {n}]"
+                    )))
+                } else {
+                    Ok(c)
+                }
+            }
+        }
+    }
+
+    fn to_param_value(self) -> ParamValue {
+        match self {
+            Self::Fraction(f) => ParamValue::Float(f),
+            Self::Count(c) => ParamValue::Int(c),
+        }
+    }
+
+    fn from_param_value(value: ParamValue) -> Result<Self> {
+        match value {
+            ParamValue::Float(f) => Ok(Self::Fraction(f)),
+            ParamValue::Int(c) => Ok(Self::Count(c)),
+            other => Err(DatarustError::InvalidInput(format!(
+                "max_samples must be Float or Int, got {:?}",
+                other
+            ))),
+        }
+    }
+}
+
+/// Value for `max_features` in Bagging: a float fraction or an absolute
+/// integer count.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BaggingMaxFeatures {
+    Fraction(f64),
+    Count(usize),
+}
+
+impl BaggingMaxFeatures {
+    pub fn resolve(self, n: usize) -> Result<usize> {
+        match self {
+            Self::Fraction(f) => {
+                let count = (f * n as f64).trunc() as usize;
+                Ok(count.max(1))
+            }
+            Self::Count(c) => {
+                if c == 0 {
+                    Ok(n)
+                } else if c > n {
+                    Err(DatarustError::InvalidInput(format!(
+                        "max_features {c} exceeds n_features {n}"
+                    )))
+                } else {
+                    Ok(c)
+                }
+            }
+        }
+    }
+
+    fn to_param_value(self) -> ParamValue {
+        match self {
+            Self::Fraction(f) => ParamValue::Float(f),
+            Self::Count(c) => ParamValue::Int(c),
+        }
+    }
+
+    fn from_param_value(value: ParamValue) -> Result<Self> {
+        match value {
+            ParamValue::Float(f) => Ok(Self::Fraction(f)),
+            ParamValue::Int(c) => Ok(Self::Count(c)),
+            other => Err(DatarustError::InvalidInput(format!(
+                "max_features must be Float or Int, got {:?}",
+                other
+            ))),
         }
     }
 }

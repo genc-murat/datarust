@@ -22,8 +22,9 @@
 //! - No public `sample_weight` (an internal weighted-fit path serves the
 //!   forest's bootstrap), `monotonic_cst`, missing-value routing, or sparse
 //!   input; `X` must be finite.
-//! - `ccp_alpha` (cost-complexity pruning) and the `random`/`mae` splitters
-//!   and criteria are not ported.
+//! - `ccp_alpha` (cost-complexity pruning) and the `mae` criterion are not
+//!   ported. The `random` splitter is ported internally for the ensemble
+//!   module's ExtraTrees estimators.
 //! - Only single-output targets.
 
 mod estimators;
@@ -143,6 +144,7 @@ struct TreeOptions {
     min_impurity_decrease: f64,
     max_features: MaxFeatures,
     random_state: u64,
+    random_split: bool,
 }
 
 impl Default for TreeOptions {
@@ -154,6 +156,7 @@ impl Default for TreeOptions {
             min_impurity_decrease: 0.0,
             max_features: MaxFeatures::All,
             random_state: 0,
+            random_split: false,
         }
     }
 }
@@ -387,7 +390,8 @@ impl TreeStructure {
             if node.is_leaf() {
                 return Ok(idx);
             }
-            let next = if row[node.feature] <= node.threshold {
+            let val_f32 = row[node.feature] as f32;
+            let next = if val_f32 as f64 <= node.threshold {
                 node.left
             } else {
                 node.right
@@ -431,6 +435,16 @@ impl TreeStructure {
         }
     }
 
+    /// Normalized per-class probabilities at node `idx` (classification
+    /// only) — sklearn's `tree_.value` row, for fixture comparison.
+    pub fn node_class_probabilities(&self, idx: usize) -> Option<Vec<f64>> {
+        let node = self.nodes.get(idx)?;
+        match &node.value {
+            ValueSummary::Classification(_) => node.value.class_probabilities().ok(),
+            ValueSummary::Regression { .. } => None,
+        }
+    }
+
     /// Impurity of node `idx` at fit time.
     pub fn node_impurity(&self, idx: usize) -> Option<f64> {
         self.nodes.get(idx).map(|n| n.impurity)
@@ -455,11 +469,11 @@ impl TreeStructure {
     /// (reproduced exactly — a sequential fold diverges in the last ulp
     /// for ≥ 8 features).
     ///
-    /// sklearn's Cython is compiled with FP contraction, so the per-node
-    /// contribution `n_node·imp_node − n_L·imp_L` is a single fused
-    /// multiply-add (`fma(n_node, imp_node, −(n_L·imp_L))`); the plain
-    /// two-step rounding diverges in the last ulp. The second subtraction
-    /// stays unfused, matching the emitted machine code.
+    /// sklearn's Cython is compiled with FP contraction on arm64, so both
+    /// subtractions in `n·imp − n_L·imp_L − n_R·imp_R` fuse: the inner one
+    /// as `fma(n, imp, −(n_L·imp_L))` and the outer one as
+    /// `−fma(n_R, imp_R, −inner)`. Plain two-step rounding diverges in the
+    /// last ulp on some trees.
     pub fn feature_importances(&self, n_features: usize) -> Vec<f64> {
         let mut importances = vec![0.0; n_features];
         let nodes = &self.nodes;
@@ -467,11 +481,13 @@ impl TreeStructure {
             if !node.is_leaf() {
                 let left = &nodes[node.left];
                 let right = &nodes[node.right];
-                importances[node.feature] += f64::mul_add(
+                let inner = f64::mul_add(
                     node.weighted_n,
                     node.impurity,
                     -(left.weighted_n * left.impurity),
-                ) - right.weighted_n * right.impurity;
+                );
+                importances[node.feature] +=
+                    -f64::mul_add(right.weighted_n, right.impurity, -inner);
             }
         }
         let root_weighted = nodes[0].weighted_n;
@@ -638,7 +654,12 @@ impl<'a> TreeBuilder<'a> {
 
             let mut split = splitter::SplitRecord::init(end);
             if !is_leaf {
-                let (s, n_const) = self.splitter.node_split(node_impurity, n_constant_features);
+                let (s, n_const) = if self.options.random_split {
+                    self.splitter
+                        .node_split_random(node_impurity, n_constant_features)
+                } else {
+                    self.splitter.node_split(node_impurity, n_constant_features)
+                };
                 split = s;
                 n_constant_features = n_const;
                 // If EPSILON=0 in the below comparison, float precision

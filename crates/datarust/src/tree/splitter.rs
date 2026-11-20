@@ -1,7 +1,9 @@
-//! Exact port of scikit-learn 1.6.1's dense `BestSplitter` machinery.
+//! Exact port of scikit-learn 1.6.1's dense `BestSplitter` and
+//! `RandomSplitter` machinery.
 //!
 //! This is a faithful transliteration of sklearn's Cython implementation
-//! (`tree/_splitter.pyx` `node_split_best`, `tree/_partitioner.pyx`
+//! (`tree/_splitter.pyx` `node_split_best` / `node_split_random`,
+//! `tree/_partitioner.pyx`
 //! `DensePartitioner`, `tree/_criterion.pyx`, and the MT19937/`rand_r`
 //! primitives from `utils/_random.pxd`). The goal is **bit-exact parity**:
 //! given the same `X`, `y`, parameters, and integer `random_state`, the
@@ -16,6 +18,10 @@
 //!   resolve by the RNG stream, not feature order.
 //! - **Seeding chain**: `np.random.RandomState(seed).randint(0, 2³¹−1)`
 //!   (legacy MT19937, masked rejection) → the xorshift `rand_r` seed.
+//! - **Random thresholds** (`node_split_random`, sklearn's
+//!   `splitter="random"` used by ExtraTrees): one `rand_uniform` draw per
+//!   non-constant feature on the *same* `rand_r` stream as the feature
+//!   draws; `find_min_max` + `partition_samples` replace the sort + scan.
 //! - **float32 feature quantization**: sklearn converts `X` to float32;
 //!   thresholds are computed as `f32(v_prev)/2 + f32(v)/2` in float64.
 //! - **Introsort** (median-of-3, 3-way partition, heapsort fallback) — the
@@ -63,6 +69,14 @@ fn our_rand_r(seed: &mut u32) -> u32 {
 fn rand_int(low: usize, high: usize, seed: &mut u32) -> usize {
     debug_assert!(high > low, "rand_int requires high > low");
     low + (our_rand_r(seed) as usize) % (high - low)
+}
+
+/// `rand_uniform(low, high, random_state)` from `tree/_utils.pyx`: the f32
+/// bounds are widened to f64, and the division precedes the addition (no
+/// FMA contraction).
+#[inline]
+fn rand_uniform(low: f32, high: f32, seed: &mut u32) -> f64 {
+    ((high as f64 - low as f64) * our_rand_r(seed) as f64 / RAND_R_MAX as f64) + low as f64
 }
 
 /// Minimal legacy MT19937 (matches `numpy.random.RandomState`).
@@ -515,7 +529,12 @@ impl CriterionState {
             }
             _ => {
                 let (il, ir) = self.children_impurity(y, samples);
-                -(self.weighted_n_right * ir) - (self.weighted_n_left * il)
+                // sklearn's Cython compiles `-wr*ir - wl*il` with FP
+                // contraction on arm64: the right product rounds first and
+                // the left one fuses into the subtraction. Plain two-step
+                // rounding ties mirror-image splits (n_L/n_R swapped with
+                // matching counts) that sklearn breaks by 1 ulp.
+                f64::mul_add(-self.weighted_n_right, ir, -(self.weighted_n_left * il))
             }
         }
     }
@@ -881,6 +900,175 @@ impl<'a> SkBestSplitter<'a> {
 
         (best_split, n_total_constants)
     }
+
+    /// `DensePartitioner.find_min_max` (no-missing path): fills
+    /// `feature_values[start..end]` in samples order and returns the
+    /// (min, max) of the current feature.
+    fn find_min_max(&mut self, current_feature: usize) -> (f32, f32) {
+        let (start, end) = (self.start, self.end);
+        let mut min = self.xv(self.samples[start], current_feature);
+        let mut max = min;
+        self.feature_values[start] = min;
+        for p in start + 1..end {
+            let value = self.xv(self.samples[p], current_feature);
+            self.feature_values[p] = value;
+            if value < min {
+                min = value;
+            } else if value > max {
+                max = value;
+            }
+        }
+        (min, max)
+    }
+
+    /// `DensePartitioner.partition_samples`: partitions on the cached
+    /// `feature_values` (f32 widened to f64), decrement-before-swap,
+    /// swapping *both* `feature_values` and `samples`. Returns the left
+    /// partition's end. Mutates sample order even for later-rejected splits.
+    fn partition_samples(&mut self, threshold: f64) -> usize {
+        let mut p = self.start;
+        let mut partition_end = self.end;
+        while p < partition_end {
+            if self.feature_values[p] as f64 <= threshold {
+                p += 1;
+            } else {
+                partition_end -= 1;
+                self.feature_values.swap(p, partition_end);
+                self.samples.swap(p, partition_end);
+            }
+        }
+        partition_end
+    }
+
+    /// `node_split_random` (sklearn's `splitter="random"`, ExtraTrees):
+    /// same Fisher-Yates feature draws as [`Self::node_split`], but each
+    /// non-constant feature gets a single `rand_uniform` threshold between
+    /// its min and max instead of a full midpoint scan.
+    pub fn node_split_random(
+        &mut self,
+        parent_impurity: f64,
+        n_known_constants: usize,
+    ) -> (SplitRecord, usize) {
+        let start = self.start;
+        let end = self.end;
+        let max_features = self.max_features;
+        let min_samples_leaf = self.min_samples_leaf;
+        let min_weight_leaf = self.min_weight_leaf;
+
+        let mut best_split = SplitRecord::init(end);
+        let mut best_proxy_improvement = f64::NEG_INFINITY;
+
+        let mut f_i = self.n_features;
+        let mut n_found_constants = 0usize;
+        let mut n_drawn_constants = 0usize;
+        let mut n_total_constants = n_known_constants;
+        let mut n_visited_features = 0usize;
+        // sklearn's `current_split.feature` scratch: set before the constant
+        // check and persists across `continue`s; read at finalization only
+        // when a split was found (>= 1 full iteration), so 0 is safe here.
+        let mut current_feature = 0usize;
+
+        while f_i > n_total_constants
+            && (n_visited_features < max_features
+                || n_visited_features <= n_found_constants + n_drawn_constants)
+        {
+            n_visited_features += 1;
+
+            let mut f_j = rand_int(
+                n_drawn_constants,
+                f_i - n_found_constants,
+                &mut self.rand_r_state,
+            );
+
+            if f_j < n_known_constants {
+                self.features.swap(n_drawn_constants, f_j);
+                n_drawn_constants += 1;
+                continue;
+            }
+
+            f_j += n_found_constants;
+            current_feature = self.features[f_j];
+            let (min_value, max_value) = self.find_min_max(current_feature);
+
+            // Constant-feature test (single precision, unsorted min/max).
+            if end == start || max_value <= min_value + FEATURE_THRESHOLD {
+                self.features.swap(f_j, n_total_constants);
+                n_found_constants += 1;
+                n_total_constants += 1;
+                continue;
+            }
+
+            f_i -= 1;
+            self.features.swap(f_i, f_j);
+
+            // Draw one random threshold; collapse to min when it lands on
+            // max (f64 threshold vs widened f32 max).
+            let mut threshold = rand_uniform(min_value, max_value, &mut self.rand_r_state);
+            if threshold == max_value as f64 {
+                threshold = min_value as f64;
+            }
+
+            let pos = self.partition_samples(threshold);
+            let n_left = pos - start;
+            let n_right = end - pos;
+            if n_left < min_samples_leaf || n_right < min_samples_leaf {
+                continue;
+            }
+
+            // Evaluate the partitioned split (reset + update, not the
+            // incremental scan used by node_split).
+            let (y, labels, samples) = (self.y, self.labels, &self.samples);
+            self.criterion.reset();
+            self.criterion.update(y, labels, samples, pos);
+            if self.criterion.weighted_n_left < min_weight_leaf
+                || self.criterion.weighted_n_right < min_weight_leaf
+            {
+                continue;
+            }
+            let current_proxy_improvement = self.criterion.proxy_impurity_improvement(y, samples);
+
+            if current_proxy_improvement > best_proxy_improvement {
+                best_proxy_improvement = current_proxy_improvement;
+                best_split = SplitRecord {
+                    feature: current_feature,
+                    threshold,
+                    impurity_left: f64::INFINITY,
+                    impurity_right: f64::INFINITY,
+                    improvement: f64::NEG_INFINITY,
+                    pos,
+                };
+            }
+        }
+
+        if best_split.pos < end {
+            // When the last evaluated feature IS the best feature, samples
+            // stay in partition_samples order (sklearn skips the final
+            // repartition) — this changes FP accumulation order downstream.
+            if current_feature != best_split.feature {
+                self.partition_samples_final(
+                    best_split.pos,
+                    best_split.threshold,
+                    best_split.feature,
+                );
+            }
+            let (y, labels, samples) = (self.y, self.labels, &self.samples);
+            self.criterion.reset();
+            self.criterion.update(y, labels, samples, best_split.pos);
+            let (il, ir) = self.criterion.children_impurity(y, samples);
+            best_split.impurity_left = il;
+            best_split.impurity_right = ir;
+            best_split.improvement = self.criterion.impurity_improvement(parent_impurity, il, ir);
+        }
+
+        // Preserve the constant-feature invariant for sibling/child nodes.
+        self.features[0..n_known_constants]
+            .copy_from_slice(&self.constant_features[0..n_known_constants]);
+        let tail = self.features[n_known_constants..n_known_constants + n_found_constants].to_vec();
+        self.constant_features[n_known_constants..n_known_constants + n_found_constants]
+            .copy_from_slice(&tail);
+
+        (best_split, n_total_constants)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -976,5 +1164,62 @@ mod tests {
         // Duplicates are grouped; exact intra-group order is introsort's
         // (unstable) — pin it to catch accidental algorithm drift.
         assert_eq!(sa.to_vec(), vec![11, 13, 12, 10, 14]);
+    }
+
+    /// `rand_uniform` pins computed from sklearn's formula
+    /// `((high - low) * our_rand_r(state) / RAND_R_MAX) + low` with f32
+    /// bounds widened to f64 (numpy 2.0.2 / sklearn 1.6.1 semantics).
+    #[test]
+    fn rand_uniform_reference_values() {
+        let mut s = 1u32;
+        assert_eq!(
+            rand_uniform(0.0, 1.0, &mut s).to_bits(),
+            0.0001259003766467331f64.to_bits()
+        );
+        assert_eq!(s, 270369);
+        let mut s = 7u32;
+        assert_eq!(
+            rand_uniform(4.3, 7.9, &mut s).to_bits(),
+            4.303172880142314f64.to_bits()
+        );
+        let mut s = 42u32;
+        assert_eq!(
+            rand_uniform(-1.0, 1.0, &mut s).to_bits(),
+            (-0.9894244298289644f64).to_bits()
+        );
+        let mut s = 3u32;
+        assert_eq!(rand_uniform(2.0, 2.0, &mut s), 2.0);
+    }
+
+    /// `find_min_max` fills feature_values in samples order;
+    /// `partition_samples` swaps both arrays with decrement-before-swap.
+    #[test]
+    fn random_split_partition_helpers() {
+        let y = [0.0; 4];
+        let mut splitter = SkBestSplitter {
+            x32: vec![3.0f32, 1.0, 2.0, 0.0],
+            ncols: 1,
+            y: &y,
+            labels: None,
+            samples: vec![0, 1, 2, 3],
+            feature_values: vec![0.0; 4],
+            features: vec![0],
+            constant_features: vec![0],
+            rand_r_state: 1,
+            criterion: CriterionState::new(Criterion::Gini, 2, 4.0),
+            start: 0,
+            end: 4,
+            max_features: 1,
+            min_samples_leaf: 1,
+            min_weight_leaf: 0.0,
+            n_features: 1,
+        };
+        let (min, max) = splitter.find_min_max(0);
+        assert_eq!((min, max), (0.0, 3.0));
+        assert_eq!(splitter.feature_values, vec![3.0, 1.0, 2.0, 0.0]);
+        let pos = splitter.partition_samples(1.5);
+        assert_eq!(pos, 2);
+        assert_eq!(splitter.samples, vec![3, 1, 2, 0]);
+        assert_eq!(splitter.feature_values, vec![0.0, 1.0, 2.0, 3.0]);
     }
 }

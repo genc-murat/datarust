@@ -98,6 +98,13 @@ impl DecisionTreeClassifier {
         self
     }
 
+    /// Internal: selects the ExtraTrees random-threshold splitter
+    /// (sklearn's `splitter="random"`); not a public tree parameter.
+    pub(crate) fn with_random_split(mut self, value: bool) -> Self {
+        self.options.random_split = value;
+        self
+    }
+
     /// The fitted tree structure, or `None` before `fit`.
     pub fn tree(&self) -> Option<&TreeStructure> {
         self.tree.as_ref()
@@ -385,6 +392,13 @@ impl DecisionTreeRegressor {
     /// Sets the seed for deterministic per-split feature subsampling.
     pub fn with_random_state(mut self, seed: u64) -> Self {
         self.options.random_state = seed;
+        self
+    }
+
+    /// Internal: selects the ExtraTrees random-threshold splitter
+    /// (sklearn's `splitter="random"`); not a public tree parameter.
+    pub(crate) fn with_random_split(mut self, value: bool) -> Self {
+        self.options.random_split = value;
         self
     }
 

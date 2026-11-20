@@ -108,7 +108,9 @@ pub use encoder::{
     DropStrategy, FrequencyEncoder, HandleUnknown, LabelEncoder, OneHotEncoder, OrdinalCategories,
     OrdinalEncoder, OrdinalHandleUnknown, TargetEncoder, UnknownFrequency, UnknownTarget,
 };
-pub use ensemble::{RandomForestClassifier, RandomForestRegressor};
+pub use ensemble::{
+    ExtraTreesClassifier, ExtraTreesRegressor, RandomForestClassifier, RandomForestRegressor,
+};
 pub use error::{DatarustError, Result};
 pub use label_space::LabelSpace;
 pub use linear_model::{
