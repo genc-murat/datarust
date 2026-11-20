@@ -4,9 +4,21 @@ Model Context Protocol (MCP) server for [datarust](https://datarust.dev) and [da
 
 Provides tabular machine learning, preprocessing, and automated dataset profiling tools over standard stdio JSON-RPC for Claude Desktop, Cursor, and autonomous AI agents.
 
+## Installation
+
+```sh
+cargo install datarust-mcp
+```
+
 ## Running the Server
 
-Run directly with Cargo:
+Run the installed binary:
+
+```sh
+datarust-mcp
+```
+
+Or from a workspace checkout:
 
 ```sh
 cargo run --release -p datarust-mcp
@@ -20,12 +32,15 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "datarust": {
-      "command": "cargo",
-      "args": ["run", "--release", "--manifest-path", "/PATH/TO/datarust/Cargo.toml", "-p", "datarust-mcp"]
+      "command": "datarust-mcp"
     }
   }
 }
 ```
+
+From a workspace checkout, use `"command": "cargo"` with
+`"args": ["run", "--release", "--manifest-path", "/PATH/TO/datarust/Cargo.toml", "-p", "datarust-mcp"]`
+instead.
 
 ## Exposed MCP Tools
 
