@@ -122,9 +122,9 @@ release (v0.9). v0.8 also lands the two ensembles carried over from v0.7.
 
 **Deliverables:**
 
-- [ ] `src/ensemble.rs`: `ExtraTreesClassifier` / `ExtraTreesRegressor`
+- [x] `src/ensemble.rs`: `ExtraTreesClassifier` / `ExtraTreesRegressor`
       (random splits; carried over from v0.7).
-- [ ] `src/ensemble.rs`: `Bagging` meta-estimator (works with any
+- [x] `src/ensemble.rs`: `Bagging` meta-estimator (works with any
       `Predictor`; carried over from v0.7).
 - [ ] `Params` for `Pipeline` / `ColumnTransformer` with nested
       `step__param` addressing — prerequisite for pipeline parameter grids.

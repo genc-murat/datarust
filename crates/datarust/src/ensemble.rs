@@ -1382,53 +1382,64 @@ impl BaggingClassifier {
         Self::default()
     }
 
+    /// Sets the number of base estimators.
     pub fn with_n_estimators(mut self, n: usize) -> Self {
         self.n_estimators = n;
         self
     }
 
+    /// Fraction (`0 < f ≤ 1`) or absolute count of samples per estimator.
     pub fn with_max_samples(mut self, value: BaggingMaxSamples) -> Self {
         self.max_samples = value;
         self
     }
 
+    /// Fraction or absolute count of features drawn for each base estimator.
     pub fn with_max_features(mut self, value: BaggingMaxFeatures) -> Self {
         self.max_features = value;
         self
     }
 
+    /// Whether to draw samples with replacement (bootstrap).
     pub fn with_bootstrap(mut self, bootstrap: bool) -> Self {
         self.bootstrap = bootstrap;
         self
     }
 
+    /// Whether features are drawn with replacement.
     pub fn with_bootstrap_features(mut self, v: bool) -> Self {
         self.bootstrap_features = v;
         self
     }
 
+    /// Seed for the random state (deterministic sampling).
     pub fn with_random_state(mut self, seed: u64) -> Self {
         self.random_state = seed;
         self
     }
 
+    /// Maximum depth of each base tree (`None` for unlimited).
     pub fn with_max_depth(mut self, depth: Option<usize>) -> Self {
         self.base = self.base.with_max_depth(depth);
         self
     }
 
+    /// Fitted base estimators, one per ensemble member.
     pub fn estimators(&self) -> &[DecisionTreeClassifier] {
         &self.estimators_
     }
 
+    /// Bootstrap sample indices per estimator (usize indices into the training set).
     pub fn estimators_samples(&self) -> &[Vec<usize>] {
         &self.estimators_samples_
     }
 
+    /// Feature indices per estimator (column positions in the training matrix).
     pub fn estimators_features(&self) -> &[Vec<usize>] {
         &self.estimators_features_
     }
 
+    /// Number of classes in the training labels.
     pub fn n_classes(&self) -> usize {
         self.classes_.len()
     }
@@ -1690,49 +1701,59 @@ impl BaggingRegressor {
         Self::default()
     }
 
+    /// Sets the number of base estimators.
     pub fn with_n_estimators(mut self, n: usize) -> Self {
         self.n_estimators = n;
         self
     }
 
+    /// Fraction (`0 < f ≤ 1`) or absolute count of samples per estimator.
     pub fn with_max_samples(mut self, value: BaggingMaxSamples) -> Self {
         self.max_samples = value;
         self
     }
 
+    /// Fraction or absolute count of features drawn for each base estimator.
     pub fn with_max_features(mut self, value: BaggingMaxFeatures) -> Self {
         self.max_features = value;
         self
     }
 
+    /// Whether to draw samples with replacement (bootstrap).
     pub fn with_bootstrap(mut self, bootstrap: bool) -> Self {
         self.bootstrap = bootstrap;
         self
     }
 
+    /// Whether features are drawn with replacement.
     pub fn with_bootstrap_features(mut self, v: bool) -> Self {
         self.bootstrap_features = v;
         self
     }
 
+    /// Seed for the random state (deterministic sampling).
     pub fn with_random_state(mut self, seed: u64) -> Self {
         self.random_state = seed;
         self
     }
 
+    /// Maximum depth of each base tree (`None` for unlimited).
     pub fn with_max_depth(mut self, depth: Option<usize>) -> Self {
         self.base = self.base.with_max_depth(depth);
         self
     }
 
+    /// Fitted base estimators, one per ensemble member.
     pub fn estimators(&self) -> &[DecisionTreeRegressor] {
         &self.estimators_
     }
 
+    /// Bootstrap sample indices per estimator (usize indices into the training set).
     pub fn estimators_samples(&self) -> &[Vec<usize>] {
         &self.estimators_samples_
     }
 
+    /// Feature indices per estimator (column positions in the training matrix).
     pub fn estimators_features(&self) -> &[Vec<usize>] {
         &self.estimators_features_
     }
@@ -1924,11 +1945,15 @@ impl Params for BaggingRegressor {
 /// absolute integer count.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BaggingMaxSamples {
+    /// Fraction of the total sample count (`0 < f ≤ 1`).
     Fraction(f64),
+    /// Absolute number of samples per estimator.
     Count(usize),
 }
 
 impl BaggingMaxSamples {
+    /// Converts a fraction or count into an absolute sample size,
+    /// truncating fractions (matching sklearn's `int(frac * n)`).
     pub fn resolve(self, n: usize) -> Result<usize> {
         match self {
             Self::Fraction(f) => {
@@ -1970,11 +1995,15 @@ impl BaggingMaxSamples {
 /// integer count.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BaggingMaxFeatures {
+    /// Fraction of the total sample count (`0 < f ≤ 1`).
     Fraction(f64),
+    /// Absolute number of samples per estimator.
     Count(usize),
 }
 
 impl BaggingMaxFeatures {
+    /// Converts a fraction or count into an absolute feature count,
+    /// truncating fractions. A count of zero means "all features".
     pub fn resolve(self, n: usize) -> Result<usize> {
         match self {
             Self::Fraction(f) => {

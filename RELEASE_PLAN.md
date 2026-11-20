@@ -59,19 +59,19 @@ Never ship an estimator without its sklearn-parity fixtures.
 
 ### M1 — Close the v0.7 ensemble theme
 
-- [ ] `ExtraTreesClassifier` / `ExtraTreesRegressor` in `src/ensemble.rs`.
+- [x] `ExtraTreesClassifier` / `ExtraTreesRegressor` in `src/ensemble.rs`.
       Random-split variant of the existing CART kernel: per-feature uniform
       threshold draws from the same MT19937 "legacy RandomState" stream the
       forests already clone. Note sklearn 1.6.1 defaults (`max_features`
       differs from RandomForest) — pin behavior with fixtures, not memory.
-- [ ] `Bagging` meta-estimator, generic over any `Predictor` (bootstrap +
+- [x] `Bagging` meta-estimator, generic over any `Predictor` (bootstrap +
       optional `max_samples` / `max_features`). First cut mirrors the forest
       release contract: no OOB scoring, no sample weights, no parallel fit.
-- [ ] Parity fixtures (sklearn 1.6.1 / numpy 2.0.2, seeded) in the
+- [x] Parity fixtures (sklearn 1.6.1 / numpy 2.0.2, seeded) in the
       `tests/tree_fixtures.rs` / `tree_parity.rs` style, plus integration and
       proptest invariants (determinism under fixed seed, probability
       normalization, depth/sample constraints).
-- [ ] `Params` impls for all four new estimators; book `guide/ensembles.md`
+- [x] `Params` impls for all four new estimators; book `guide/ensembles.md`
       update.
 
 Size: M (kernel reuse; the work is RNG-stream fidelity + fixtures).
