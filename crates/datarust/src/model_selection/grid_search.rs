@@ -145,17 +145,23 @@ pub(crate) fn evaluate_candidates<E: Predictor + Params + Clone>(
 /// share the same rank (1, 1, 3 — like sklearn's `rank_test_score`, which
 /// compares scores for exact equality; identical candidates run identical
 /// code paths, so their means are bit-identical here too).
+///
+/// NaN scores are undefined, so they always rank last, and NaN ties share a
+/// rank with each other.
 pub(crate) fn rank_candidates(mean_scores: &[f64]) -> Vec<usize> {
     let mut indexed: Vec<(usize, f64)> = mean_scores.iter().copied().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    indexed.sort_by(|a, b| match (a.1.is_nan(), b.1.is_nan()) {
+        (true, true) => std::cmp::Ordering::Equal,
+        (true, false) => std::cmp::Ordering::Greater,
+        (false, true) => std::cmp::Ordering::Less,
+        (false, false) => b.1.total_cmp(&a.1),
+    });
+    let same_score = |a: f64, b: f64| (a.is_nan() && b.is_nan()) || a == b;
     let mut ranks = vec![0usize; mean_scores.len()];
     let mut current_rank = 1usize;
     for (idx, &(i, _)) in indexed.iter().enumerate() {
-        if idx > 0 {
-            let prev_score = indexed[idx - 1].1;
-            if prev_score != mean_scores[i] {
-                current_rank = idx + 1;
-            }
+        if idx > 0 && !same_score(indexed[idx - 1].1, mean_scores[i]) {
+            current_rank = idx + 1;
         }
         ranks[i] = current_rank;
     }
@@ -440,5 +446,17 @@ mod tests {
         gs.fit(&x, &y).unwrap();
         assert!(gs.best_estimator().is_none());
         assert!(gs.is_fitted());
+    }
+
+    #[test]
+    fn rank_candidates_with_nan_is_deterministic_and_keeps_finite_order() {
+        let scores = [0.5, f64::NAN, 0.9, 0.1];
+        let first = rank_candidates(&scores);
+        // Same input must always produce the same ranking.
+        for _ in 0..10 {
+            assert_eq!(rank_candidates(&scores), first);
+        }
+        // Finite scores keep their descending order, and NaN ranks last.
+        assert_eq!(first, vec![2, 4, 1, 3]);
     }
 }
