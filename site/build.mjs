@@ -38,6 +38,17 @@ const PROFILE_CRATE = {
   blurb: 'Column statistics, type inference, pairwise relationships (Pearson, Cramér\'s V, point-biserial), target-leakage hints, and HTML/JSON reports — built on datarust.',
   highlights: ['Column statistics &amp; histograms', 'Pairwise relationships &amp; heatmaps', 'Quality checks &amp; leakage hints'],
 };
+const MCP_CRATE = {
+  name: 'datarust-mcp',
+  version: 'latest',
+  install: 'cargo add datarust-mcp',
+  cratesUrl: 'https://crates.io/crates/datarust-mcp',
+  docsUrl: 'https://docs.rs/datarust-mcp',
+  docsRoute: '/docs/mcp/',
+  tagline: 'Model Context Protocol server for datarust',
+  blurb: 'Exposes datarust and datarust-profile to MCP-compatible AI clients as tools.',
+  highlights: ['MCP tools for ML and profiling', 'Works with MCP-compatible clients', 'Runs locally over stdio'],
+};
 
 marked.setOptions({ gfm: true });
 
@@ -299,7 +310,7 @@ function navLink(label, href, currentPath) {
 
 function apiDropdown() {
   // CSS-only dropdown (hover + focus-within). Lists each crate's docs.rs page.
-  return `<div class="nav-dropdown"><button class="nav-dropdown-trigger" type="button" aria-haspopup="true" aria-expanded="false">API ${icon('chevron')}</button><div class="nav-dropdown-menu" role="menu"><a href="${DATARUST_CRATE.docsUrl}" target="_blank" rel="noreferrer" role="menuitem">datarust ${icon('external')}</a><a href="${PROFILE_CRATE.docsUrl}" target="_blank" rel="noreferrer" role="menuitem">datarust-profile ${icon('external')}</a></div></div>`;
+  return `<div class="nav-dropdown"><button class="nav-dropdown-trigger" type="button" aria-haspopup="true" aria-expanded="false">API ${icon('chevron')}</button><div class="nav-dropdown-menu" role="menu"><a href="${DATARUST_CRATE.docsUrl}" target="_blank" rel="noreferrer" role="menuitem">datarust ${icon('external')}</a><a href="${PROFILE_CRATE.docsUrl}" target="_blank" rel="noreferrer" role="menuitem">datarust-profile ${icon('external')}</a><a href="${MCP_CRATE.docsUrl}" target="_blank" rel="noreferrer" role="menuitem">datarust-mcp ${icon('external')}</a></div></div>`;
 }
 
 function icon(name) {
@@ -547,7 +558,7 @@ ${JSON.stringify(jsonLd, null, 2)}
   <main id="main-content">${body}</main>
   <footer class="site-footer">
     <div><a class="brand footer-brand" href="/"><span class="brand-mark">dr</span><span>datarust</span></a><p>A workspace of ML and data-profiling crates for Rust.</p></div>
-    <div class="footer-links"><a href="/docs/quickstart/">Quick start</a><a href="/developers/">Developer Portal</a><a href="/docs/mcp/">MCP Server</a><a href="/docs/api/">API Docs</a><a href="/blog/">Field notes</a><a href="/about/">About</a><a href="/contact/">Contact</a><a href="/privacy/">Privacy</a><a href="${DATARUST_CRATE.cratesUrl}">datarust on crates.io</a><a href="${PROFILE_CRATE.cratesUrl}">profile on crates.io</a><a href="${GITHUB_URL}">Source</a></div>
+    <div class="footer-links"><a href="/docs/quickstart/">Quick start</a><a href="/developers/">Developer Portal</a><a href="/docs/mcp/">MCP Server</a><a href="/docs/api/">API Docs</a><a href="/blog/">Field notes</a><a href="/about/">About</a><a href="/contact/">Contact</a><a href="/privacy/">Privacy</a><a href="${DATARUST_CRATE.cratesUrl}">datarust on crates.io</a><a href="${PROFILE_CRATE.cratesUrl}">profile on crates.io</a><a href="${MCP_CRATE.cratesUrl}">mcp on crates.io</a><a href="${GITHUB_URL}">Source</a></div>
     <p class="footer-meta">MIT licensed · Built from the Markdown in this repository.</p>
   </footer>
   <dialog class="search-dialog" data-search-dialog>
@@ -624,6 +635,7 @@ model.fit(&amp;x_train, &amp;y_train)?;
         <div class="crate-grid">
           ${crateCard(DATARUST_CRATE)}
           ${crateCard(PROFILE_CRATE)}
+          ${crateCard(MCP_CRATE)}
         </div>
       </section>
       <section class="section shell">
@@ -1120,14 +1132,16 @@ ${entries.map(({ route, date }) => `  <url><loc>${escapeXml(`${SITE_URL}${route}
 }
 
 async function build() {
-  const [docs, posts, datarustToml, profileToml] = await Promise.all([
+  const [docs, posts, datarustToml, profileToml, mcpToml] = await Promise.all([
     loadDocs(),
     loadBlog(),
     readFile(path.join(ROOT, 'crates', 'datarust', 'Cargo.toml'), 'utf8'),
     readFile(path.join(ROOT, 'crates', 'datarust-profile', 'Cargo.toml'), 'utf8'),
+    readFile(path.join(ROOT, 'crates', 'datarust-mcp', 'Cargo.toml'), 'utf8'),
   ]);
   DATARUST_CRATE.version = datarustToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || 'latest';
   PROFILE_CRATE.version = profileToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || 'latest';
+  MCP_CRATE.version = mcpToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1] || 'latest';
 
   await rm(DIST, { recursive: true, force: true });
   await mkdir(DIST, { recursive: true });
