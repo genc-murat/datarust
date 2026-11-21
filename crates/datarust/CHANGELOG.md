@@ -142,6 +142,15 @@ ensembles, hyperparameter search on the `Params` trait, CV diagnostics,   and br
   accessor therefore also requires a refit.
 - Tree estimators check that each feature value stays finite after conversion
   to `f32`, so finite values beyond the `f32` range are rejected.
+- `GridSearchCV` and `RandomizedSearchCV` default to `StratifiedKFold(5)` when
+  the estimator reports `is_classifier() == true`, and to `KFold(5)` otherwise.
+  Before this release both defaulted to `KFold(5)`. Built-in classifiers
+  (trees, forests, ExtraTrees, Bagging, k-NN, logistic regression, and pipelines
+  ending in one) now report `true`, so default search folds for them change.
+  Pass `with_cv` to keep the previous splitter.
+- `metrics::regression::r2_score` returns `InvalidInput` for fewer than two
+  observations. Before, one observation returned 1.0 or 0.0 through the
+  constant-target branch.
 - The tree splitter's squared-sum uses fused multiply-add (FMA) to match
   scikit-learn's arm64 build. This matches arm64 only; bit-exact parity is not
   claimed on x86.
