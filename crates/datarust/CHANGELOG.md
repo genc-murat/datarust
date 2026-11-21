@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrappers, score a chosen estimator response per fold — pass the new
   `binary_positive_probability` helper to score ROC-AUC or average precision
   on binary labels instead of hard predictions.
+- `Predictor::is_classifier`, defaulting to `false`. Custom classifiers return
+  `true` so default cross-validation stratifies by class label.
 
 ### Changed
 
@@ -21,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fold's training rows receives that fold's target mean) before fitting the
   full mapping that later `transform` calls use. `fit` followed by
   `transform` keeps the previous in-sample behavior.
+- `Pipeline::step_mut`, `get_step_mut`, `steps_mut`, `insert_step`, and
+  `remove_step` now mark the pipeline as needing a refit, so `transform`
+  returns `NotFitted` until it is fitted again. Reading through a mutable
+  accessor therefore also requires a refit.
+- Tree estimators check that each feature value stays finite after conversion
+  to `f32`, so finite values beyond the `f32` range are rejected.
 - The tree splitter's squared-sum uses fused multiply-add (FMA) to match
   scikit-learn's arm64 build. This matches arm64 only; bit-exact parity is not
   claimed on x86.
