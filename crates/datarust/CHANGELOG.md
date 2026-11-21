@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-21
+
+The "Model selection & ensemble completion" release: the carried-over v0.7
+ensembles, hyperparameter search on the `Params` trait, CV diagnostics,   and brute-force nearest neighbors — all pinned against scikit-learn 1.6.1.
+
 ### Added
 
 - `cross_val_score_with_response`, and `.with_response(...)` on both search
@@ -16,41 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Predictor::is_classifier`, defaulting to `false`. Custom classifiers return
   `true` so default cross-validation stratifies by class label.
 
-### Changed
-
-- `TargetEncoder::fit_transform` now encodes each training row out of fold
-  (up to five shuffled folds with a fixed seed; a category absent from a
-  fold's training rows receives that fold's target mean) before fitting the
-  full mapping that later `transform` calls use. `fit` followed by
-  `transform` keeps the previous in-sample behavior.
-- `Pipeline::step_mut`, `get_step_mut`, `steps_mut`, `insert_step`, and
-  `remove_step` now mark the pipeline as needing a refit, so `transform`
-  returns `NotFitted` until it is fitted again. Reading through a mutable
-  accessor therefore also requires a refit.
-- Tree estimators check that each feature value stays finite after conversion
-  to `f32`, so finite values beyond the `f32` range are rejected.
-- The tree splitter's squared-sum uses fused multiply-add (FMA) to match
-  scikit-learn's arm64 build. This matches arm64 only; bit-exact parity is not
-  claimed on x86.
-
-### Fixed
-
-- Bagging replaces fitted trees and sample metadata on a successful refit and validates ensemble settings before training.
-- Forests, ExtraTrees, and Bagging reset their fitted state when a fit-time hyperparameter changes through `set_params`, matching the policy Ridge, Lasso, and the scalers already follow. Failed parameter changes leave the fitted ensemble predictable, and `estimators_samples()` introspection still reports the samples used during training.
-- Hyperparameter searches and diagnostics reuse the same folds for all candidates. Built-in splitters stream the folds during evaluation. Searches publish results after a successful refit, and randomized choices avoid allocating the full grid.
-- Grid search enumerates parameter names in sorted order. Both searches use the configured scorer when scoring the refitted winner.
-- k-NN uses training order for ties at the neighborhood boundary, validates the neighbor count at prediction time, and handles distances whose squares exceed the floating-point range.
-- Forests and ExtraTrees report the samples used during training even after the bootstrap setting changes.
-- A supervised pipeline requires a new fit after a preprocessing parameter changes. Lasso and logistic regression accept finite, nonnegative tolerances through both the builder and parameter search.
-- Changing a fitted column transformer’s remainder strategy requires fitting the new output layout.
-
-## [0.8.0] - 2026-11-21
-
-The "Model selection & ensemble completion" release: the carried-over v0.7
-ensembles, hyperparameter search on the `Params` trait, CV diagnostics, and
-brute-force nearest neighbors — all pinned against scikit-learn 1.6.1.
-
-### Added
 
 - **ExtraTrees ensembles (`src/ensemble.rs`).** `ExtraTreesClassifier` and
   `ExtraTreesRegressor` implement sklearn's `splitter="random"` variant of
@@ -154,6 +124,31 @@ brute-force nearest neighbors — all pinned against scikit-learn 1.6.1.
   (`MinMaxScaler` applies its range at transform time and is unaffected.)
   KNN's `n_neighbors` / `weights` are deliberately exempt: they only affect
   prediction.
+- `TargetEncoder::fit_transform` now encodes each training row out of fold
+  (up to five shuffled folds with a fixed seed; a category absent from a
+  fold's training rows receives that fold's target mean) before fitting the
+  full mapping that later `transform` calls use. `fit` followed by
+  `transform` keeps the previous in-sample behavior.
+- `Pipeline::step_mut`, `get_step_mut`, `steps_mut`, `insert_step`, and
+  `remove_step` now mark the pipeline as needing a refit, so `transform`
+  returns `NotFitted` until it is fitted again. Reading through a mutable
+  accessor therefore also requires a refit.
+- Tree estimators check that each feature value stays finite after conversion
+  to `f32`, so finite values beyond the `f32` range are rejected.
+- The tree splitter's squared-sum uses fused multiply-add (FMA) to match
+  scikit-learn's arm64 build. This matches arm64 only; bit-exact parity is not
+  claimed on x86.
+
+### Fixed
+
+- Bagging replaces fitted trees and sample metadata on a successful refit and validates ensemble settings before training.
+- Forests, ExtraTrees, and Bagging reset their fitted state when a fit-time hyperparameter changes through `set_params`, matching the policy Ridge, Lasso, and the scalers already follow. Failed parameter changes leave the fitted ensemble predictable, and `estimators_samples()` introspection still reports the samples used during training.
+- Hyperparameter searches and diagnostics reuse the same folds for all candidates. Built-in splitters stream the folds during evaluation. Searches publish results after a successful refit, and randomized choices avoid allocating the full grid.
+- Grid search enumerates parameter names in sorted order. Both searches use the configured scorer when scoring the refitted winner.
+- k-NN uses training order for ties at the neighborhood boundary, validates the neighbor count at prediction time, and handles distances whose squares exceed the floating-point range.
+- Forests and ExtraTrees report the samples used during training even after the bootstrap setting changes.
+- A supervised pipeline requires a new fit after a preprocessing parameter changes. Lasso and logistic regression accept finite, nonnegative tolerances through both the builder and parameter search.
+- Changing a fitted column transformer’s remainder strategy requires fitting the new output layout.
 
 ## [0.7.0] - 2026-09-14
 
