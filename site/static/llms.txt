@@ -25,6 +25,7 @@ datarust is an ecosystem of independent, pure-Rust crates for machine learning a
 - [Installation](https://datarust.dev/docs/installation/): Cargo dependency configurations and optional feature flags (`serde`, `rayon`, `matrixmultiply`, `datasets`).
 - [Core Concepts](https://datarust.dev/docs/concepts/): Fundamental traits (`Estimator`, `Predictor`, `Transformer`, `Regressor`, `Classifier`, `Clusterer`).
 - [datarust-profile Overview](https://datarust.dev/docs/profile/README/): Automated data profiling, quality checks, and report generation in Rust.
+- [datarust-mcp Overview](https://datarust.dev/docs/mcp/): Rust MCP server crate that exposes datarust and datarust-profile tools to AI clients.
 - [Performance vs scikit-learn](https://datarust.dev/docs/performance/): Benchmarks and latency comparisons.
 - [Feature Comparison](https://datarust.dev/docs/comparison/): Feature matrix comparing datarust capabilities to scikit-learn.
 - [Architecture](https://datarust.dev/docs/architecture/): Architecture notes on zero-dependency design and pure-Rust linear algebra solvers.

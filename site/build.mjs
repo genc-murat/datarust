@@ -332,6 +332,7 @@ function pageShell({ title, description, pathname, body, bodyClass = '' }) {
     GITHUB_URL,
     DATARUST_CRATE.cratesUrl,
     PROFILE_CRATE.cratesUrl,
+    MCP_CRATE.cratesUrl,
     'https://www.linkedin.com/in/gencmurat',
     'https://en.wikipedia.org/wiki/Rust_(programming_language)',
     'https://www.wikidata.org/wiki/Q575650',
@@ -585,7 +586,7 @@ function articleCard(post, { compact = false } = {}) {
 
 function crateCard(crate) {
   // One card per workspace crate, linking into its docs entry point.
-  const variant = crate.name === 'datarust-profile' ? 'profile' : 'datarust';
+  const variant = crate.name === 'datarust-profile' ? 'profile' : crate.name === 'datarust-mcp' ? 'mcp' : 'datarust';
   return `<a class="crate-card" href="${crate.docsRoute}">
     <div class="crate-card-head">
       <span class="crate-badge ${variant}">${escapeHtml(crate.name)}</span>
@@ -614,7 +615,7 @@ function homePage(posts, docs) {
         <div class="hero-copy">
           <p class="eyebrow">Classical ML, native to Rust</p>
           <h1>Ship the pipeline.<br><span>Skip the runtime baggage.</span></h1>
-          <p class="hero-lede">datarust is a workspace of two crates: a scikit-learn-style ML toolkit, and a one-call data-profiling companion. Both pure Rust, zero dependencies by default.</p>
+          <p class="hero-lede">datarust is a workspace of three crates: a scikit-learn-style ML toolkit, a one-call data-profiling companion, and an MCP server that exposes both to AI clients. Pure Rust, zero dependencies by default.</p>
           <div class="hero-actions"><a class="button primary" href="/docs/quickstart/">Start building ${icon('arrow')}</a><a class="button secondary" href="/blog/">Read the field notes</a></div>
           <div class="install-line"><code>cargo add datarust</code><button type="button" data-copy-text="cargo add datarust">Copy</button></div>
         </div>
@@ -629,9 +630,9 @@ model.fit(&amp;x_train, &amp;y_train)?;
           <div class="pipeline-steps"><span>raw rows</span><b>→</b><span>transform</span><b>→</b><span>predict</span></div>
         </div>
       </section>
-      <section class="stats-band"><div class="shell stats"><div><strong>2</strong><span>crates in the workspace</span></div><div><strong>${docsCount}</strong><span>documentation pages</span></div><div><strong>${notesCount}</strong><span>practical field notes</span></div><div><strong>1.70+</strong><span>supported Rust</span></div></div></section>
+      <section class="stats-band"><div class="shell stats"><div><strong>3</strong><span>crates in the workspace</span></div><div><strong>${docsCount}</strong><span>documentation pages</span></div><div><strong>${notesCount}</strong><span>practical field notes</span></div><div><strong>1.70+</strong><span>supported Rust</span></div></div></section>
       <section class="section shell">
-        <div class="section-heading"><div><p class="eyebrow">The workspace</p><h2>Two crates, one workflow</h2></div></div>
+        <div class="section-heading"><div><p class="eyebrow">The workspace</p><h2>Three crates, one workflow</h2></div></div>
         <div class="crate-grid">
           ${crateCard(DATARUST_CRATE)}
           ${crateCard(PROFILE_CRATE)}
@@ -768,6 +769,10 @@ Scikit-learn-style preprocessing, classical machine learning, and data profiling
 - **datarust-profile** (${PROFILE_CRATE.version}): ${PROFILE_CRATE.tagline}
   ${PROFILE_CRATE.blurb}
   Documentation: ${SITE_URL}/docs/profile/README/
+
+- **datarust-mcp** (${MCP_CRATE.version}): ${MCP_CRATE.tagline}
+  ${MCP_CRATE.blurb}
+  Documentation: ${SITE_URL}/docs/mcp/
 
 ## Quick Start
 

@@ -515,8 +515,11 @@ img { max-width: 100%; height: auto; }
 .crate-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 4px; font: 600 12px var(--mono); letter-spacing: -.01em; }
 .crate-badge.datarust { background: var(--accent-wash); color: var(--accent); }
 .crate-badge.profile { background: #e8f0fe; color: #1a56c4; }
+.crate-badge.mcp { background: #efe8fe; color: #6a35c4; }
 :root[data-theme="dark"] .crate-badge.profile,
 :root:not([data-theme="light"]) .crate-badge.profile { background: #1a2a4a; color: #8ab4f8; }
+:root[data-theme="dark"] .crate-badge.mcp,
+:root:not([data-theme="light"]) .crate-badge.mcp { background: #2a1a4a; color: #c3a8f8; }
 .crate-eyebrow { margin: 0 0 12px; }
 
 /* ── Nav API dropdown ──────────────────────────────────────────────────── */

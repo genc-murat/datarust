@@ -6,6 +6,7 @@ Website: https://datarust.dev
 Crates:
 - datarust: https://crates.io/crates/datarust (Docs: https://docs.rs/datarust)
 - datarust-profile: https://crates.io/crates/datarust-profile (Docs: https://docs.rs/datarust-profile)
+- datarust-mcp: https://crates.io/crates/datarust-mcp (Docs: https://docs.rs/datarust-mcp)
 
 ---
 

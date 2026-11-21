@@ -160,7 +160,7 @@ function registerWebMcp() {
   const tools = [
     {
       name: 'search_docs',
-      description: 'Search documentation and field notes for datarust and datarust-profile.',
+      description: 'Search documentation and field notes for datarust, datarust-profile and datarust-mcp.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -190,15 +190,23 @@ function registerWebMcp() {
     },
     {
       name: 'get_crate_info',
-      description: 'Get details, features, and documentation links for datarust or datarust-profile crates.',
+      description: 'Get details, features, and documentation links for datarust, datarust-profile or datarust-mcp crates.',
       inputSchema: {
         type: 'object',
         properties: {
-          crateName: { type: 'string', enum: ['datarust', 'datarust-profile'], description: 'Crate name' }
+          crateName: { type: 'string', enum: ['datarust', 'datarust-profile', 'datarust-mcp'], description: 'Crate name' }
         },
         required: ['crateName']
       },
       execute: async ({ crateName }) => {
+        if (crateName === 'datarust-mcp') {
+          return {
+            name: 'datarust-mcp',
+            tagline: 'MCP server exposing datarust tools to AI clients',
+            docs: 'https://datarust.dev/docs/mcp/',
+            cratesUrl: 'https://crates.io/crates/datarust-mcp'
+          };
+        }
         if (crateName === 'datarust-profile') {
           return {
             name: 'datarust-profile',
