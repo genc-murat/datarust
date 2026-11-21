@@ -216,3 +216,72 @@ fn bagging_rejects_invalid_ensemble_size_and_sampling_fractions() {
         assert!(BaggingMaxFeatures::Fraction(invalid).resolve(2).is_err());
     }
 }
+
+#[test]
+fn set_params_after_fit_invalidates_until_the_next_fit() {
+    use datarust::DatarustError;
+    use datarust::{ParamValue, Params};
+
+    let x = Matrix::new(vec![vec![0.0], vec![1.0], vec![2.0], vec![3.0]]).unwrap();
+    let mut bag = BaggingClassifier::new()
+        .with_n_estimators(3)
+        .with_random_state(5);
+    bag.fit(&x, &[0.0, 0.0, 1.0, 1.0]).unwrap();
+    assert!(bag.is_fitted());
+
+    // Ensemble-level fit-time parameters invalidate the fitted members.
+    bag.set_params("n_estimators", ParamValue::Int(2)).unwrap();
+    assert!(!bag.is_fitted());
+    assert!(matches!(bag.predict(&x), Err(DatarustError::NotFitted(_))));
+    assert!(matches!(
+        bag.predict_proba(&x),
+        Err(DatarustError::NotFitted(_))
+    ));
+
+    // Base-estimator overrides (`estimator__`) invalidate as well.
+    bag.fit(&x, &[0.0, 0.0, 1.0, 1.0]).unwrap();
+    bag.set_params("estimator__max_depth", ParamValue::Int(2))
+        .unwrap();
+    assert!(!bag.is_fitted());
+
+    // Refitting applies the new settings.
+    bag.fit(&x, &[0.0, 0.0, 1.0, 1.0]).unwrap();
+    assert!(bag.is_fitted());
+    assert_eq!(bag.estimators().len(), 2);
+    assert_eq!(bag.predict(&x).unwrap().len(), 4);
+
+    let mut reg = BaggingRegressor::new()
+        .with_n_estimators(2)
+        .with_random_state(5);
+    reg.fit(&x, &[0.0, 1.0, 2.0, 3.0]).unwrap();
+    reg.set_params("bootstrap", ParamValue::Bool(false))
+        .unwrap();
+    assert!(matches!(reg.predict(&x), Err(DatarustError::NotFitted(_))));
+    reg.fit(&x, &[0.0, 1.0, 2.0, 3.0]).unwrap();
+    assert!(reg.is_fitted());
+    assert_eq!(reg.predict(&x).unwrap().len(), 4);
+}
+
+#[test]
+fn failed_bagging_set_params_keeps_the_fitted_ensemble_predictable() {
+    use datarust::DatarustError;
+    use datarust::{ParamValue, Params};
+
+    let x = Matrix::new(vec![vec![0.0], vec![1.0], vec![2.0], vec![3.0]]).unwrap();
+    let mut bag = BaggingRegressor::new()
+        .with_n_estimators(2)
+        .with_random_state(5);
+    bag.fit(&x, &[0.0, 1.0, 2.0, 3.0]).unwrap();
+
+    assert!(matches!(
+        bag.set_params("bootstrap", ParamValue::Int(1)),
+        Err(DatarustError::InvalidInput(_))
+    ));
+    assert!(matches!(
+        bag.set_params("estimator__nope", ParamValue::Int(1)),
+        Err(DatarustError::InvalidInput(_))
+    ));
+    // The error path must not invalidate the fitted model.
+    assert!(bag.is_fitted());
+    assert_eq!(bag.predict(&x).unwrap().len(), 4);
+}

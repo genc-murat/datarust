@@ -30,7 +30,7 @@ let normalized = scaler.fit_transform(&data)?;
 | **Linear Models** | LinearRegression (Cholesky & SVD), Ridge (L2), Lasso (L1, coordinate descent, sparse) |
 | **Classification** | LogisticRegression (binary IRLS + multiclass softmax, Cholesky & SVD), RandomForestClassifier (CART bagging, bootstrap, feature subsampling) |
 | **Trees** | DecisionTreeClassifier (Gini / entropy), DecisionTreeRegressor (squared error), `TreeStructure` node introspection — bit-exact scikit-learn parity under the same seed |
-| **Ensembles** | RandomForestClassifier/Regressor, ExtraTreesClassifier/Regressor (random-split variant), BaggingClassifier/Regressor (generic bootstrap meta-estimator with `estimator__` base-param addressing) — deterministic sklearn-compatible sampling, on-demand `estimators_samples()` / `estimators_features()` |
+| **Ensembles** | RandomForestClassifier/Regressor, ExtraTreesClassifier/Regressor (random-split variant), BaggingClassifier/Regressor (bootstrap meta-estimator over a DecisionTree base, with `estimator__` base-param addressing) — deterministic sklearn-compatible sampling, on-demand `estimators_samples()` / `estimators_features()` |
 | **RNG** | Public seedable `Rng` (xorshift64*): `next_unit`, `next_range`, `next_normal`, Fisher–Yates `shuffle` |
 | **Clustering** | KMeans (Lloyd's algorithm, k-means++ initialization, n_init restarts), silhouette_score |
 | **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, precision, recall, F1, confusion_matrix (n×n), log_loss, ROC-AUC, average precision, Cohen's kappa, Matthews corrcoef (macro-averaged for multiclass) |

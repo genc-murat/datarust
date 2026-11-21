@@ -155,3 +155,105 @@ fn classifier_rejects_regression_criterion_at_fit() {
     assert!(matches!(err, DatarustError::InvalidInput(_)), "got {err:?}");
     assert_eq!(model.n_estimators(), 0);
 }
+
+#[test]
+fn set_params_after_fit_invalidates_until_the_next_fit() {
+    use datarust::DatarustError;
+
+    let x = fixture();
+    let y = vec![0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0];
+    let mut model = RandomForestClassifier::new()
+        .with_n_estimators(5)
+        .with_random_state(13);
+    model.fit(&x, &y).unwrap();
+    assert!(model.is_fitted());
+    assert_eq!(model.predict(&x).unwrap(), y);
+
+    // A fit-time hyperparameter change invalidates the fitted ensemble
+    // instead of predicting from the stale configuration.
+    model
+        .set_params("n_estimators", ParamValue::Int(2))
+        .unwrap();
+    assert!(!model.is_fitted());
+    assert!(matches!(
+        model.predict(&x),
+        Err(DatarustError::NotFitted(_))
+    ));
+    assert!(matches!(
+        model.predict_proba(&x),
+        Err(DatarustError::NotFitted(_))
+    ));
+
+    // Refitting with the new settings restores predictions (two trees with
+    // sqrt feature subsampling need not match `y` exactly).
+    model.fit(&x, &y).unwrap();
+    assert!(model.is_fitted());
+    assert_eq!(model.trees().len(), 2);
+    assert_eq!(model.predict(&x).unwrap().len(), y.len());
+}
+
+#[test]
+fn failed_set_params_keeps_the_fitted_ensemble_predictable() {
+    use datarust::DatarustError;
+
+    let x = fixture();
+    let y = vec![0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0];
+    let mut model = RandomForestClassifier::new()
+        .with_n_estimators(3)
+        .with_random_state(7);
+    model.fit(&x, &y).unwrap();
+
+    // The error path must not invalidate the fitted model.
+    assert!(matches!(
+        model.set_params("criterion", ParamValue::Int(9)),
+        Err(DatarustError::InvalidInput(_))
+    ));
+    assert!(model.is_fitted());
+    assert_eq!(model.predict(&x).unwrap(), y);
+
+    // A successful change still invalidates, even when the value is merely
+    // stored for `get_params` round-trips (regression-only criterion).
+    model.set_params("criterion", ParamValue::Int(2)).unwrap();
+    assert!(!model.is_fitted());
+}
+
+#[test]
+fn invalidation_covers_extra_trees_and_keeps_training_samples_introspectable() {
+    use datarust::ensemble::ExtraTreesClassifier;
+    use datarust::DatarustError;
+
+    let x = fixture();
+    let y = vec![0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0];
+    let mut et = ExtraTreesClassifier::new()
+        .with_n_estimators(3)
+        .with_random_state(9);
+    et.fit(&x, &y).unwrap();
+    let samples_before = et.estimators_samples();
+    assert!(!samples_before.is_empty());
+
+    // ExtraTrees delegates set_params to the inner forest.
+    et.set_params("max_depth", ParamValue::Int(2)).unwrap();
+    assert!(!et.is_fitted());
+    assert!(matches!(et.predict(&x), Err(DatarustError::NotFitted(_))));
+    // Introspection still reports the samples used during training even
+    // though the ensemble is unfitted for prediction.
+    assert_eq!(et.estimators_samples(), samples_before);
+
+    let y_reg = vec![0.5, 2.0, 1.0, 2.5, 1.5, 3.0, 2.0, 3.5];
+    let mut reg = RandomForestRegressor::new()
+        .with_n_estimators(3)
+        .with_random_state(13);
+    reg.fit(&x, &y_reg).unwrap();
+    let bootstrap_samples = reg.estimators_samples();
+    reg.set_params("bootstrap", ParamValue::Bool(false))
+        .unwrap();
+    assert!(matches!(reg.predict(&x), Err(DatarustError::NotFitted(_))));
+    // The reported samples are still the bootstrap draws used during fit.
+    assert_eq!(reg.estimators_samples(), bootstrap_samples);
+    reg.fit(&x, &y_reg).unwrap();
+    assert!(reg.is_fitted());
+    assert!(reg
+        .estimators_samples()
+        .iter()
+        .all(|samples| samples == &(0..x.nrows()).collect::<Vec<_>>()));
+}

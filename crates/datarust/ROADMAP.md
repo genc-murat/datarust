@@ -79,7 +79,8 @@ against seeded fixtures) and the shared RNG the ensembles will need.
 - ✅ `src/ensemble.rs`: `RandomForestClassifier` / `RandomForestRegressor`
   (bootstrap aggregation, per-split feature subsampling, deterministic
   sklearn-parity sampling and predictions)
-- ✅ `src/ensemble.rs`: `ExtraTrees*` and generic `Bagging` shipped in v0.8.0
+- ✅ `src/ensemble.rs`: `ExtraTrees*` and `Bagging` with a `DecisionTree*`
+  base shipped in v0.8.0
 
 ---
 
@@ -133,8 +134,7 @@ shared crate-internal utility.
       split, min samples leaf).
 - [x] `src/ensemble.rs` module: `RandomForestClassifier` /
       `RandomForestRegressor` (bagging + random feature subsampling).
-      `ExtraTrees*` and the generic `Bagging` meta-estimator are carried
-      into v0.8.
+      `ExtraTrees*` and a `Bagging` meta-estimator are carried into v0.8.
 - [x] Tree-based `feature_importances_` output (normalized impurity
       reduction, numpy-summation-exact); `FeatureNames` support follows with
       the DataFrame-style API work.
@@ -155,8 +155,9 @@ release (v0.9). v0.8 also lands the two ensembles carried over from v0.7.
 
 - [x] `src/ensemble.rs`: `ExtraTreesClassifier` / `ExtraTreesRegressor`
       (random splits; carried over from v0.7).
-- [x] `src/ensemble.rs`: `Bagging` meta-estimator (works with any
-      `Predictor`; carried over from v0.7).
+- [x] `src/ensemble.rs`: `BaggingClassifier` / `BaggingRegressor` with the
+      `DecisionTree*` base (the generic any-`Predictor` base is tracked as a
+      v0.8 follow-up below; carried over from v0.7).
 - [x] `Params` for `Pipeline` / `ColumnTransformer` with nested
       `step__param` addressing — prerequisite for pipeline parameter grids.
 - [x] `GridSearchCV` and `RandomizedSearchCV` — built on the `Params` trait
@@ -189,6 +190,10 @@ release (v0.9). v0.8 also lands the two ensembles carried over from v0.7.
       regardless of thread count — the per-estimator `RandomState` stream
       must be derived before any parallel scheduling, never from a shared
       mutable RNG.
+- [ ] Generic Bagging base estimator: accept any `Predictor + Clone` base
+      instead of the hard-coded `DecisionTree*` (sklearn's `base_estimator`
+      contract), with `estimator__` addressing routed to whichever base is
+      supplied.
 - [ ] Book `guide/ensembles.md` + README Bagging section updated when either
       lands; CHANGELOG entry stating the exact parity claim (bit-exact vs.
       tolerance) before the feature is advertised.

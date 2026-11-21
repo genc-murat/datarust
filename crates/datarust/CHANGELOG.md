@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Bagging replaces fitted trees and sample metadata on a successful refit and validates ensemble settings before training.
+- Forests, ExtraTrees, and Bagging reset their fitted state when a fit-time hyperparameter changes through `set_params`, matching the policy Ridge, Lasso, and the scalers already follow. Failed parameter changes leave the fitted ensemble predictable, and `estimators_samples()` introspection still reports the samples used during training.
 - Hyperparameter searches and diagnostics reuse the same folds for all candidates. Built-in splitters stream the folds during evaluation. Searches publish results after a successful refit, and randomized choices avoid allocating the full grid.
 - Grid search enumerates parameter names in sorted order. Both searches use the configured scorer when scoring the refitted winner.
 - k-NN uses training order for ties at the neighborhood boundary, validates the neighbor count at prediction time, and handles distances whose squares exceed the floating-point range.

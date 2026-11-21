@@ -408,6 +408,9 @@ pub struct RandomForestClassifier {
     samples: ForestSamples,
     classes: Option<LabelSpace>,
     trees: Vec<DecisionTreeClassifier>,
+    /// Set by a successful fit; any successful fit-time `set_params` change
+    /// clears it so stale predictions fail loudly (Ridge/Lasso policy).
+    fitted: bool,
     /// Estimator label used in error messages; ExtraTrees delegates here.
     name: &'static str,
 }
@@ -432,6 +435,7 @@ impl RandomForestClassifier {
             samples: ForestSamples::default(),
             classes: None,
             trees: Vec::new(),
+            fitted: false,
             name: "RandomForestClassifier",
         }
     }
@@ -577,10 +581,14 @@ impl RandomForestClassifier {
         self.samples = samples;
         self.classes = Some(classes);
         self.trees = trees;
+        self.fitted = true;
         Ok(())
     }
 
     fn probabilities(&self, x: &Matrix) -> Result<Matrix> {
+        if !self.fitted {
+            return Err(DatarustError::NotFitted(self.name.into()));
+        }
         let classes = self
             .classes
             .as_ref()
@@ -649,7 +657,7 @@ impl Predictor for RandomForestClassifier {
     }
 
     fn is_fitted(&self) -> bool {
-        !self.trees.is_empty() && self.classes.is_some()
+        self.fitted
     }
 }
 
@@ -676,6 +684,16 @@ impl Params for RandomForestClassifier {
     }
 
     fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        self.set_param_inner(name, value)?;
+        // Every forest hyperparameter is fit-time; a change invalidates the
+        // fitted ensemble (same policy as Ridge/Lasso and the scalers).
+        self.fitted = false;
+        Ok(())
+    }
+}
+
+impl RandomForestClassifier {
+    fn set_param_inner(&mut self, name: &str, value: ParamValue) -> Result<()> {
         if self.options.set_shared_param(name, value.clone())? {
             return Ok(());
         }
@@ -713,6 +731,9 @@ pub struct RandomForestRegressor {
     n_features: usize,
     samples: ForestSamples,
     trees: Vec<DecisionTreeRegressor>,
+    /// Set by a successful fit; any successful fit-time `set_params` change
+    /// clears it so stale predictions fail loudly (Ridge/Lasso policy).
+    fitted: bool,
     /// Estimator label used in error messages; ExtraTrees delegates here.
     name: &'static str,
 }
@@ -732,6 +753,7 @@ impl RandomForestRegressor {
             n_features: 0,
             samples: ForestSamples::default(),
             trees: Vec::new(),
+            fitted: false,
             name: "RandomForestRegressor",
         }
     }
@@ -862,6 +884,7 @@ impl RandomForestRegressor {
         self.n_features = x.ncols();
         self.samples = samples;
         self.trees = trees;
+        self.fitted = true;
         Ok(())
     }
 }
@@ -874,7 +897,7 @@ impl Predictor for RandomForestRegressor {
     }
 
     fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
-        if self.trees.is_empty() {
+        if !self.fitted {
             return Err(DatarustError::NotFitted(self.name.into()));
         }
         validate_prediction_shape(x, self.n_features)?;
@@ -892,7 +915,7 @@ impl Predictor for RandomForestRegressor {
     }
 
     fn is_fitted(&self) -> bool {
-        !self.trees.is_empty()
+        self.fitted
     }
 }
 
@@ -908,6 +931,16 @@ impl Params for RandomForestRegressor {
     }
 
     fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        self.set_param_inner(name, value)?;
+        // Every forest hyperparameter is fit-time; a change invalidates the
+        // fitted ensemble (same policy as Ridge/Lasso and the scalers).
+        self.fitted = false;
+        Ok(())
+    }
+}
+
+impl RandomForestRegressor {
+    fn set_param_inner(&mut self, name: &str, value: ParamValue) -> Result<()> {
         if self.options.set_shared_param(name, value.clone())? {
             return Ok(());
         }
@@ -1376,6 +1409,9 @@ pub struct BaggingClassifier {
     estimators_features_: Vec<Vec<usize>>,
     classes_: LabelSpace,
     n_features_: usize,
+    /// Set by a successful fit; any successful fit-time `set_params` change
+    /// clears it so stale predictions fail loudly (Ridge/Lasso policy).
+    fitted_: bool,
 }
 
 impl Default for BaggingClassifier {
@@ -1393,6 +1429,7 @@ impl Default for BaggingClassifier {
             estimators_features_: Vec::new(),
             classes_: LabelSpace::fit(&[0.0]).unwrap(),
             n_features_: 0,
+            fitted_: false,
         }
     }
 }
@@ -1563,6 +1600,7 @@ impl Predictor for BaggingClassifier {
         self.estimators_samples_ = estimators_samples;
         self.estimators_features_ = estimators_features;
         self.classes_ = classes;
+        self.fitted_ = true;
         Ok(())
     }
 
@@ -1589,7 +1627,7 @@ impl Predictor for BaggingClassifier {
     }
 
     fn is_fitted(&self) -> bool {
-        !self.estimators_.is_empty()
+        self.fitted_
     }
 }
 
@@ -1632,6 +1670,10 @@ impl PredictProba for BaggingClassifier {
 }
 
 impl Params for BaggingClassifier {
+    // `set_params` delegates to `set_param_inner` and invalidates the fitted
+    // ensemble on success: every parameter here is fit-time (Ridge/Lasso
+    // policy), including the `estimator__` base-estimator overrides.
+
     fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)> {
         let mut params = vec![
             ("n_estimators".into(), ParamValue::Int(self.n_estimators)),
@@ -1654,6 +1696,16 @@ impl Params for BaggingClassifier {
     }
 
     fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        self.set_param_inner(name, value)?;
+        // Fit-time hyperparameters changed: the fitted ensemble no longer
+        // matches the configuration.
+        self.fitted_ = false;
+        Ok(())
+    }
+}
+
+impl BaggingClassifier {
+    fn set_param_inner(&mut self, name: &str, value: ParamValue) -> Result<()> {
         if let Some(base_name) = name.strip_prefix("estimator__") {
             return self.base.set_params(base_name, value);
         }
@@ -1730,6 +1782,9 @@ pub struct BaggingRegressor {
     estimators_samples_: Vec<Vec<usize>>,
     estimators_features_: Vec<Vec<usize>>,
     n_features_: usize,
+    /// Set by a successful fit; any successful fit-time `set_params` change
+    /// clears it so stale predictions fail loudly (Ridge/Lasso policy).
+    fitted_: bool,
 }
 
 impl Default for BaggingRegressor {
@@ -1746,6 +1801,7 @@ impl Default for BaggingRegressor {
             estimators_samples_: Vec::new(),
             estimators_features_: Vec::new(),
             n_features_: 0,
+            fitted_: false,
         }
     }
 }
@@ -1901,6 +1957,7 @@ impl Predictor for BaggingRegressor {
         self.estimators_ = estimators;
         self.estimators_samples_ = estimators_samples;
         self.estimators_features_ = estimators_features;
+        self.fitted_ = true;
         Ok(())
     }
 
@@ -1932,7 +1989,7 @@ impl Predictor for BaggingRegressor {
     }
 
     fn is_fitted(&self) -> bool {
-        !self.estimators_.is_empty()
+        self.fitted_
     }
 }
 
@@ -1965,6 +2022,16 @@ impl Params for BaggingRegressor {
     }
 
     fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()> {
+        self.set_param_inner(name, value)?;
+        // Fit-time hyperparameters changed: the fitted ensemble no longer
+        // matches the configuration.
+        self.fitted_ = false;
+        Ok(())
+    }
+}
+
+impl BaggingRegressor {
+    fn set_param_inner(&mut self, name: &str, value: ParamValue) -> Result<()> {
         if let Some(base_name) = name.strip_prefix("estimator__") {
             return self.base.set_params(base_name, value);
         }

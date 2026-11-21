@@ -139,10 +139,11 @@ defaults change.
 
 ## Bagging
 
-`BaggingClassifier` and `BaggingRegressor` are generic meta-estimators that
-fit a base estimator on bootstrap (or random subset) samples of the training
-data, with an optional random feature subset per member. The first release
-uses `DecisionTree*` as the base, matching sklearn's default.
+`BaggingClassifier` and `BaggingRegressor` fit a base estimator on bootstrap
+(or random subset) samples of the training data, with an optional random
+feature subset per member. The base is fixed to `DecisionTree*`, matching
+sklearn's default; accepting an arbitrary base estimator is a tracked
+follow-up on the roadmap.
 
 Sampling details (all sklearn-bit-exact):
 
@@ -213,4 +214,4 @@ Out of bag scoring, weighted fits, and parallel tree fitting are
 intentionally outside the first ensemble release. Fitting is sequential —
 embarrassingly parallel, and a natural future `rayon` win.
 ExtraTrees and Bagging are built on the tree kernel without `rayon` support;
-the generic `Bagging` wrapper currently targets `DecisionTree*` bases only.
+the `Bagging` wrapper currently targets `DecisionTree*` bases only.

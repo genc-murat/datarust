@@ -65,8 +65,9 @@ Never ship an estimator without its sklearn-parity fixtures.
       forests already clone. Note sklearn 1.6.1 defaults (`bootstrap` is the
       one ExtraTrees-vs-RandomForest default that differs) — pin behavior
       with fixtures, not memory.
-- [x] `Bagging` meta-estimator, generic over any `Predictor` (bootstrap +
-      optional `max_samples` / `max_features`). First cut mirrors the forest
+- [x] `Bagging` meta-estimator over a `DecisionTree*` base (bootstrap +
+      optional `max_samples` / `max_features`; the generic any-`Predictor`
+      base is tracked as a roadmap follow-up). First cut mirrors the forest
       release contract: no OOB scoring, no sample weights, no parallel fit.
 - [x] Parity fixtures (sklearn 1.6.1 / numpy 2.0.2, seeded) in the
       `tests/tree_fixtures.rs` / `tree_parity.rs` style, plus integration and
