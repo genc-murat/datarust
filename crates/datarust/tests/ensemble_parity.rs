@@ -110,12 +110,12 @@ fn check_clf_tree(tree: &DecisionTreeClassifier, t: &EtTreeFixture, n_classes: u
 fn check_reg_tree(tree: &DecisionTreeRegressor, t: &EtTreeFixture, ctx: &str) {
     let fitted = tree.tree().expect("fitted tree");
     check_tree_structure(fitted, t, ctx);
-    for i in 0..t.features.len() {
+    for (i, &expected) in t.values.iter().enumerate().take(t.features.len()) {
         assert_bits(
             fitted
                 .node_regression_value(i)
                 .expect("regression node value"),
-            t.values[i],
+            expected,
             &format!("{ctx} node {i} value"),
         );
     }

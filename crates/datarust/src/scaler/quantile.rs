@@ -644,9 +644,8 @@ mod tests {
         qt.fit(&x).unwrap();
         let out = qt.transform(&x).unwrap();
         for i in 0..100 {
-            for j in 0..20 {
+            for (j, refs) in qt.references.iter().enumerate().take(20) {
                 let v = x.get(i, j);
-                let refs = &qt.references[j];
                 let expected = if v <= refs[0] {
                     0.0
                 } else if v >= refs[refs.len() - 1] {

@@ -882,22 +882,14 @@ mod tests {
         //   class 1: 2/(2+1) = 2/3
         //   class 2: 2/(2+1) = 2/3
         // Macro average = 2/3.
-        for c in 0..3 {
-            assert!(
-                (m.precision[c] - 2.0 / 3.0).abs() < 1e-12,
-                "precision[{c}]={}",
-                m.precision[c]
-            );
+        for (c, &p) in m.precision.iter().enumerate().take(3) {
+            assert!((p - 2.0 / 3.0).abs() < 1e-12, "precision[{c}]={p}");
         }
         let p = precision_score(&y_true, &y_pred).unwrap();
         assert!((p - 2.0 / 3.0).abs() < 1e-12);
         // Per-class recall: tp/(tp+fn) — symmetric here.
-        for c in 0..3 {
-            assert!(
-                (m.recall[c] - 2.0 / 3.0).abs() < 1e-12,
-                "recall[{c}]={}",
-                m.recall[c]
-            );
+        for (c, &r) in m.recall.iter().enumerate().take(3) {
+            assert!((r - 2.0 / 3.0).abs() < 1e-12, "recall[{c}]={r}");
         }
         let r = recall_score(&y_true, &y_pred).unwrap();
         assert!((r - 2.0 / 3.0).abs() < 1e-12);
