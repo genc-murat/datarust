@@ -1,24 +1,14 @@
 {
-  "$schema": "https://a2a-protocol.org/schemas/v1/agent-card.json",
   "name": "datarust Agent",
-  "description": "Autonomous classical machine learning, feature preprocessing, and automated dataset profiling agent native to Rust with bit-level scikit-learn parity.",
+  "description": "Answers datarust documentation questions and runs tabular profiling, scaling, linear regression, and metrics on submitted data.",
   "version": "1.0.0",
   "documentationUrl": "https://datarust.dev/docs/mcp/",
   "iconUrl": "https://datarust.dev/favicon.svg",
   "supportedInterfaces": [
     {
-      "url": "https://datarust.dev/mcp",
+      "url": "https://datarust.dev/a2a",
       "protocolBinding": "JSONRPC",
-      "protocolVersion": "1.0",
-      "protocol": "mcp",
-      "transport": "HTTP"
-    },
-    {
-      "url": "https://datarust.dev/v1",
-      "protocolBinding": "HTTP+JSON",
-      "protocolVersion": "1.0",
-      "protocol": "rest",
-      "transport": "HTTP"
+      "protocolVersion": "1.0"
     }
   ],
   "capabilities": {
@@ -54,7 +44,7 @@
     {
       "id": "classical-ml",
       "name": "datarust Classical Machine Learning",
-      "description": "Scikit-learn-style preprocessing, feature engineering, and classical machine learning estimators (linear regression, ridge, logistic regression, k-means, decision trees) in Rust with datarust.",
+      "description": "Fit ordinary least squares, scale a numeric matrix, and evaluate regression or classification predictions.",
       "tags": [
         "machine-learning",
         "scikit-learn",
@@ -64,13 +54,12 @@
       "examples": [
         "Fit an ordinary least squares linear regression model",
         "Scale numerical features using StandardScaler or RobustScaler",
-        "Build a scikit-learn compatible pipeline in Rust"
+        "Compute the mean squared error and R² of predictions"
       ]
     }
   ],
   "provider": {
     "name": "datarust",
-    "url": "https://datarust.dev",
-    "support_contact": "murat@datarust.dev"
+    "url": "https://datarust.dev"
   }
 }

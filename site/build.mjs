@@ -842,7 +842,7 @@ Official MCP server for Claude Desktop, Cursor, Antigravity, and autonomous AI a
 Add datarust directly to your \`Cargo.toml\`:
 \`\`\`toml
 [dependencies]
-datarust = "0.7"
+datarust = "${DATARUST_CRATE.version}"
 datarust-profile = "0.4"
 \`\`\`
 
@@ -889,7 +889,7 @@ function developerPortalPage() {
           <h2>3. datarust MCP Server (Model Context Protocol)</h2>
           <p>Standardized MCP server for AI coding assistants (Cursor, Claude Desktop, Antigravity, Cline) to run tabular profiling and machine learning:</p>
           <ul>
-            <li><strong>MCP Endpoint</strong>: <code>https://datarust.dev/mcp</code> (Supports both Streamable HTTP and SSE transports)</li>
+            <li><strong>MCP Endpoint</strong>: <code>https://datarust.dev/mcp</code> (Streamable HTTP with JSON or SSE responses)</li>
             <li><strong><a href="/.well-known/mcp/server-card.json">SEP-1649 / SEP-2127 Server Card</a></strong>: Manifest declaring tools, resources, capabilities, and server metadata.</li>
             <li><strong><a href="/docs/mcp/">MCP Server Guide &amp; Tool Reference</a></strong>: Installation instructions, configuration snippets, and tool parameters.</li>
             <li><strong><a href="https://smithery.ai/server/@genc-murat/datarust" target="_blank" rel="noreferrer">Smithery Registry Listing</a></strong>: Verified registry package for automated 1-click installation.</li>
@@ -900,7 +900,7 @@ function developerPortalPage() {
           <h2>4. datarust SDK &amp; Rust Crates</h2>
           <p>Pure Rust crates with zero external dependencies by default:</p>
           <pre><code>[dependencies]
-datarust = "0.7"
+datarust = "${DATARUST_CRATE.version}"
 datarust-profile = "0.4"</code></pre>
           <p>Explore the <a href="/docs/quickstart/">Quick Start Guide</a> or browse the <a href="${GITHUB_URL}">GitHub repository</a>.</p>
         </section>
@@ -948,7 +948,7 @@ function aboutPage() {
       <article class="prose shell" style="max-width: 760px; margin: 3rem auto; padding: 0 1.5rem;">
         <h1>About datarust</h1>
         <p class="lede">datarust is an open-source machine learning and data profiling ecosystem built entirely in pure Rust, designed for performance, correctness, and zero runtime dependencies.</p>
-        
+
         <h2>Mission &amp; Philosophy</h2>
         <p>Traditional machine learning pipelines frequently rely on complex runtime environments, C/Fortran shared libraries, and fragile Python bindings. The mission of datarust is to give systems engineers and data practitioners first-class classical machine learning estimators, scalers, imputers, and automated data profiling native to Rust.</p>
         <p>Our guiding design principles are:</p>
@@ -1022,19 +1022,18 @@ function contactPage() {
 function privacyMarkdown() {
   return `# Privacy Policy
 
-Last updated: October 2026. This privacy policy describes how datarust treats visitor information.
+Last updated November 2026. This privacy policy describes how datarust treats visitor information.
 
-## Zero Personal Data Collection
+## Visitor information
 
-datarust is committed to user privacy. We do not require account registration, do not use tracking cookies, and do not collect, monetize, or sell any personal data.
+Browsing the site and using its public API does not require an account. The browser and the hosted services process the information described below.
 
-- **No Cookies:** We do not store or read tracking cookies, marketing cookies, or third-party advertising identifiers.
-- **No Third-Party Analytics:** We do not load Google Analytics, Meta Pixel, or any third-party behavioral trackers.
+- **Advertising.** Pages load Google AdSense. Google and its advertising partners may receive IP addresses and use cookies, web beacons, and other identifiers to serve and measure ads. See [how Google uses data from partner sites](https://policies.google.com/technologies/partner-sites) and [Google Ads Settings](https://myadcenter.google.com/).
 - **Client-Side Processing:** All interactive calculators, profiling demonstrations, and search dialogs run entirely locally in your browser using Web APIs.
 
 ## Hosting & Edge Infrastructure
 
-datarust.dev is hosted via Cloudflare Pages and Cloudflare Workers edge network. Requests are subject to standard transient edge logging solely for security and DDoS mitigation. The hosted MCP server endpoint (https://datarust.dev/mcp) processes data transiently in memory with zero persistence.
+datarust.dev is hosted via Cloudflare Pages and Cloudflare Workers edge network. Cloudflare may log request metadata for security and availability. MCP, A2A and direct REST requests without an idempotency key process submitted data in memory. The REST service retains job inputs until execution finishes and keeps job status, results, and idempotent responses available for up to 30 minutes. Keep the job access token private.
 
 ## Open Source Crate Usage
 
@@ -1046,22 +1045,23 @@ If you have any questions about this Privacy Policy, please reach out via murat@
 `;
 }
 
+const PRIVACY_DESCRIPTION = 'How datarust handles advertising, hosted API data, and offline crate use.';
+
 function privacyPage() {
   return pageShell({
     title: 'Privacy Policy',
-    description: 'datarust privacy notice regarding zero tracking, no cookies, edge hosting, and offline crate execution.',
+    description: PRIVACY_DESCRIPTION,
     pathname: '/privacy/',
     bodyClass: 'docs-page trust-page',
     body: `
       <article class="prose shell" style="max-width: 760px; margin: 3rem auto; padding: 0 1.5rem;">
         <h1>Privacy Policy</h1>
-        <p class="lede">Last updated: October 2026. This privacy policy describes how datarust (<a href="${SITE_URL}/">${SITE_URL}</a>) treats visitor information.</p>
+        <p class="lede">Last updated November 2026. This privacy policy describes how datarust (<a href="${SITE_URL}/">${SITE_URL}</a>) treats visitor information.</p>
 
-        <h2>Zero Personal Data Collection</h2>
-        <p>datarust is committed to user privacy. We do not require account registration, do not use tracking cookies, and do not collect, monetize, or sell any personal data.</p>
+        <h2>Visitor information</h2>
+        <p>Browsing the site and using its public API does not require an account. The browser and the hosted services process the information described below.</p>
         <ul>
-          <li><strong>No Cookies:</strong> We do not store or read tracking cookies, marketing cookies, or third-party advertising identifiers.</li>
-          <li><strong>No Third-Party Analytics:</strong> We do not load Google Analytics, Meta Pixel, or any third-party behavioral trackers.</li>
+          <li><strong>Advertising.</strong> Pages load Google AdSense. Google and its advertising partners may receive IP addresses and use cookies, web beacons, and other identifiers to serve and measure ads. See <a href="https://policies.google.com/technologies/partner-sites">how Google uses data from partner sites</a> and <a href="https://myadcenter.google.com/">Google Ads Settings</a>.</li>
           <li><strong>Client-Side Processing:</strong> All interactive calculators, profiling demonstrations, and search dialogs run entirely locally in your browser using Web APIs.</li>
         </ul>
 
@@ -1069,7 +1069,7 @@ function privacyPage() {
         <p>datarust.dev is hosted via Cloudflare Pages and Cloudflare Workers edge network. When you request a page or query an API/MCP endpoint:</p>
         <ul>
           <li>Cloudflare standard edge infrastructure processes network requests and may transiently log standard HTTP metadata (such as IP address, user-agent, request timestamp, and requested URL) solely for operational security, DDoS protection, and rate limiting.</li>
-          <li>The hosted MCP endpoint (<code>https://datarust.dev/mcp</code>) processes submitted dataset matrices transiently in memory to return profiling summaries or predictions, and does not store or persist uploaded dataset rows to any database or external storage.</li>
+          <li>MCP, A2A and direct REST requests without an idempotency key process submitted data in memory. The REST service retains job inputs until execution finishes and keeps job status, results, and idempotent responses available for up to 30 minutes. Keep the job access token private.</li>
         </ul>
 
         <h2>Open Source Crate Usage</h2>
@@ -1160,7 +1160,7 @@ async function build() {
     { type: 'Page', title: 'datarust Developer Portal', description: 'Official developer resources: API documentation, OpenAPI 3.1 specification, Model Context Protocol (MCP) server, and Rust SDK.', url: '/developers/', headings: ['datarust API Documentation', 'datarust OpenAPI Specification', 'datarust MCP Server', 'datarust SDK & Rust Crates', 'Free Tier & Zero Onboarding Friction'] },
     { type: 'Page', title: 'About datarust', description: 'Learn about the datarust workspace, mission, open-source maintainers, and pure-Rust architecture.', url: '/about/', headings: ['Mission & Philosophy', 'Workspace Architecture', 'Maintainer & Open Source'] },
     { type: 'Page', title: 'Contact & Community', description: 'Get in touch with the datarust maintainers, ask questions, or report vulnerabilities.', url: '/contact/', headings: ['Community & Support Channels', 'Security & Vulnerability Reporting'] },
-    { type: 'Page', title: 'Privacy Policy', description: 'Zero personal data collection, no cookies, and Cloudflare edge hosting details.', url: '/privacy/', headings: ['Zero Personal Data Collection', 'Hosting & Edge Infrastructure', 'Open Source Crate Usage'] },
+    { type: 'Page', title: 'Privacy Policy', description: PRIVACY_DESCRIPTION, url: '/privacy/', headings: ['Visitor information', 'Hosting & Edge Infrastructure', 'Open Source Crate Usage', 'Contact'] },
     ...docs.pages.map((page) => ({ type: 'Docs', title: page.title, description: page.description, url: page.route, headings: page.toc.map((item) => item.text) })),
     ...posts.map((post) => ({ type: post.number ? `Field note ${String(post.number).padStart(2, '0')}` : 'Release story', title: post.title, description: post.description, url: post.route, headings: post.toc.map((item) => item.text) })),
   ];

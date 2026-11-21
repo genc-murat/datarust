@@ -1,85 +1,20 @@
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, Last-Event-ID, Mcp-Session-Id, Idempotency-Key, X-Idempotency-Key, X-API-Version, Signature-Agent, Signature-Input, Signature',
-  'Access-Control-Expose-Headers': 'RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, RateLimit-Policy, Idempotency-Key, Idempotent-Replayed, X-API-Version, Signature-Agent, Signature-Input, Signature',
-  'Access-Control-Max-Age': '86400',
-};
+import { executeTool, InvalidInput, OPERATIONS } from './analytics.js';
+import { ApiState, operationResult } from './api-state.js';
+import { apiError, base64, base64url, CORS_HEADERS, fingerprint, isObject, jsonResponse, readJson, RequestError, sha256 } from './http.js';
 
-const WEB_BOT_AUTH_HEADERS = {
-  'Signature-Agent': 'https://datarust.dev',
-  'Signature-Input': 'sig1=("@authority");keyid="datarust-agent-key-1";alg="ed25519";tag="web-bot-auth"',
-};
+export { ApiState };
 
-const JWKS_DIRECTORY = {
-  keys: [
-    {
-      kid: 'datarust-agent-key-1',
-      kty: 'OKP',
-      crv: 'Ed25519',
-      x: 'GIBL8HRxLT7yEBMaA-EpSCzGdRCpmvYmFgwRVAXmJV0',
-      use: 'sig',
-      alg: 'Ed25519',
-    },
-  ],
-  signature_agent: 'https://datarust.dev',
-  purpose: 'ai-agent',
-};
-
-function getRateLimitHeaders() {
-  return {
-    'RateLimit-Limit': '1000',
-    'RateLimit-Remaining': '999',
-    'RateLimit-Reset': '60',
-    'RateLimit-Policy': '1000;w=60',
-    'X-RateLimit-Limit': '1000',
-    'X-RateLimit-Remaining': '999',
-    'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + 60),
-    'X-API-Version': '1.0',
-    ...WEB_BOT_AUTH_HEADERS,
-  };
-}
-
-function getIdempotencyHeaders(request) {
-  const key = request.headers.get('idempotency-key') || request.headers.get('x-idempotency-key');
-  if (key) {
-    return {
-      'Idempotency-Key': key,
-      'Idempotent-Replayed': 'false',
-    };
-  }
-  return {};
-}
-
-function jsonResponse(data, status = 200, request = null, extraHeaders = {}) {
-  const headers = {
-    ...CORS_HEADERS,
-    ...getRateLimitHeaders(),
-    ...(request ? getIdempotencyHeaders(request) : {}),
-    ...extraHeaders,
-    'Content-Type': 'application/json; charset=utf-8',
-  };
-  return new Response(JSON.stringify(data), { status, headers });
-}
-
-function jsonError(message, status = 400, code = 'bad_request', request = null, details = []) {
-  return jsonResponse({
-    error: {
-      code,
-      message,
-      status,
-      details,
-    },
-  }, status, request);
-}
-
+const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+const JOB_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const JOB_ID_PATTERN = /^job_\d+_[0-9a-f-]{36}$/;
+const API_HEADERS = { 'X-API-Version': '1.0' };
 const MCP_TOOLS = [
   {
     name: 'profile_dataset',
     description: 'Profiles tabular CSV data, generating descriptive statistics, distribution metrics, pairwise correlations, and data quality checks.',
     annotations: {
-      readOnly: true,
-      idempotent: true,
+      readOnlyHint: true,
+      idempotentHint: true,
     },
     inputSchema: {
       type: 'object',
@@ -100,8 +35,8 @@ const MCP_TOOLS = [
     name: 'train_linear_regression',
     description: 'Fits an ordinary least squares linear regression model on feature matrix X and target vector y.',
     annotations: {
-      readOnly: true,
-      idempotent: true,
+      readOnlyHint: true,
+      idempotentHint: true,
     },
     inputSchema: {
       type: 'object',
@@ -124,8 +59,8 @@ const MCP_TOOLS = [
     name: 'scale_features',
     description: 'Transforms numerical features using standard, minmax, or robust scaling.',
     annotations: {
-      readOnly: true,
-      idempotent: true,
+      readOnlyHint: true,
+      idempotentHint: true,
     },
     inputSchema: {
       type: 'object',
@@ -148,8 +83,8 @@ const MCP_TOOLS = [
     name: 'evaluate_metrics',
     description: 'Computes regression metrics (R2, MSE, RMSE, MAE) or classification metrics (accuracy).',
     annotations: {
-      readOnly: true,
-      idempotent: true,
+      readOnlyHint: true,
+      idempotentHint: true,
     },
     inputSchema: {
       type: 'object',
@@ -196,448 +131,393 @@ const MCP_RESOURCES = [
   },
 ];
 
-async function handleMcpPost(request, env) {
+function rpcResponse(id, result) {
+  return { jsonrpc: '2.0', id, result };
+}
+
+function rpcError(id, code, message) {
+  return { jsonrpc: '2.0', id, error: { code, message } };
+}
+
+function sseResponse(events, headers = {}) {
+  const body = events.map((event) => {
+    const data = typeof event.data === 'string' ? event.data : JSON.stringify(event.data);
+    return (event.type ? `event: ${event.type}\n` : '') + `data: ${data}\n\n`;
+  }).join('');
+  return new Response(body, {
+    headers: { ...CORS_HEADERS, ...headers, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' },
+  });
+}
+
+async function stateCall(env, scope, action, args = {}) {
+  const object = env.API_STATE.get(env.API_STATE.idFromName(scope));
+  const response = await object.fetch('https://api-state.internal/' + action, {
+    method: 'POST',
+    body: JSON.stringify(args),
+  });
+  if (!response.ok) throw new Error('Durable Object request failed');
+  return response.json();
+}
+
+function rateHeaders(rate) {
+  return {
+    'RateLimit-Limit': String(rate.limit),
+    'RateLimit-Remaining': String(rate.remaining),
+    'RateLimit-Reset': String(rate.reset),
+    'RateLimit-Policy': rate.limit + ';w=60',
+    ...(!rate.allowed ? { 'Retry-After': String(rate.reset) } : {}),
+  };
+}
+
+function idempotencyKey(request) {
+  const key = request.headers.get('idempotency-key') || request.headers.get('x-idempotency-key');
+  if (key && (key.length > 128 || !/^[!-~]+$/.test(key))) {
+    throw new RequestError(400, 'invalid_idempotency_key', 'Idempotency-Key must contain 1–128 visible ASCII characters.');
+  }
+  return key;
+}
+
+// Object field order is insignificant. Normalize it before fingerprinting.
+function canonicalize(value, depth = 0) {
+  if (depth >= 64) throw new RequestError(400, 'invalid_payload', 'JSON nesting is limited to 64 levels.');
+  if (Array.isArray(value)) return value.map((entry) => canonicalize(entry, depth + 1));
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key], depth + 1)]));
+}
+
+async function requestIdentity(key, operation, body) {
+  if (!key) return {};
+  return {
+    key: await fingerprint(operation + '\n' + key),
+    digest: await fingerprint(JSON.stringify(canonicalize(body))),
+  };
+}
+
+function apiResult(result, headers, key) {
+  const replay = key && result.replayed !== undefined ? {
+    'Idempotency-Key': key,
+    'Idempotent-Replayed': String(result.replayed),
+  } : {};
+  return jsonResponse(result.body, result.status, { ...headers, ...replay });
+}
+
+function paginationNumber(url, name, fallback, max) {
+  const raw = url.searchParams.get(name);
+  if (raw === null) return fallback;
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1 || value > max) {
+    throw new RequestError(400, 'invalid_pagination', `'${name}' must be an integer in 1–${max}.`);
+  }
+  return value;
+}
+
+async function handleJob(request, url, path, env, client, headers) {
+  const key = request.method === 'POST' ? idempotencyKey(request) : null;
+  let token = request.headers.get('x-job-token');
+  if (token && !JOB_TOKEN_PATTERN.test(token)) {
+    throw new RequestError(400, 'invalid_job_token', 'X-Job-Token must be a base64url-encoded 32-byte token.');
+  }
+  if (path === '/jobs' && request.method === 'POST') {
+    const body = await readJson(request);
+    if (!isObject(body) || !OPERATIONS.has(body.task) || !isObject(body.parameters)) {
+      throw new RequestError(422, 'invalid_job', 'Provide a supported task and a parameters object.');
+    }
+    const identity = await requestIdentity(key, 'submit', body);
+    if (!token) {
+      const allocation = await stateCall(env, client, 'job-token', identity);
+      if (allocation.status !== 200) return apiResult(allocation, headers, key);
+      token = allocation.body.token;
+    }
+    const result = await stateCall(env, 'jobs:' + await fingerprint(token), 'submit', { body, ...identity });
+    if (result.status === 202) {
+      const pollPath = '/v1/jobs/' + result.body.job_id;
+      result.body = { ...result.body, poll_url: new URL(pollPath, url).href };
+      headers = { ...headers, Location: pollPath, 'X-Job-Token': token };
+    }
+    return apiResult(result, headers, key);
+  }
+  if (request.method !== 'GET') {
+    return jsonResponse(apiError(405, 'method_not_allowed', 'Method not allowed.'), 405, {
+      ...headers, Allow: path === '/jobs' ? 'GET, POST' : 'GET',
+    });
+  }
+  if (!token) throw new RequestError(401, 'job_token_required', 'Send the X-Job-Token from the job submission response.');
+  const scope = 'jobs:' + await fingerprint(token);
+  if (path !== '/jobs') {
+    const id = path.slice('/jobs/'.length);
+    if (!JOB_ID_PATTERN.test(id)) return jsonResponse(apiError(404, 'job_not_found', 'Job was not found.'), 404, headers);
+    return apiResult(await stateCall(env, scope, 'poll', { id }), headers);
+  }
+  const page = paginationNumber(url, 'page', 1, Number.MAX_SAFE_INTEGER);
+  const limit = paginationNumber(url, 'limit', 20, 100);
+  const cursor = url.searchParams.get('cursor');
+  if (cursor !== null && (!JOB_ID_PATTERN.test(cursor) || url.searchParams.has('page'))) {
+    throw new RequestError(400, 'invalid_pagination', 'Use a cursor from a previous page or a page number.');
+  }
+  return apiResult(await stateCall(env, scope, 'list', { page, limit, cursor }), headers);
+}
+
+async function handleApi(request, url, env, client, headers) {
+  const path = url.pathname.replace(/^\/(v1|api)(?=\/|$)/, '').replace(/\/$/, '');
+  if (path === '/jobs' || path.startsWith('/jobs/')) {
+    return handleJob(request, url, path, env, client, headers);
+  }
+  const operation = path.slice(1);
+  if (!OPERATIONS.has(operation)) {
+    return jsonResponse(apiError(404, 'not_found', 'API endpoint not found.'), 404, headers);
+  }
+  if (request.method !== 'POST') {
+    return jsonResponse(apiError(405, 'method_not_allowed', 'This endpoint accepts POST.'), 405, {
+      ...headers, Allow: 'POST',
+    });
+  }
+  const body = await readJson(request);
+  const key = idempotencyKey(request);
+  const result = key
+    ? await stateCall(env, client, 'operation', { operation, body, ...await requestIdentity(key, operation, body) })
+    : operationResult(operation, body);
+  return apiResult(result, headers, key);
+}
+
+function validRpc(body) {
+  return isObject(body) && body.jsonrpc === '2.0' && typeof body.method === 'string'
+    && (!Object.hasOwn(body, 'id') || typeof body.id === 'string' || Number.isFinite(body.id));
+}
+
+async function handleMcp(request, url, env, headers) {
+  const origin = request.headers.get('origin');
+  if (origin && origin !== url.origin) {
+    return jsonResponse(rpcError(null, -32600, 'Origin is not allowed.'), 403, headers);
+  }
+  const accept = request.headers.get('accept') || '';
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    if (accept.includes('text/event-stream')) return new Response(null, { status: 405, headers: { ...headers, Allow: 'POST' } });
+    if (accept.includes('application/json') || url.searchParams.get('card') === 'true') {
+      return env.ASSETS.fetch(new Request(new URL('/.well-known/mcp/server-card.json', url), { method: request.method }));
+    }
+    return Response.redirect(new URL('/docs/mcp/', url), 302);
+  }
+  if (request.method !== 'POST') return new Response(null, { status: 405, headers: { ...headers, Allow: 'GET, HEAD, POST' } });
+  const version = request.headers.get('mcp-protocol-version');
+  if (version && !MCP_VERSIONS.includes(version)) {
+    return jsonResponse(rpcError(null, -32602, 'Unsupported MCP protocol version.'), 400, headers);
+  }
+
   let body;
   try {
-    body = await request.json();
-  } catch {
-    return new Response(JSON.stringify({
-      jsonrpc: '2.0',
-      id: null,
-      error: { code: -32700, message: 'Parse error: invalid JSON' },
-    }), {
-      status: 400,
-      headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-    });
+    body = await readJson(request);
+  } catch (error) {
+    return jsonResponse(rpcError(null, -32700, error.message), error.status, headers);
   }
 
-  const id = body.id ?? null;
-  const method = body.method;
+  const reply = (message, status = 200) => (
+    accept.includes('text/event-stream') && !accept.includes('application/json') && status === 200
+      ? sseResponse([{ type: 'message', data: message }], headers)
+      : jsonResponse(message, status, headers)
+  );
+  if (!validRpc(body)) {
+    if (isObject(body) && body.jsonrpc === '2.0' && !('method' in body) && ('result' in body || 'error' in body)) {
+      return new Response(null, { status: 202, headers });
+    }
+    return reply(rpcError(null, -32600, 'Invalid JSON-RPC request.'), 400);
+  }
+  if (!Object.hasOwn(body, 'id')) return new Response(null, { status: 202, headers });
 
+  const { id, method, params } = body;
+  const success = (result) => reply(rpcResponse(id, result));
   switch (method) {
-    case 'initialize':
-      return new Response(JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          protocolVersion: '2024-11-05',
-          capabilities: {
-            tools: { listChanged: false },
-            resources: { subscribe: false, listChanged: false },
-            prompts: { listChanged: false },
-          },
-          serverInfo: {
-            name: 'datarust',
-            version: '0.7.0',
-          },
-        },
-      }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
+    case 'initialize': {
+      const requested = params?.protocolVersion;
+      return success({
+        protocolVersion: MCP_VERSIONS.includes(requested) ? requested : MCP_VERSIONS[0],
+        capabilities: { tools: {}, resources: {} },
+        serverInfo: { name: 'datarust', version: '0.8.0' },
       });
-
-    case 'notifications/initialized':
-      return new Response(null, { status: 204, headers: { ...CORS_HEADERS, ...getRateLimitHeaders() } });
-
+    }
     case 'ping':
-      return new Response(JSON.stringify({ jsonrpc: '2.0', id, result: {} }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-      });
-
-    case 'resources/list':
-      return new Response(JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        result: { resources: MCP_RESOURCES },
-      }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-      });
-
-    case 'resources/read': {
-      const uri = body.params?.uri;
-      if (uri === 'datarust://docs/overview') {
-        return new Response(JSON.stringify({
-          jsonrpc: '2.0',
-          id,
-          result: {
-            contents: [{
-              uri,
-              mimeType: 'text/markdown',
-              text: '# datarust Overview\n\nHigh-performance, pure-Rust classical machine learning with exact bit-level scikit-learn parity and automated dataset profiling.\n\nWebsite: https://datarust.dev\nDocs: https://datarust.dev/docs/\nGitHub: https://github.com/genc-murat/datarust',
-            }],
-          },
-        }), {
-          status: 200,
-          headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-        });
-      }
-      if (uri === 'datarust://docs/api') {
-        return new Response(JSON.stringify({
-          jsonrpc: '2.0',
-          id,
-          result: {
-            contents: [{
-              uri,
-              mimeType: 'text/markdown',
-              text: '# datarust API Traits\n\n- Estimator: Base trait for models with hyperparameters.\n- Transformer: Fit and transform feature matrices (StandardScaler, OneHotEncoder, etc.).\n- Predictor: Supervised learning contract (fit(X, y), predict(X)).\n- Regressor & Classifier: Specialized prediction traits with scoring.\n\nDocs: https://docs.rs/datarust',
-            }],
-          },
-        }), {
-          status: 200,
-          headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-        });
-      }
-      if (uri === 'datarust://schema/openapi.json') {
-        try {
-          const openapiRes = await env.ASSETS.fetch(new Request(new URL('/openapi.json', request.url)));
-          const openapiText = await openapiRes.text();
-          return new Response(JSON.stringify({
-            jsonrpc: '2.0',
-            id,
-            result: {
-              contents: [{
-                uri,
-                mimeType: 'application/json',
-                text: openapiText,
-              }],
-            },
-          }), {
-            status: 200,
-            headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-          });
-        } catch {
-          return new Response(JSON.stringify({
-            jsonrpc: '2.0',
-            id,
-            result: {
-              contents: [{
-                uri,
-                mimeType: 'application/json',
-                text: JSON.stringify({ openapi: '3.1.0', info: { title: 'datarust API', version: '0.7.0' } }),
-              }],
-            },
-          }), {
-            status: 200,
-            headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-          });
-        }
-      }
-      return new Response(JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        error: { code: -32602, message: `Resource not found: ${uri}` },
-      }), {
-        status: 404,
-        headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-      });
-    }
-
+      return success({});
     case 'tools/list':
-      return new Response(JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        result: { tools: MCP_TOOLS },
-      }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-      });
-
+      return success({ tools: MCP_TOOLS });
     case 'tools/call': {
-      const toolName = body.params?.name;
-      return new Response(JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              status: 'success',
-              tool: toolName,
-              message: `Executed tool ${toolName} via datarust MCP endpoint`,
-            }),
-          }],
-        },
-      }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-      });
-    }
-
-    default:
-      return new Response(JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        error: { code: -32601, message: `Method not found: ${method}` },
-      }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, ...getRateLimitHeaders(), 'Content-Type': 'application/json; charset=utf-8' },
-      });
-  }
-}
-
-// NLWeb /ask Handler with SSE Streaming Support
-async function handleNlWebAsk(request) {
-  const url = new URL(request.url);
-  let query = url.searchParams.get('q') || url.searchParams.get('query') || '';
-  let streamRequested = url.searchParams.get('stream') === 'true';
-
-  if (request.method === 'POST') {
-    try {
-      const body = await request.json();
-      query = body.q || body.query || body.question || query;
-      if (body.stream === true || body.stream === 'true') {
-        streamRequested = true;
+      const name = params?.name;
+      if (!MCP_TOOLS.some((tool) => tool.name === name)) {
+        return reply(rpcError(id, -32602, 'Unknown tool.'));
       }
-    } catch {
-      // Form or empty body
+      try {
+        const result = executeTool(name, params.arguments ?? {});
+        return success({ content: [{ type: 'text', text: JSON.stringify(result) }] });
+      } catch (error) {
+        if (!(error instanceof InvalidInput)) throw error;
+        return success({ isError: true, content: [{ type: 'text', text: error.message }] });
+      }
     }
+    case 'resources/list':
+      return success({ resources: MCP_RESOURCES });
+    case 'resources/read': {
+      const resource = MCP_RESOURCES.find((entry) => entry.uri === params?.uri);
+      if (!resource) return reply(rpcError(id, -32002, 'Resource not found.'));
+      const paths = {
+        'datarust://docs/overview': '/docs/index.md',
+        'datarust://docs/api': '/docs/api/index.md',
+        'datarust://schema/openapi.json': '/openapi.json',
+      };
+      const response = await env.ASSETS.fetch(new Request(new URL(paths[resource.uri], url)));
+      if (!response.ok) return reply(rpcError(id, -32002, 'Resource not found.'));
+      const { uri, mimeType } = resource;
+      return success({ contents: [{ uri, mimeType, text: await response.text() }] });
+    }
+    default:
+      return reply(rpcError(id, -32601, 'Method not found.'));
   }
-
-  const accept = request.headers.get('accept') || '';
-  if (accept.includes('text/event-stream')) {
-    streamRequested = true;
-  }
-
-  const responseText = query
-    ? `datarust is a pure-Rust classical machine learning and data profiling workspace with zero external dependencies by default. You asked: "${query}". It provides StandardScaler, PCA, LinearRegression, LogisticRegression, KMeans, pipelines, and one-call profiling reports.`
-    : 'datarust provides high-performance classical machine learning and data quality profiling native to Rust with exact scikit-learn parity.';
-
-  if (streamRequested) {
-    const chunks = [
-      'datarust is a pure-Rust machine learning and data profiling ecosystem. ',
-      'It offers scikit-learn-style estimators, scalers, and automated EDA reports ',
-      'with zero external dependencies and exact bit-level parity.',
-    ];
-
-    const sseStream = new ReadableStream({
-      start(controller) {
-        const encoder = new TextEncoder();
-        for (let i = 0; i < chunks.length; i++) {
-          const payload = JSON.stringify({
-            chunk: chunks[i],
-            index: i,
-            done: i === chunks.length - 1,
-          });
-          controller.enqueue(encoder.encode(`event: message\ndata: ${payload}\n\n`));
-        }
-        controller.enqueue(encoder.encode('event: done\ndata: [DONE]\n\n'));
-        controller.close();
-      },
-    });
-
-    return new Response(sseStream, {
-      status: 200,
-      headers: {
-        ...CORS_HEADERS,
-        ...getRateLimitHeaders(),
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
-  }
-
-  return jsonResponse({
-    answer: responseText,
-    model: 'datarust-knowledge-v1',
-    status: 'success',
-  }, 200, request);
 }
 
-// REST API Request Router
-async function handleApiRequest(request, pathname) {
-  const method = request.method;
+async function answerFromDocs(query, env, url) {
+  const fallback = 'datarust provides Rust tools for tabular preprocessing, machine learning and dataset profiling. See ' + new URL('/docs/', url).href;
+  const terms = [...new Set(query.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])]
+    .filter((term) => term.length >= 3 && !['datarust', 'how', 'what', 'the', 'and', 'for', 'can', 'use', 'which', 'does'].includes(term));
+  if (!terms.length) return fallback;
+  const response = await env.ASSETS.fetch(new Request(new URL('/search.json', url)));
+  if (!response.ok) return fallback;
+  const matches = (await response.json()).map((entry) => {
+    const title = entry.title.toLowerCase();
+    const text = [entry.description, ...(entry.headings || [])].join(' ').toLowerCase();
+    const score = terms.reduce((total, term) => total + (title.includes(term) ? 3 : text.includes(term) ? 1 : 0), 0);
+    return { entry, score };
+  }).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
+  if (!matches.length) return fallback;
+  return matches.map(({ entry }) => `${entry.title} — ${entry.description || entry.headings?.[0] || 'Documentation'} (${new URL(entry.url, url).href})`).join('\n');
+}
 
-  // CORS Preflight
-  if (method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+async function handleAsk(request, url, env, headers) {
+  if (!['GET', 'POST'].includes(request.method)) return new Response(null, { status: 405, headers });
+  const body = request.method === 'POST' ? await readJson(request) : {};
+  const query = body?.q ?? body?.query ?? body?.question ?? url.searchParams.get('q') ?? url.searchParams.get('query') ?? '';
+  if (typeof query !== 'string' || query.length > 2000) {
+    throw new RequestError(400, 'invalid_query', 'Provide a text query of at most 2,000 characters.');
   }
+  const answer = await answerFromDocs(query, env, url);
+  if (String(body?.stream ?? url.searchParams.get('stream')) === 'true' || request.headers.get('accept')?.includes('text/event-stream')) {
+    const events = answer.split('\n').map((chunk, index, parts) => ({
+      type: 'message', data: { chunk: index ? '\n' + chunk : chunk, index, done: index === parts.length - 1 },
+    }));
+    return sseResponse([...events, { type: 'done', data: '[DONE]' }], headers);
+  }
+  return jsonResponse({ answer, model: 'datarust-knowledge-v1', status: 'success' }, 200, headers);
+}
 
-  // Normalize path by stripping /v1 or /api prefix
-  const cleanPath = pathname.replace(/^\/(?:v1|api)/, '');
-
-  if (cleanPath === '/profile' && method === 'POST') {
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError('Invalid JSON payload', 400, 'invalid_payload', request);
+async function handleA2A(request, url, env, headers) {
+  const reply = (message, status = 200) => jsonResponse(message, status, headers);
+  if (request.method !== 'POST') return new Response(null, { status: 405, headers: { ...headers, Allow: 'POST' } });
+  let body;
+  try {
+    body = await readJson(request);
+  } catch (error) {
+    return reply(rpcError(null, -32700, error.message), error.status);
+  }
+  if (!validRpc(body) || !Object.hasOwn(body, 'id')) return reply(rpcError(null, -32600, 'Invalid JSON-RPC request.'), 400);
+  const { id, method, params } = body;
+  const version = request.headers.get('a2a-version');
+  if (version && version !== '1.0') return reply(rpcError(id, -32009, 'Unsupported A2A version.'));
+  if (!['SendMessage', 'SendStreamingMessage'].includes(method)) {
+    return reply(rpcError(id, -32601, 'Method not found.'));
+  }
+  const message = params?.message;
+  if (!isObject(message) || message.role !== 'ROLE_USER' || typeof message.messageId !== 'string'
+    || !message.messageId || !Array.isArray(message.parts) || !message.parts.length || message.parts.length > 16) {
+    return reply(rpcError(id, -32602, 'Provide a user message with a messageId and 1–16 parts.'));
+  }
+  const parts = [];
+  try {
+    for (const part of message.parts) {
+      if (typeof part?.text === 'string' && part.text.length <= 2000) {
+        parts.push({ text: await answerFromDocs(part.text, env, url) });
+      } else if (isObject(part?.data) && MCP_TOOLS.some((tool) => tool.name === part.data.tool)) {
+        parts.push({ data: executeTool(part.data.tool, part.data.arguments ?? {}) });
+      } else {
+        return reply(rpcError(id, -32602, 'Provide a text part or a data part with a supported tool and arguments.'));
+      }
     }
-    return jsonResponse({
-      row_count: 100,
-      column_count: 4,
-      columns: [
-        { name: 'feature_1', inferred_type: 'numeric', null_count: 0, mean: 12.5, std: 3.2 },
-        { name: 'feature_2', inferred_type: 'numeric', null_count: 2, mean: 45.1, std: 8.9 },
-      ],
-      quality_warnings: [],
-      correlations: { 'feature_1:feature_2': 0.84 },
-    }, 200, request);
+  } catch (error) {
+    if (!(error instanceof InvalidInput)) throw error;
+    return reply(rpcError(id, -32602, error.message));
   }
+  const result = rpcResponse(id, { message: {
+    messageId: crypto.randomUUID(),
+    contextId: typeof message.contextId === 'string' ? message.contextId : crypto.randomUUID(),
+    role: 'ROLE_AGENT',
+    parts,
+  } });
+  return method === 'SendStreamingMessage'
+    ? sseResponse([{ data: result }], headers)
+    : reply(result);
+}
 
-  if (cleanPath === '/train' && method === 'POST') {
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError('Invalid JSON payload', 400, 'invalid_payload', request);
-    }
-    return jsonResponse({
-      model: body?.model || 'linear_regression',
-      coefficients: [0.42, -1.25],
-      intercept: 2.71,
-      r2_score: 0.94,
-      status: 'fitted',
-    }, 200, request);
+async function handleSignaturesDirectory(request, url, env) {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } });
+  const secret = env.WEB_BOT_AUTH_PRIVATE_JWK;
+  if (!secret) return jsonResponse(apiError(404, 'not_found', 'No signing key directory is configured.'), 404);
+  const { kty, crv, x, d } = JSON.parse(secret);
+  if (kty !== 'OKP' || crv !== 'Ed25519' || !JOB_TOKEN_PATTERN.test(x) || !JOB_TOKEN_PATTERN.test(d)) {
+    throw new Error('Invalid signing key configuration');
   }
-
-  if (cleanPath === '/scale' && method === 'POST') {
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError('Invalid JSON payload', 400, 'invalid_payload', request);
-    }
-    return jsonResponse({
-      method: body?.method || 'standard',
-      scaled_x: body?.x || [[0.0, 0.0]],
-      status: 'transformed',
-    }, 200, request);
-  }
-
-  if (cleanPath === '/evaluate' && method === 'POST') {
-    return jsonResponse({
-      r2: 0.94,
-      mse: 0.08,
-      rmse: 0.28,
-      mae: 0.21,
-    }, 200, request);
-  }
-
-  // REST Async-Job Pattern & Pagination Pattern
-  if (cleanPath === '/jobs' || cleanPath === '/jobs/') {
-    if (method === 'POST') {
-      const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      return jsonResponse({
-        job_id: jobId,
-        status: 'queued',
-        progress: 0,
-        poll_url: `https://datarust.dev/v1/jobs/${jobId}`,
-        created_at: new Date().toISOString(),
-      }, 202, request, { Location: `/v1/jobs/${jobId}` });
-    }
-
-    if (method === 'GET') {
-      return jsonResponse({
-        data: [
-          {
-            job_id: 'job_sample_01',
-            task: 'dataset_profiling',
-            status: 'completed',
-            created_at: '2026-10-29T00:00:00Z',
-          },
-        ],
-        pagination: {
-          page: 1,
-          limit: 20,
-          total: 1,
-          has_more: false,
-          next_cursor: null,
-        },
-      }, 200, request);
-    }
-  }
-
-  if (cleanPath.startsWith('/jobs/')) {
-    const jobId = cleanPath.replace(/^\/jobs\//, '');
-    return jsonResponse({
-      job_id: jobId,
-      status: 'completed',
-      progress: 100,
-      created_at: new Date(Date.now() - 5000).toISOString(),
-      completed_at: new Date().toISOString(),
-      result: {
-        message: `Job ${jobId} successfully completed.`,
-        metrics: { r2: 0.98, execution_time_ms: 12 },
-      },
-    }, 200, request);
-  }
-
-  // Not found in API routes -> Always return typed JSON error
-  return jsonError(`API endpoint '${pathname}' was not found.`, 404, 'not_found', request);
+  const key = await crypto.subtle.importKey('jwk', { kty, crv, x, d }, 'Ed25519', false, ['sign']);
+  const kid = await fingerprint(JSON.stringify({ crv, kty, x }));
+  const body = JSON.stringify({ keys: [{ kty, crv, kid, x, use: 'sig' }] });
+  const headers = {
+    ...CORS_HEADERS,
+    'Content-Type': 'application/http-message-signatures-directory+json',
+    'Cache-Control': 'public, max-age=300, no-transform',
+  };
+  if (request.method === 'HEAD') return new Response(null, { headers });
+  const digest = `sha-256=:${base64(await sha256(body))}:`;
+  const created = Math.floor(Date.now() / 1000);
+  const params = `("@authority";req "content-digest");created=${created};expires=${created + 600};keyid="${kid}";tag="http-message-signatures-directory"`;
+  const signatureBase = `"@authority";req: ${url.host}\n"content-digest": ${digest}\n"@signature-params": ${params}`;
+  const signature = await crypto.subtle.sign('Ed25519', key, new TextEncoder().encode(signatureBase));
+  return new Response(body, { headers: {
+    ...headers,
+    'Content-Digest': digest,
+    'Signature-Input': 'binding=' + params,
+    Signature: `binding=:${base64(signature)}:`,
+  } });
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const pathname = url.pathname;
-
-    // IETF WebBotAuth HTTP Message Signatures Directory
-    if (pathname === '/.well-known/http-message-signatures-directory' || pathname === '/.well-known/http-message-signatures-directory/') {
-      if (request.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: CORS_HEADERS });
+    if (/^\/(?:\.well-known\/)?http-message-signatures-directory(?:\.json)?\/?$/.test(pathname)) {
+      try {
+        return await handleSignaturesDirectory(request, url, env);
+      } catch {
+        return jsonResponse(apiError(503, 'signing_unavailable', 'The signing directory is unavailable.'), 503);
       }
-      return new Response(JSON.stringify(JWKS_DIRECTORY, null, 2), {
-        status: 200,
-        headers: {
-          ...CORS_HEADERS,
-          ...getRateLimitHeaders(),
-          ...WEB_BOT_AUTH_HEADERS,
-          'Content-Type': 'application/json; charset=utf-8',
-        },
-      });
     }
 
-    // NLWeb Natural Language Web Streaming endpoint (/ask)
-    if (pathname === '/ask' || pathname === '/ask/') {
-      if (request.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: CORS_HEADERS });
-      }
-      return handleNlWebAsk(request);
-    }
-
-    // REST API Routes (/v1/* or /api/*)
-    if (pathname.startsWith('/v1/') || pathname.startsWith('/api/')) {
-      return handleApiRequest(request, pathname);
-    }
-
-    // MCP Streamable HTTP & SSE Transport Handler (/mcp)
-    if (pathname === '/mcp' || pathname === '/mcp/') {
-      if (request.method === 'OPTIONS') {
-        return new Response(null, { status: 204, headers: CORS_HEADERS });
-      }
-
-      if (request.method === 'POST') {
-        return handleMcpPost(request, env);
-      }
-
-      if (request.method === 'GET' || request.method === 'HEAD') {
-        const accept = request.headers.get('accept') || '';
-
-        // Server-Sent Events (SSE) Transport
-        if (accept.includes('text/event-stream')) {
-          const sseBody = `event: endpoint\ndata: ${url.origin}/mcp\n\n`;
-          return new Response(sseBody, {
-            status: 200,
-            headers: {
-              ...CORS_HEADERS,
-              ...getRateLimitHeaders(),
-              'Content-Type': 'text/event-stream; charset=utf-8',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-            },
-          });
+    const api = /^\/(v1|api)(\/|$)/.test(pathname);
+    const protocol = /^\/(mcp|a2a|ask)\/?$/.exec(pathname)?.[1];
+    if (api || protocol) {
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+      let headers = { ...CORS_HEADERS, ...API_HEADERS };
+      try {
+        const client = 'client:' + (request.headers.get('cf-connecting-ip') || 'local');
+        // Assets, discovery cards and browser redirects do not consume API quota.
+        if (api || protocol !== 'mcp' || request.method === 'POST') {
+          const rate = await stateCall(env, client, 'rate');
+          headers = { ...headers, ...rateHeaders(rate) };
+          if (!rate.allowed) return jsonResponse(apiError(429, 'rate_limit', 'Request quota exhausted.'), 429, headers);
         }
-
-        // Return server-card if explicitly requested
-        if (accept.includes('application/json') || url.searchParams.get('card') === 'true') {
-          return env.ASSETS.fetch(new Request(new URL('/.well-known/mcp/server-card.json', request.url)));
+        if (api) return await handleApi(request, url, env, client, headers);
+        if (protocol === 'mcp') return await handleMcp(request, url, env, headers);
+        if (protocol === 'a2a') return await handleA2A(request, url, env, headers);
+        return await handleAsk(request, url, env, headers);
+      } catch (error) {
+        if (error instanceof RequestError) {
+          return jsonResponse(apiError(error.status, error.code, error.message), error.status, headers);
         }
-
-        // Otherwise redirect browser to documentation page
-        return Response.redirect(new URL('/docs/mcp/', request.url), 302);
+        console.error('Worker request failed', error.name);
+        return jsonResponse(apiError(500, 'internal_error', 'Request execution failed.'), 500, headers);
       }
     }
 
@@ -648,7 +528,6 @@ export default {
         status: 404,
         headers: {
           ...CORS_HEADERS,
-          ...getRateLimitHeaders(),
           'Content-Type': 'text/markdown; charset=utf-8',
           'X-Markdown-Tokens': String(Math.ceil(mdBody.length / 4)),
         },
@@ -669,7 +548,8 @@ export default {
       } else if (!mdPath.includes('.')) {
         mdPath += '/index.md';
       }
-      const mdUrl = new URL(mdPath, request.url);
+      const mdUrl = new URL(request.url);
+      mdUrl.pathname = mdPath;
       try {
         const mdResponse = await env.ASSETS.fetch(new Request(mdUrl.toString()));
         if (mdResponse.status === 200) {
@@ -696,7 +576,7 @@ export default {
         return markdown404(pathname);
       }
       if (accept.includes('application/json')) {
-        return jsonError(`Resource not found at '${pathname}'`, 404, 'not_found', request);
+        return jsonResponse(apiError(404, 'not_found', `Resource not found at '${pathname}'`), 404);
       }
     }
     return assetRes;

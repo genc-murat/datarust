@@ -7,9 +7,11 @@
   "scripts": {
     "postinstall": "npm run build",
     "build": "node site/build.mjs",
+    "build:worker": "cargo rustc --release -p datarust-mcp --lib --crate-type cdylib --target wasm32-unknown-unknown --target-dir target/worker --locked",
     "check": "node site/check.mjs",
     "preview": "node site/serve.mjs",
-    "deploy": "npm run build && wrangler deploy",
+    "test:worker": "npm run build:worker && node --test site/worker.test.mjs",
+    "deploy": "npm run build && npm run build:worker && wrangler deploy",
     "deploy:pages": "npm run build && wrangler pages deploy dist"
   },
   "engines": {

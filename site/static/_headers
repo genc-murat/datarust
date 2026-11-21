@@ -49,12 +49,6 @@
   Content-Type: application/json; charset=utf-8
   Access-Control-Allow-Origin: *
 
-/.well-known/http-message-signatures-directory
-  Content-Type: application/json; charset=utf-8
-  Access-Control-Allow-Origin: *
-  Signature-Agent: https://datarust.dev
-  Signature-Input: sig1=("@authority");keyid="datarust-agent-key-1";alg="ed25519";tag="web-bot-auth"
-
 /assets/*
   Cache-Control: public, max-age=86400
 

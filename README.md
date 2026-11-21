@@ -101,6 +101,35 @@ The workspace root `Cargo.toml` carries a `[patch.crates-io]` entry that points
 This patch is ignored by `cargo publish`, so published crates depend on the
 crates.io release as normal.
 
+## Hosted API and Worker development
+
+The Worker runs the same Rust tools as the stdio server using WebAssembly.
+Install the target and run the local Worker tests after building the site.
+
+```sh
+rustup target add wasm32-unknown-unknown
+npm run build
+npm run test:worker
+```
+
+The hosted REST API supports profiling, scaling, metric evaluation, and
+regression training. See the [OpenAPI contract](site/static/openapi.json).
+Clients can submit a job with `POST /v1/jobs`, then poll the returned
+`Location` using the private `X-Job-Token` response header. Reuse the token
+to submit more jobs to the same collection and list them with `GET /v1/jobs`.
+Job records and idempotent responses expire after 30 minutes. Use an
+unpredictable `Idempotency-Key` for requests that may be retried.
+
+The hosted Worker exposes MCP at `/mcp` and A2A JSON-RPC 1.0 at `/a2a`.
+A2A accepts documentation questions or a data part with `tool` and
+`arguments` matching an MCP tool. The deployment uses the SQLite-backed
+`API_STATE` Durable Object declared in `wrangler.jsonc`.
+
+To publish an HTTP Message Signatures Directory, configure
+`WEB_BOT_AUTH_PRIVATE_JWK` as a Cloudflare Worker secret containing a
+private Ed25519 JWK. The directory publishes the public key and signs its
+response. The directory is available once the secret is configured.
+
 ## License
 
 MIT — see each crate's `LICENSE`.

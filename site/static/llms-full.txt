@@ -23,11 +23,12 @@ Crates:
 - **Documentation**: `https://datarust.dev/docs/mcp/`
 - **Smithery Registry**: `https://smithery.ai/server/@genc-murat/datarust`
 
-Exposed MCP Tools:
-- `profile_dataset`: Computes column descriptive statistics, distribution shapes, quality warnings, target leakage detection, and correlation matrices.
-- `preprocess`: Feature transformation using StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder, OrdinalEncoder, TargetEncoder, SimpleImputer.
-- `train_model`: Fits LinearRegression, Ridge, Lasso, LogisticRegression, DecisionTree, or RandomForest models with scikit-learn bit-level parity.
-- `evaluate_metrics`: Computes R², MSE, RMSE, MAE, accuracy, precision, recall, F1, and confusion matrix.
+#### Available MCP tools
+
+- `profile_dataset` profiles CSV text in `csv_data`, returning column statistics, pairwise relationships, and quality findings. Set `target_column` to check for target leakage.
+- `train_linear_regression` fits ordinary least squares to a numeric matrix `x` and target vector `y`. It returns coefficients, intercept, R², MSE, and up to ten sample predictions.
+- `scale_features` scales the numeric matrix `x` using a `method` of `standard` (default), `minmax`, or `robust`.
+- `evaluate_metrics` scores `y_pred` against `y_true`. The default `regression` task returns R², MSE, RMSE, and MAE. The `classification` task returns accuracy.
 
 ### Agentic Resource Discovery (ARD v0.91)
 - Manifest URL: `https://datarust.dev/.well-known/ard.json`
@@ -41,7 +42,7 @@ Exposed MCP Tools:
 
 ### Free Tier, Self-Serve Keys & Sandbox Access
 - **Free Tier**: 100% free and open-source under the MIT license.
-- **Self-Serve Keys**: No API key or authentication required. All endpoints (`https://datarust.dev/mcp`, `https://datarust.dev/v1/*`) are self-serve and instantly usable.
+- MCP and REST requests can be submitted without an account. To retrieve or list asynchronous REST jobs, send the `X-Job-Token` from the submission response.
 - **Interactive Sandbox**: Instant developer and AI agent sandbox with zero onboarding friction.
 
 ---
@@ -68,12 +69,12 @@ Exposed MCP Tools:
 
 ```toml
 [dependencies]
-datarust = "0.7.0"
+datarust = "0.8"
 datarust-profile = "0.4.0"
 ```
 
 ### Feature Flags
 - `serde`: Enables JSON serialization/deserialization for models, pipelines, and profiles.
-- `rayon`: Multi-threaded parallel execution for column statistics and tree building.
+- `rayon` enables parallel processing for large numeric transformations and column statistics.
 - `matrixmultiply`: Tuned pure-Rust GEMM for fast matrix multiplication and covariance computation without system BLAS.
 - `datasets`: Built-in toy datasets (Iris, Breast Cancer, Wine, Diabetes).

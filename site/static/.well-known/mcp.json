@@ -11,14 +11,14 @@
       "sizes": "64x64"
     }
   ],
-  "version": "0.7.0",
+  "version": "0.8.0",
   "serverUrl": "https://datarust.dev/mcp",
   "endpoint": "https://datarust.dev/mcp",
   "documentationUrl": "https://datarust.dev/docs/mcp/",
   "repositoryUrl": "https://github.com/genc-murat/datarust",
   "serverInfo": {
     "name": "datarust",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "description": "Scikit-learn-style preprocessing, classical machine learning, and data profiling in Rust",
     "icon": "https://datarust.dev/favicon.svg",
     "iconUrl": "https://datarust.dev/favicon.svg"
@@ -29,9 +29,6 @@
     },
     "resources": {
       "subscribe": false,
-      "listChanged": false
-    },
-    "prompts": {
       "listChanged": false
     }
   },

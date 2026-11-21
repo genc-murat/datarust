@@ -20,11 +20,10 @@
       "type": "application/mcp-server-card+json",
       "url": "https://datarust.dev/.well-known/mcp/server-card.json",
       "description": "Model Context Protocol server for datarust: scikit-learn-style preprocessing, classical machine learning estimators, and data profiling in Rust.",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "capabilities": [
-        "train_model",
-        "predict",
-        "preprocess",
+        "train_linear_regression",
+        "scale_features",
         "profile_dataset",
         "evaluate_metrics"
       ],
@@ -37,9 +36,9 @@
         "license": "MIT"
       },
       "representativeQueries": [
-        "train a decision tree or random forest model in Rust",
+        "fit ordinary least squares to a numeric matrix",
         "generate a data profiling report for a CSV dataset",
-        "scikit-learn equivalent machine learning pipeline in Rust",
+        "compute regression metrics for predictions",
         "scale numerical features with standard scaler in Rust"
       ],
       "tags": [

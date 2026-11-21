@@ -18,10 +18,6 @@
     {
       "url": "https://datarust.dev/v1",
       "description": "Production v1 Endpoint"
-    },
-    {
-      "url": "https://datarust.dev",
-      "description": "Root Server"
     }
   ],
   "paths": {
@@ -52,6 +48,7 @@
               "RateLimit-Limit": { "$ref": "#/components/headers/RateLimitLimit" },
               "RateLimit-Remaining": { "$ref": "#/components/headers/RateLimitRemaining" },
               "RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" },
+              "Idempotent-Replayed": { "$ref": "#/components/headers/IdempotentReplayed" },
               "Idempotency-Key": { "$ref": "#/components/headers/IdempotencyKeyHeader" }
             },
             "content": {
@@ -64,6 +61,8 @@
           },
           "400": { "$ref": "#/components/responses/400BadRequest" },
           "404": { "$ref": "#/components/responses/404NotFound" },
+          "409": { "$ref": "#/components/responses/409IdempotencyConflict" },
+          "413": { "$ref": "#/components/responses/413RequestTooLarge" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
           "429": { "$ref": "#/components/responses/429TooManyRequests" },
           "500": { "$ref": "#/components/responses/500InternalError" },
@@ -75,7 +74,7 @@
       "post": {
         "operationId": "trainModel",
         "summary": "Train machine learning estimator",
-        "description": "Fits linear models, decision trees, or random forests with scikit-learn parity.",
+        "description": "Fits a Rust regression estimator and returns its in-sample score and sample predictions.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -98,6 +97,7 @@
               "RateLimit-Limit": { "$ref": "#/components/headers/RateLimitLimit" },
               "RateLimit-Remaining": { "$ref": "#/components/headers/RateLimitRemaining" },
               "RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" },
+              "Idempotent-Replayed": { "$ref": "#/components/headers/IdempotentReplayed" },
               "Idempotency-Key": { "$ref": "#/components/headers/IdempotencyKeyHeader" }
             },
             "content": {
@@ -110,6 +110,8 @@
           },
           "400": { "$ref": "#/components/responses/400BadRequest" },
           "404": { "$ref": "#/components/responses/404NotFound" },
+          "409": { "$ref": "#/components/responses/409IdempotencyConflict" },
+          "413": { "$ref": "#/components/responses/413RequestTooLarge" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
           "429": { "$ref": "#/components/responses/429TooManyRequests" },
           "500": { "$ref": "#/components/responses/500InternalError" },
@@ -144,6 +146,7 @@
               "RateLimit-Limit": { "$ref": "#/components/headers/RateLimitLimit" },
               "RateLimit-Remaining": { "$ref": "#/components/headers/RateLimitRemaining" },
               "RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" },
+              "Idempotent-Replayed": { "$ref": "#/components/headers/IdempotentReplayed" },
               "Idempotency-Key": { "$ref": "#/components/headers/IdempotencyKeyHeader" }
             },
             "content": {
@@ -156,6 +159,59 @@
           },
           "400": { "$ref": "#/components/responses/400BadRequest" },
           "404": { "$ref": "#/components/responses/404NotFound" },
+          "409": { "$ref": "#/components/responses/409IdempotencyConflict" },
+          "413": { "$ref": "#/components/responses/413RequestTooLarge" },
+          "422": { "$ref": "#/components/responses/422Unprocessable" },
+          "429": { "$ref": "#/components/responses/429TooManyRequests" },
+          "500": { "$ref": "#/components/responses/500InternalError" },
+          "default": { "$ref": "#/components/responses/DefaultError" }
+        }
+      }
+    },
+    "/evaluate": {
+      "post": {
+        "operationId": "evaluateMetrics",
+        "summary": "Compute regression or classification metrics",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["y_true", "y_pred"],
+                "properties": {
+                  "task": { "type": "string", "enum": ["regression", "classification"], "default": "regression" },
+                  "y_true": { "type": "array", "items": { "type": "number" } },
+                  "y_pred": { "type": "array", "items": { "type": "number" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Computed metrics for the selected task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["task"],
+                  "properties": {
+                    "task": { "type": "string" },
+                    "r2": { "type": ["number", "null"], "description": "Null for a single observation." },
+                    "mse": { "type": "number" },
+                    "rmse": { "type": "number" },
+                    "mae": { "type": "number" },
+                    "accuracy": { "type": "number" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/400BadRequest" },
+          "409": { "$ref": "#/components/responses/409IdempotencyConflict" },
+          "413": { "$ref": "#/components/responses/413RequestTooLarge" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
           "429": { "$ref": "#/components/responses/429TooManyRequests" },
           "500": { "$ref": "#/components/responses/500InternalError" },
@@ -166,8 +222,9 @@
     "/jobs": {
       "get": {
         "operationId": "listJobs",
+        "security": [{ "JobToken": [] }],
         "summary": "List asynchronous jobs with pagination",
-        "description": "Retrieves a paginated collection of asynchronous training and profiling jobs.",
+        "description": "Lists retained jobs in this token’s collection. Send either page or cursor. Jobs and results expire 30 minutes after submission.",
         "parameters": [
           {
             "name": "page",
@@ -208,6 +265,7 @@
             }
           },
           "400": { "$ref": "#/components/responses/400BadRequest" },
+          "401": { "$ref": "#/components/responses/401JobTokenRequired" },
           "404": { "$ref": "#/components/responses/404NotFound" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
           "429": { "$ref": "#/components/responses/429TooManyRequests" },
@@ -217,8 +275,9 @@
       },
       "post": {
         "operationId": "submitAsyncJob",
+        "security": [{}, { "JobToken": [] }],
         "summary": "Submit long-running asynchronous ML or profiling job",
-        "description": "Enqueues an asynchronous workload and returns a 202 Accepted status with a polling URL.",
+        "description": "Enqueues an asynchronous workload and returns 202 with a polling URL and an X-Job-Token. Supply a previous token to add work to its collection.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -238,6 +297,10 @@
           "202": {
             "description": "Job accepted and queued for execution",
             "headers": {
+              "X-Job-Token": {
+                "description": "Private token for polling, listing, and submitting jobs to this collection.",
+                "schema": { "type": "string", "minLength": 43, "maxLength": 43 }
+              },
               "Location": {
                 "description": "URL to poll for job status",
                 "schema": { "type": "string", "example": "/v1/jobs/job_12345" }
@@ -245,6 +308,7 @@
               "RateLimit-Limit": { "$ref": "#/components/headers/RateLimitLimit" },
               "RateLimit-Remaining": { "$ref": "#/components/headers/RateLimitRemaining" },
               "RateLimit-Reset": { "$ref": "#/components/headers/RateLimitReset" },
+              "Idempotent-Replayed": { "$ref": "#/components/headers/IdempotentReplayed" },
               "Idempotency-Key": { "$ref": "#/components/headers/IdempotencyKeyHeader" }
             },
             "content": {
@@ -257,6 +321,8 @@
           },
           "400": { "$ref": "#/components/responses/400BadRequest" },
           "404": { "$ref": "#/components/responses/404NotFound" },
+          "409": { "$ref": "#/components/responses/409IdempotencyConflict" },
+          "413": { "$ref": "#/components/responses/413RequestTooLarge" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
           "429": { "$ref": "#/components/responses/429TooManyRequests" },
           "500": { "$ref": "#/components/responses/500InternalError" },
@@ -267,8 +333,9 @@
     "/jobs/{job_id}": {
       "get": {
         "operationId": "getJobStatus",
+        "security": [{ "JobToken": [] }],
         "summary": "Get asynchronous job status and result",
-        "description": "Polls the execution status and output metrics of a previously submitted asynchronous job.",
+        "description": "Returns execution status and the operation result for a job in this token’s collection.",
         "parameters": [
           {
             "name": "job_id",
@@ -295,6 +362,7 @@
             }
           },
           "400": { "$ref": "#/components/responses/400BadRequest" },
+          "401": { "$ref": "#/components/responses/401JobTokenRequired" },
           "404": { "$ref": "#/components/responses/404NotFound" },
           "422": { "$ref": "#/components/responses/422Unprocessable" },
           "429": { "$ref": "#/components/responses/429TooManyRequests" },
@@ -305,12 +373,20 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "JobToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Job-Token",
+        "description": "Anonymous private job collection token returned on submission. Use a previous token when submitting related jobs."
+      }
+    },
     "parameters": {
       "IdempotencyKey": {
         "name": "Idempotency-Key",
         "in": "header",
         "required": false,
-        "description": "Unique client-generated idempotency key preventing duplicate execution of mutate operations.",
+        "description": "A unique, unpredictable client-generated key. Identical requests replay for 30 minutes. Reusing a key with different input on the same operation returns 409.",
         "schema": {
           "type": "string",
           "example": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
@@ -330,12 +406,24 @@
         "description": "Time in seconds until the current rate-limit window resets.",
         "schema": { "type": "integer", "example": 60 }
       },
+      "IdempotentReplayed": {
+        "description": "Whether the response was replayed from the retained request.",
+        "schema": { "type": "string", "enum": ["true", "false"] }
+      },
       "IdempotencyKeyHeader": {
         "description": "Echoes the idempotency key associated with this request.",
         "schema": { "type": "string" }
       }
     },
     "responses": {
+      "401JobTokenRequired": {
+        "description": "Job collection token is required.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
       "400BadRequest": {
         "description": "Bad Request - malformed payload or parameters",
         "content": {
@@ -346,6 +434,22 @@
       },
       "404NotFound": {
         "description": "Resource or endpoint not found",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "409IdempotencyConflict": {
+        "description": "Idempotency key was previously used with different input.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "413RequestTooLarge": {
+        "description": "The request body exceeds 256 KiB.",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/ErrorResponse" }
@@ -442,7 +546,7 @@
           "limit": { "type": "integer", "example": 20 },
           "total": { "type": "integer", "example": 100 },
           "has_more": { "type": "boolean", "example": false },
-          "next_cursor": { "type": "string", "nullable": true, "example": null }
+          "next_cursor": { "type": ["string", "null"], "example": null }
         }
       },
       "JobSummary": {
@@ -450,7 +554,7 @@
         "required": ["job_id", "status", "created_at"],
         "properties": {
           "job_id": { "type": "string", "example": "job_123456" },
-          "task": { "type": "string", "example": "dataset_profiling" },
+          "task": { "type": "string", "example": "profile" },
           "status": { "type": "string", "enum": ["queued", "running", "completed", "failed"], "example": "completed" },
           "created_at": { "type": "string", "format": "date-time" }
         }
@@ -459,7 +563,7 @@
         "type": "object",
         "required": ["task", "parameters"],
         "properties": {
-          "task": { "type": "string", "enum": ["train", "profile", "scale"] },
+          "task": { "type": "string", "enum": ["train", "profile", "scale", "evaluate"] },
           "parameters": { "type": "object" }
         }
       },
@@ -483,7 +587,8 @@
           "progress": { "type": "integer", "example": 100 },
           "result": { "type": "object" },
           "created_at": { "type": "string", "format": "date-time" },
-          "completed_at": { "type": "string", "format": "date-time", "nullable": true }
+          "completed_at": { "type": "string", "format": "date-time" },
+          "error": { "$ref": "#/components/schemas/ErrorDetail" }
         }
       },
       "ProfileRequest": {
@@ -500,6 +605,8 @@
         "properties": {
           "row_count": { "type": "integer" },
           "column_count": { "type": "integer" },
+          "target_column": { "type": ["string", "null"] },
+          "relationships": { "type": ["object", "null"] },
           "columns": { "type": "array", "items": { "type": "object" } },
           "quality_warnings": { "type": "array", "items": { "type": "string" } },
           "correlations": { "type": "object" }
@@ -509,19 +616,21 @@
         "type": "object",
         "required": ["x", "y"],
         "properties": {
-          "model": { "type": "string", "default": "linear_regression" },
+          "model": { "type": "string", "enum": ["linear_regression", "decision_tree", "random_forest"], "default": "linear_regression" },
           "x": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
           "y": { "type": "array", "items": { "type": "number" } }
         }
       },
       "TrainResponse": {
         "type": "object",
-        "required": ["coefficients", "r2_score"],
+        "required": ["model", "r2_score", "predictions_sample", "status"],
         "properties": {
           "model": { "type": "string" },
-          "coefficients": { "type": "array", "items": { "type": "number" } },
+          "coefficients": { "type": "array", "items": { "type": "number" }, "description": "Returned for linear regression" },
+          "predictions_sample": { "type": "array", "items": { "type": "number" }, "maxItems": 10 },
+          "mean_squared_error": { "type": "number" },
           "intercept": { "type": "number" },
-          "r2_score": { "type": "number" },
+          "r2_score": { "type": ["number", "null"], "description": "Null for a single observation." },
           "status": { "type": "string" }
         }
       },

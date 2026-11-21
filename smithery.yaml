@@ -4,8 +4,8 @@ startCommand:
   configSchema:
     type: object
     properties: {}
-  commandFunction:
-    |- (config) => ({
+  commandFunction: |-
+    (config) => ({
       command: 'cargo',
       args: ['run', '--release', '-p', 'datarust-mcp']
     })

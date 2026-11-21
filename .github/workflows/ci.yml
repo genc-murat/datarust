@@ -180,7 +180,12 @@ jobs:
           cache: npm
       - name: Install site dependencies
         run: npm ci --ignore-scripts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - name: Build site
         run: npm run build
       - name: Validate generated site
         run: npm run check
+      - name: Test Worker routes and Durable Object storage
+        run: npm run test:worker

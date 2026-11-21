@@ -33,12 +33,12 @@ datarust is an ecosystem of independent, pure-Rust crates for machine learning a
 
 - [About datarust](https://datarust.dev/about/): Project vision, open-source maintainers, and pure-Rust machine learning architecture.
 - [Contact & Support](https://datarust.dev/contact/): Community channels, GitHub discussions, and security vulnerability reporting.
-- [Privacy Policy](https://datarust.dev/privacy/): Static site privacy statement, zero tracking, and Cloudflare CDN details.
+- [Privacy Policy](https://datarust.dev/privacy/) covers advertising cookies, Cloudflare hosting, API data retention, and offline crate use.
 
 ## Free Tier, Self-Serve Keys & Sandbox Access
 
 - **Free Tier**: 100% free and open-source under the permissive MIT license.
-- **Self-Serve Keys**: No API key, registration, or credit card required. All public endpoints, MCP tools, and REST APIs are immediately accessible.
+- MCP and REST requests can be submitted without an account. To retrieve or list asynchronous REST jobs, send the `X-Job-Token` from the submission response.
 - **Interactive Sandbox**: Instant developer and AI agent sandbox available via `https://datarust.dev/mcp` and browser demos at `https://datarust.dev/docs/quickstart/`.
 - **Zero Onboarding Friction**: Autonomous AI agents and developers can make REST or MCP calls immediately without waiting for API key provisioning or registration.
 
