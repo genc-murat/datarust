@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fold's training rows receives that fold's target mean) before fitting the
   full mapping that later `transform` calls use. `fit` followed by
   `transform` keeps the previous in-sample behavior.
+- The tree splitter's squared-sum uses fused multiply-add (FMA) to match
+  scikit-learn's arm64 build. This matches arm64 only; bit-exact parity is not
+  claimed on x86.
 
 ### Fixed
 

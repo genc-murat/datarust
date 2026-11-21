@@ -348,7 +348,10 @@ impl CriterionState {
                 Criterion::SquaredError => {
                     let y_ik = y[i];
                     self.sum_total[0] = weight.mul_add(y_ik, self.sum_total[0]);
-                    self.sq_sum_total += weight * y_ik * y_ik;
+                    // Fused to match sklearn 1.6.1's arm64 build, which
+                    // contracts the square-sum into FMA. Checked on arm64 only;
+                    // x86 sklearn builds are unverified.
+                    self.sq_sum_total = (weight * y_ik).mul_add(y_ik, self.sq_sum_total);
                 }
                 _ => {
                     let c = labels.expect("classification criterion without labels")[i];
@@ -506,11 +509,12 @@ impl CriterionState {
             }
             Criterion::SquaredError => {
                 // MSE re-derives the left square-sum by scanning
-                // samples[start..pos] — exact sklearn order.
+                // samples[start..pos] — exact sklearn order. Fused like
+                // `sq_sum_total` above (arm64 only).
                 let mut sq_sum_left = 0.0;
                 for &i in &samples[start..pos] {
                     let weight = self.sample_weights[i];
-                    sq_sum_left += weight * y[i] * y[i];
+                    sq_sum_left = (weight * y[i]).mul_add(y[i], sq_sum_left);
                 }
                 let sq_sum_right = self.sq_sum_total - sq_sum_left;
                 let mut il = sq_sum_left / wnl;
