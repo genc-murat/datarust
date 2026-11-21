@@ -20,6 +20,13 @@ ensembles, hyperparameter search on the `Params` trait, CV diagnostics,   and br
   on binary labels instead of hard predictions.
 - `Predictor::is_classifier`, defaulting to `false`. Custom classifiers return
   `true` so default cross-validation stratifies by class label.
+- `CrossValidator::split_iter`, a new trait method that yields folds on demand
+  so `cross_val_score` and the searches can stream them. Its default
+  implementation wraps `split`, so existing custom splitters compile unchanged.
+  `KFold` and `StratifiedKFold` override it to stream folds; custom splitters
+  only need to override it if they want the same streaming behavior.
+- `TargetTransformerKind` implements `fit_transform`, so the enum matches the
+  `TargetTransformer` trait.
 
 
 - **ExtraTrees ensembles (`src/ensemble.rs`).** `ExtraTreesClassifier` and
@@ -149,6 +156,7 @@ ensembles, hyperparameter search on the `Params` trait, CV diagnostics,   and br
 - Forests and ExtraTrees report the samples used during training even after the bootstrap setting changes.
 - A supervised pipeline requires a new fit after a preprocessing parameter changes. Lasso and logistic regression accept finite, nonnegative tolerances through both the builder and parameter search.
 - Changing a fitted column transformer’s remainder strategy requires fitting the new output layout.
+- Grid and randomized search rank NaN scores last, and NaN ties share a rank.
 
 ## [0.7.0] - 2026-09-14
 
