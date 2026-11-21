@@ -232,12 +232,12 @@ fn flat_path_matches_independent_stats() {
 
     let flat = profile_matrix(&m, Some(&names(&["a", "b", "c"]))).unwrap();
 
-    for j in 0..m.ncols() {
+    for (j, flat_col) in flat.columns.iter().enumerate().take(m.ncols()) {
         let col = m.col(j);
         // Filter NaN the same way the profile does, so the independent
         // recomputation matches the (NaN-aware) flat path.
         let present: Vec<f64> = col.iter().copied().filter(|v| v.is_finite()).collect();
-        let n_flat = flat.columns[j].numeric.as_ref().unwrap();
+        let n_flat = flat_col.numeric.as_ref().unwrap();
 
         // Independent mean/std from datarust::stats (the per-column helpers).
         let mean = datarust::stats::mean(&present);
