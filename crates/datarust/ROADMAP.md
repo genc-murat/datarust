@@ -1,17 +1,19 @@
 # Roadmap
 
-This document tracks the path from the current release (v0.7.0) toward a
+This document tracks the path from the current release (v0.8.0) toward a
 **complete scikit-learn-style ML toolkit** for Rust (v1.0). It is a living
 document — priorities may shift, but the principles and the destination stay
 fixed.
 
-> **Where we are today (v0.7.0):** the deepest preprocessing coverage in the
+> **Where we are today (v0.8.0):** the deepest preprocessing coverage in the
 > Rust ecosystem (18 transformers/encoders/imputers/selectors), four linear
 > models with binary + multiclass (softmax) support, `KMeans` clustering, 15
 > metrics (including ROC-AUC, PR-AUC, Cohen's kappa, Matthews corrcoef,
-> silhouette), `Pipeline` + `ColumnTransformer`, cross-validation, the `Params`
-> trait for hyperparameter introspection, CART decision trees with
-> **bit-exact scikit-learn parity**, and a shared seedable `Rng` — all with
+> silhouette), `Pipeline` + `ColumnTransformer` with nested parameter
+> addressing, cross-validation with `GridSearchCV` / `RandomizedSearchCV` and
+> CV curves, the `Params` trait for hyperparameter introspection, CART
+> decision trees with **bit-exact scikit-learn parity** plus `ExtraTrees`,
+> `Bagging`, and brute-force k-NN, and a shared seedable `Rng` — all with
 > zero external dependencies by default.
 
 ## Guiding principles
@@ -77,7 +79,36 @@ against seeded fixtures) and the shared RNG the ensembles will need.
 - ✅ `src/ensemble.rs`: `RandomForestClassifier` / `RandomForestRegressor`
   (bootstrap aggregation, per-split feature subsampling, deterministic
   sklearn-parity sampling and predictions)
-- → `src/ensemble.rs`: `ExtraTrees*` and generic `Bagging` carried into v0.8
+- ✅ `src/ensemble.rs`: `ExtraTrees*` and generic `Bagging` shipped in v0.8.0
+
+---
+
+## Recently shipped (v0.8.0)
+
+The v0.8 "Model selection & ensemble completion" release closes the tree
+theme and ships the most-requested missing piece — hyperparameter tuning —
+plus brute-force nearest neighbors. Everything builds on kernels shipped in
+0.6/0.7: no new numerical machinery was required.
+
+- ✅ `ExtraTreesClassifier` / `ExtraTreesRegressor` (random-split CART variant,
+  bit-exact sklearn parity on per-tree node arrays)
+- ✅ `BaggingClassifier` / `BaggingRegressor` (bit-exact sampling stream,
+  `estimators_samples()` / `estimators_features()` introspection,
+  `estimator__` base-param addressing)
+- ✅ `GridSearchCV` — exhaustive product, `cv_results` table, competition
+  ranks, first-candidate tie-breaks, refit-best; sklearn-parity-tested
+- ✅ `RandomizedSearchCV` — seeded sampling over `Choices` / `Uniform` /
+  `RandInt` distributions (contract documented, not `ParameterSampler`
+  bit-exact)
+- ✅ `CrossValidator` trait — `cross_val_score` and both searches accept any
+  splitter (`KFold`, `StratifiedKFold`, custom)
+- ✅ `validation_curve` / `learning_curve` (sklearn-parity-tested within 1e-8)
+- ✅ `Params` for `Pipeline` / `SupervisedPipeline` / `ColumnTransformer` /
+  `TransformerKind` with nested `step__param` addressing; `get_params`
+  returns `Cow<'static, str>` names (no leaked strings)
+- ✅ `src/neighbors/`: `KNeighborsClassifier` / `KNeighborsRegressor`
+  (brute-force Euclidean, sklearn tie-breaking incl. the winner-takes-all
+  zero-distance rule; iris/diabetes parity fixtures)
 
 ---
 

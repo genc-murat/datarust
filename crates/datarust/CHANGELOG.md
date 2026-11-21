@@ -7,6 +7,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-21
+
+The "Model selection & ensemble completion" release: the carried-over v0.7
+ensembles, hyperparameter search on the `Params` trait, CV diagnostics, and
+brute-force nearest neighbors — all pinned against scikit-learn 1.6.1.
+
+### Added
+
+- **ExtraTrees ensembles (`src/ensemble.rs`).** `ExtraTreesClassifier` and
+  `ExtraTreesRegressor` implement sklearn's `splitter="random"` variant of
+  the CART kernel: each split draws one uniform-random threshold per feature
+  from the same MT19937 "legacy `RandomState`" stream the forests already
+  clone. With the same integer `random_state`, fitted trees match sklearn
+  *node-for-node, bit-for-bit* (per-tree node arrays pinned by
+  `tests/ensemble_parity.rs`), and per-node feature subsampling mirrors
+  sklearn's forest dispatch. Defaults follow sklearn 1.6.1 (bootstrap off,
+  `max_features` differs from RandomForest).
+- **Bagging meta-estimators (`src/ensemble.rs`).** `BaggingClassifier` and
+  `BaggingRegressor` fit the base tree on bootstrap (or random-subset)
+  samples with optional per-member feature subsets. The sampling stream
+  reproduces sklearn bit-for-bit: feature indices drawn before sample
+  indices from the same per-estimator `RandomState`, `randint` bootstrap vs.
+  sklearn's auto-dispatched sampling-without-replacement (permutation /
+  selection-tracking / reservoir), truncated float fractions, and the
+  `_set_random_states` per-tree seed derivation. Per-estimator sample/feature
+  indices are exposed via `estimators_samples()` / `estimators_features()`.
+  The first release keeps the forest contract: no OOB scoring, no sample
+  weights, sequential fitting.
+- **Base-estimator parameter addressing (`estimator__` prefix).** The
+  bagging estimators expose base-tree hyperparameters as
+  `estimator__<name>` (sklearn's `BaggingClassifier` addressing), so
+  ensemble-level names never collide with base-level ones — previously the
+  unprefixed merge made the base tree's `max_features` unreachable through
+  `set_params`. Unknown unprefixed names now error instead of silently
+  routing to the base estimator. Both searches can tune mixed grids such as
+  `n_estimators` + `estimator__max_depth`.
+- **`CrossValidator` trait (`src/model_selection/cross_validator.rs`).**
+  `KFold` and `StratifiedKFold` implement a shared splitting interface and
+  `cross_val_score` now accepts any splitter through it (`&dyn` or generic),
+  including user-defined ones. `GridSearchCV` / `RandomizedSearchCV` take
+  splitters via `with_cv`.
+- **`GridSearchCV` (`src/model_selection/grid_search.rs`).** Exhaustive
+  search over `ParamGrid` combinations with sklearn-shaped results:
+  `cv_results()` (per-candidate mean, standard deviation, fold scores, and
+  competition ranks — exact ties share the minimum rank, `1, 1, 3`),
+  first-candidate tie-breaking for `best_index`/`best_params`, `refit`
+  best-estimator behavior, and `Predictor`/`PredictProba` passthrough to the
+  refit winner. Any estimator implementing `Params` is searchable (linear
+  models, trees, forests, bagging, KMeans, scalers, pipelines).
+  Ordering, ranks, and tie-breaks match sklearn exactly; scores match
+  sklearn 1.6.1 within 1e-8 (`tests/search_parity.rs`, seeded Ridge grid).
+- **`RandomizedSearchCV` (`src/model_selection/randomized_search.rs`).**
+  Samples `n_iter` candidates from `ParamDistribution::{Choices, Uniform,
+  RandInt}` with datarust's seeded xorshift64 `Rng` (deterministic for a
+  fixed `random_state`, default `0` — unlike sklearn's unseeded default).
+  Sampling contract: choices-only spaces sample *without replacement* from
+  the exhaustive product (sklearn's list-only behavior); spaces with any
+  continuous distribution sample each parameter independently. Not
+  bit-exact with sklearn's `ParameterSampler` stream — documented
+  deliberately.
+- **CV diagnostics (`src/model_selection/diagnostics.rs`).**
+  `validation_curve` scores train and CV-test folds across a single
+  hyperparameter range; `learning_curve` scores over growing training-set
+  sizes (fractions of each fold's train split, first-`k` truncation, sklearn
+  `shuffle=False` semantics). Both reuse the shared fold loop and return
+  `[point][fold]` score tables. Values match sklearn 1.6.1 within 1e-8 on
+  the seeded parity fixture.
+- **`Params` for the pipeline stack.** `Pipeline`, `SupervisedPipeline`,
+  `ColumnTransformer`, and `TransformerKind` now implement hyperparameter
+  introspection with sklearn-style nested `step__param` addressing
+  (`scaler__with_mean`, `estimator__alpha`), including inside
+  `ColumnTransformer` numeric blocks. A single `GridSearchCV` can tune
+  preprocessing and the estimator together.
+- **Nearest neighbors (`src/neighbors/`).** `KNeighborsClassifier` and
+  `KNeighborsRegressor` with brute-force Euclidean search (the same distance
+  kernel as `KnnImputer`, sharing its `KnnWeights` enum) and sklearn's
+  aggregation rules:
+  - Uniform: majority vote; exact ties break to the smallest winning class.
+  - Distance: inverse Euclidean weights `1/d` **with sklearn's
+    `_get_weights` winner-takes-all rule** — when any neighbor coincides
+    with the query (zero distance), only those neighbors vote.
+  - `predict_proba` returns vote fractions / normalized vote weights in
+    sorted-class order; gapped labels (`{2, 5, 9}`) are preserved.
+  - Parity (`tests/neighbors_parity.rs`): iris uniform + distance
+    predictions and probabilities match sklearn 1.6.1 within 1e-9; diabetes
+    regressor predictions within 1e-6; tie-heavy fixtures (equidistant
+    corner votes, two coincident zero-distance winners with different
+    labels) match sklearn's outputs exactly.
+  - Both estimators implement `Params` (`n_neighbors`, `weights`) and are
+    therefore grid-searchable; `n_neighbors` is prediction-only and may be
+    changed after `fit`, with the training-size bound re-checked at predict
+    time (sklearn errors in `kneighbors` the same way). Distance ties are
+    resolved deterministically by training order.
+
+### Changed
+
+- **`Params::get_params` returns owned-or-borrowed names.** The signature is
+  now `Vec<(Cow<'static, str>, ParamValue)>` so compositional `step__param`
+  keys are allocated per call instead of leaking `'static` strings (the
+  first draft used `Box::leak`). Leaf estimators still return borrowed
+  static names; `set_params` is unchanged (`&str`).
+- **Fit-time hyperparameter changes invalidate fitted state.**
+  `set_params` on `Ridge`, `Lasso`, `StandardScaler`, and `RobustScaler`
+  resets the fitted flag after a successful change, matching the existing
+  `LogisticRegression` behavior — a model whose `alpha`/centering flags
+  changed after `fit` can no longer be predicted from stale state.
+  (`MinMaxScaler` applies its range at transform time and is unaffected.)
+  KNN's `n_neighbors` / `weights` are deliberately exempt: they only affect
+  prediction.
+
 ## [0.7.0] - 2026-09-14
 
 ### Added

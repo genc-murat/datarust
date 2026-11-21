@@ -4,6 +4,51 @@ All notable changes to datarust are documented in the project's [`CHANGELOG.md`]
 
 > This page provides a summary. For the full, detailed changelog (including internal refactors and performance tables), see the [canonical source](https://github.com/genc-murat/datarust/blob/main/crates/datarust/CHANGELOG.md).
 
+## 0.8.0
+
+The model-selection & ensemble-completion release.
+
+- **ExtraTrees ensembles (`src/ensemble.rs`)** — `ExtraTreesClassifier` /
+  `ExtraTreesRegressor` implement sklearn's `splitter="random"` CART variant:
+  one uniform-random threshold per candidate feature from the same MT19937
+  "legacy `RandomState`" stream the forests clone. With the same integer
+  `random_state` the fitted trees match sklearn **node-for-node,
+  bit-for-bit** (pinned by `tests/ensemble_parity.rs`).
+- **Bagging meta-estimators (`src/ensemble.rs`)** — `BaggingClassifier` /
+  `BaggingRegressor` reproduce sklearn's sampling stream bit-for-bit:
+  feature indices drawn before sample indices per estimator, `randint`
+  bootstrap vs. auto-dispatched sampling-without-replacement, truncated float
+  fractions, and the `_set_random_states` seed derivation. Base-tree
+  hyperparameters are addressed through the sklearn-style `estimator__`
+  prefix, so ensemble and base names never collide and both estimators are
+  fully searchable with `GridSearchCV`.
+- **Hyperparameter search (`src/model_selection/`)** — `GridSearchCV`
+  (exhaustive product, `cv_results` table with competition ranks, exact-tie
+  sharing, first-candidate tie-breaks, refit-best) and `RandomizedSearchCV`
+  (`Choices` / `Uniform` / `RandInt` distributions sampled with datarust's
+  seeded `Rng` — deterministic by default, deliberately not
+  `ParameterSampler`-bit-exact; the sampling contract is documented). Both
+  accept any splitter through the new `CrossValidator` trait
+  (`KFold` / `StratifiedKFold` / custom). Search ordering, ranks, and
+  tie-breaks match sklearn exactly; scores match within 1e-8
+  (`tests/search_parity.rs`).
+- **CV diagnostics** — `validation_curve` and `learning_curve` reuse the
+  shared fold loop and return `[point][fold]` score tables
+  (sklearn-parity-tested within 1e-8).
+- **Nested pipeline parameters** — `Pipeline`, `SupervisedPipeline`,
+  `ColumnTransformer`, and `TransformerKind` implement `Params` with
+  sklearn-style `step__param` addressing, so one search tunes preprocessing
+  and the estimator together. `Params::get_params` now returns
+  `Cow<'static, str>` names (composed keys no longer leak).
+- **Nearest neighbors (`src/neighbors/`)** — `KNeighborsClassifier` /
+  `KNeighborsRegressor` with brute-force Euclidean search and sklearn's
+  aggregation rules: uniform vote ties break to the smallest class, and
+  `weights="distance"` follows sklearn's `_get_weights`
+  winner-takes-all rule when any neighbor coincides with the query. Iris
+  and diabetes parity fixtures match within 1e-9 / 1e-6; tie-heavy cases
+  (equidistant corners, two coincident winners) match exactly. Both
+  implement `Params` and are grid-searchable.
+
 ## 0.7.0
 
 The tree-based learning release.

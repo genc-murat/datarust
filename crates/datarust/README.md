@@ -30,11 +30,12 @@ let normalized = scaler.fit_transform(&data)?;
 | **Linear Models** | LinearRegression (Cholesky & SVD), Ridge (L2), Lasso (L1, coordinate descent, sparse) |
 | **Classification** | LogisticRegression (binary IRLS + multiclass softmax, Cholesky & SVD), RandomForestClassifier (CART bagging, bootstrap, feature subsampling) |
 | **Trees** | DecisionTreeClassifier (Gini / entropy), DecisionTreeRegressor (squared error), `TreeStructure` node introspection — bit-exact scikit-learn parity under the same seed |
-| **Ensembles** | RandomForestClassifier, RandomForestRegressor (bootstrap aggregation, per-split feature subsampling, deterministic sklearn-compatible sampling, on-demand `estimators_samples()`) |
+| **Ensembles** | RandomForestClassifier/Regressor, ExtraTreesClassifier/Regressor (random-split variant), BaggingClassifier/Regressor (generic bootstrap meta-estimator with `estimator__` base-param addressing) — deterministic sklearn-compatible sampling, on-demand `estimators_samples()` / `estimators_features()` |
 | **RNG** | Public seedable `Rng` (xorshift64*): `next_unit`, `next_range`, `next_normal`, Fisher–Yates `shuffle` |
 | **Clustering** | KMeans (Lloyd's algorithm, k-means++ initialization, n_init restarts), silhouette_score |
 | **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, precision, recall, F1, confusion_matrix (n×n), log_loss, ROC-AUC, average precision, Cohen's kappa, Matthews corrcoef (macro-averaged for multiclass) |
-| **Model Selection** | train_test_split, KFold, StratifiedKFold, cross_val_score |
+| **Model Selection** | train_test_split, KFold, StratifiedKFold, `CrossValidator` trait, cross_val_score, GridSearchCV (cv_results, ranks, refit-best), RandomizedSearchCV (Choices/Uniform/RandInt), validation_curve, learning_curve |
+| **Nearest Neighbors** | KNeighborsClassifier, KNeighborsRegressor (brute-force Euclidean, uniform/distance weights, sklearn tie-breaking) |
 | **Pipeline** | Sequential + supervised Pipeline (serde-serializable), ColumnTransformer (numeric + categorical) |
 | **Feature Names** | `FeatureNames` trait on all transformers for output column names |
 | **Serialization** | JSON save/load via optional `serde` feature |
@@ -773,6 +774,62 @@ Both forests implement `Params` for hyperparameter introspection.
 Out-of-bag scoring, sample weights, and parallel fitting are not in this
 first release.
 
+#### ExtraTreesClassifier / ExtraTreesRegressor
+
+The extremely-randomized variant: each split draws *one* uniform-random
+threshold per candidate feature instead of scanning every midpoint.
+Per-node feature subsampling and the seed stream match sklearn's
+`ExtraTrees*` bit-for-bit under the same integer `random_state` (pinned
+per-tree node arrays in `tests/ensemble_parity.rs`).
+
+#### BaggingClassifier / BaggingRegressor
+
+Bootstrap (or random-subset) bagging over the base tree, reproducing
+sklearn's sampling stream bit-for-bit: feature indices are drawn before
+sample indices from the same per-estimator `RandomState`, `randint`
+bootstrap vs. auto-dispatched sampling-without-replacement, truncated float
+fractions, and the `_set_random_states` per-tree seed derivation.
+`estimators_samples()` / `estimators_features()` expose per-member state.
+
+Base-tree hyperparameters are addressed with the sklearn-style
+`estimator__` prefix — `"estimator__max_depth"`, `"estimator__max_features"`
+— so ensemble-level names never collide and both bagging estimators are
+fully tunable through `GridSearchCV` / `RandomizedSearchCV`.
+
+### Nearest Neighbors
+
+#### KNeighborsClassifier / KNeighborsRegressor
+
+Brute-force Euclidean k-NN over the fitted training matrix (the same
+distance kernel as `KnnImputer`, sharing `KnnWeights`):
+
+- `weights = Uniform` — majority vote / plain mean; exact vote ties break
+  to the smallest class (sklearn's `argmax` over sorted `classes_`).
+- `weights = Distance` — inverse Euclidean weights `1/d`, with sklearn's
+  `_get_weights` winner-takes-all rule: when any neighbor coincides with
+  the query (zero distance), only those neighbors vote.
+- `predict_proba` returns vote fractions / normalized vote weights in
+  sorted-class order; gapped labels (`{2, 5, 9}`) are preserved.
+- `n_neighbors` / `weights` are prediction-only hyperparameters (mutable
+  after `fit`, `Params`-searchable); the training-size bound is re-checked
+  at predict time.
+
+```rust
+use datarust::neighbors::{KNeighborsClassifier, KnnWeights};
+use datarust::traits::{Classifier, PredictProba, Predictor};
+
+let mut knn = KNeighborsClassifier::new()
+    .with_n_neighbors(5)
+    .with_weights(KnnWeights::Distance);
+
+knn.fit(&x_train, &y_train)?;
+let pred = knn.predict(&x_test)?;
+let proba = knn.predict_proba(&x_test)?; // (n_samples, n_classes)
+```
+
+Parity: iris and diabetes fixtures match sklearn 1.6.1 within 1e-9 / 1e-6;
+tie-heavy cases (equidistant corners, coincident winners) match exactly.
+
 ### Clustering
 
 #### KMeans
@@ -927,6 +984,64 @@ let scores = cross_val_score(&LinearRegression::new(), &x, &y, &cv, r2_score)?;
 ```
 
 For classification, pass `accuracy_score` from `metrics::classification` instead.
+
+#### GridSearchCV
+
+Exhaustive search over a parameter grid with sklearn-shaped results —
+`cv_results()` (mean/std/fold scores, competition ranks), first-candidate
+tie-breaking, and refit-best behavior. Any estimator implementing `Params`
+is searchable; pipelines tune through nested `step__param` names.
+
+```rust
+use datarust::model_selection::{GridSearchCV, KFold, ParamValue};
+use datarust::linear_model::Ridge;
+use datarust::metrics::regression::r2_score;
+
+let mut gs = GridSearchCV::new(
+    Ridge::new(),
+    vec![("alpha", vec![
+        ParamValue::Float(0.1),
+        ParamValue::Float(1.0),
+        ParamValue::Float(10.0),
+    ])],
+    r2_score,
+)
+.with_cv(KFold::new().with_n_splits(5));
+gs.fit(&x, &y)?;
+let model = gs.best_estimator().unwrap(); // refit on all data
+```
+
+Ordering, ranks, and tie-breaks match sklearn exactly; scores match
+sklearn 1.6.1 within 1e-8 (pinned by `tests/search_parity.rs`).
+
+#### RandomizedSearchCV
+
+Sample `n_iter` candidates from parameter distributions instead of
+enumerating them — `Choices` (uniform draw), `Uniform(lo, hi)`, and
+`RandInt(lo, hi)` (inclusive). Choices-only spaces sample without
+replacement from the exhaustive product; otherwise each candidate draws
+every parameter independently. Deterministic for a fixed `random_state`
+(default `0`), using datarust's own seeded `Rng` — deliberately not
+`ParameterSampler`-bit-exact; the sampling contract is documented in the
+API docs.
+
+#### validation_curve / learning_curve
+
+```rust
+use datarust::model_selection::{KFold, ParamValue, validation_curve};
+
+let (train, validation) = validation_curve(
+    &Ridge::new(), &x, &y, "alpha",
+    &[ParamValue::Float(0.1), ParamValue::Float(1.0), ParamValue::Float(10.0)],
+    &KFold::new().with_n_splits(5),
+    r2_score,
+)?;
+// each table is [param_value][fold]
+```
+
+`learning_curve` takes `train_sizes` as fractions of each fold's training
+split (sklearn `shuffle=False` truncation) and returns the deduplicated
+absolute sizes alongside the score tables.
 
 ### Datasets
 

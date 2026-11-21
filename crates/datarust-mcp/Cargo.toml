@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "science"]
 [dependencies]
 # Version keys are required for cargo publish; the workspace [patch.crates-io]
 # entry keeps development on the local tree.
-datarust = { path = "../datarust", version = "0.7", features = ["serde"] }
+datarust = { path = "../datarust", version = "0.8", features = ["serde"] }
 datarust-profile = { path = "../datarust-profile", version = "0.4", features = ["serde", "csv"] }
 # Pinned to the same lines as datarust/datarust-profile to preserve the shared
 # Rust 1.70 MSRV across the workspace.

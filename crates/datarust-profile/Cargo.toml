@@ -52,7 +52,7 @@ serde = ["dep:serde", "dep:serde_json", "datarust/serde"]
 # stays applicable during development (a "0.6" requirement no longer matches
 # the local 0.7.0 tree, silently falling back to the crates.io release and
 # making `-p datarust` ambiguous under the 1.70 MSRV cargo).
-datarust = "0.7"
+datarust = "0.8"
 # Optional, gated behind the `serde` feature. Pinned to the same lines datarust
 # uses in order to preserve the shared Rust 1.70 MSRV across the workspace.
 serde = { version = "=1.0.228", features = ["derive"], optional = true }

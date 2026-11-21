@@ -8,7 +8,7 @@ data-science and machine-learning workloads in Rust.
 
 | Crate | Path | Description |
 |---|---|---|
-| **[datarust]** | [`crates/datarust/`](crates/datarust) | Scikit-learn-style preprocessing and classical ML in Rust. Standard/minmax/robust scalers, encoders, imputers, PCA, linear models, decision trees & random forests (bit-exact sklearn parity), clustering, pipelines — zero external dependencies by default. |
+| **[datarust]** | [`crates/datarust/`](crates/datarust) | Scikit-learn-style preprocessing and classical ML in Rust. Standard/minmax/robust scalers, encoders, imputers, PCA, linear models, trees/forests/ExtraTrees/Bagging (bit-exact sklearn parity), k-NN, GridSearchCV/RandomizedSearchCV, CV curves, clustering, pipelines — zero external dependencies by default. |
 | **[datarust-profile]** | [`crates/datarust-profile/`](crates/datarust-profile) | One-call data profiling and data-quality reports. Column statistics, distribution shape, pairwise relationships (Pearson, Cramér's V, point-biserial), target-leakage hints, quality findings, CSV ingestion, single-pass streaming, a CLI — HTML/JSON/terminal output. |
 | **[datarust-mcp]** | [`crates/datarust-mcp/`](crates/datarust-mcp) | Model Context Protocol (MCP) server implementation for Claude Desktop, Cursor, and AI agents. Exposes data profiling, training, and preprocessing over stdio JSON-RPC. |
 

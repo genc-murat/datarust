@@ -24,30 +24,35 @@ The principles that shape every decision:
 [candle]: https://crates.io/crates/candle-core
 [burn]: https://crates.io/crates/burn
 
-## Where we are (v0.7.0)
+## Where we are (v0.8.0)
 
-The preprocessing, linear-model, clustering, and tree-based foundations are
-solid:
+The preprocessing, linear-model, clustering, tree, ensemble, tuning, and
+nearest-neighbor foundations are solid:
 
 - **18 transformers/encoders/imputers/selectors** — the deepest preprocessing
   coverage of any Rust ML library.
 - **4 linear models** (Linear / Ridge / Lasso / Logistic regression) with
   binary IRLS and multiclass softmax support.
-- **Decision trees and random forests** (v0.7) — a CART kernel and both
-  `RandomForest` estimators that reproduce scikit-learn's fits bit-for-bit
-  under the same seed.
+- **Trees, forests, ExtraTrees, and Bagging** (v0.7 + v0.8) — a CART kernel
+  plus four ensemble estimators that reproduce scikit-learn's fits
+  bit-for-bit under the same seed.
+- **Hyperparameter search** (v0.8) — `GridSearchCV` / `RandomizedSearchCV`
+  over any `Params` estimator, `CrossValidator` trait for custom splitters,
+  and `validation_curve` / `learning_curve` diagnostics.
+- **KNeighborsClassifier / KNeighborsRegressor** (v0.8) — brute-force
+  Euclidean k-NN with sklearn's tie-breaking.
 - **KMeans clustering** (Lloyd's algorithm, k-means++ initialization) +
   silhouette score.
 - 15 metrics: regression (MSE, MAE, R², ...), classification (accuracy,
   precision, recall, F1, ROC-AUC, PR-AUC, kappa, Matthews, ...), clustering
   (silhouette).
-- `Pipeline`, `ColumnTransformer`, cross-validation, `Params` trait, and a
-  public seedable `Rng`.
+- `Pipeline`, `ColumnTransformer` (with nested `step__param` tuning),
+  cross-validation, the `Params` trait, and a public seedable `Rng`.
 - **Zero external dependencies** by default; `serde` / `rayon` /
   `matrixmultiply` are opt-in.
 
-What is *conspicuously absent*: hyperparameter search, text features, and
-SVM. The roadmap below addresses each, in order of impact.
+What is *conspicuously absent*: text features, naive Bayes, and SVM. The
+roadmap below addresses each, in order of impact.
 
 ## The release track
 
@@ -66,10 +71,25 @@ Shipped: `src/tree/` (`DecisionTreeClassifier` / `DecisionTreeRegressor`,
 (`RandomForestClassifier` / `RandomForestRegressor` with on-demand
 `estimators_samples()`), and the public `Rng` promoted from
 `model_selection`. `ExtraTrees` and a generic `Bagging` meta-estimator
-are carried into v0.8; out-of-bag scoring and parallel forest fitting remain
+shipped in v0.8; out-of-bag scoring and parallel forest fitting remain
 planned for later.
 
-### v0.8 — Model selection & ensemble completion
+### v0.8 — Model selection & ensemble completion (Shipped)
+
+**Why this came second.** Once the algorithm catalog is broader, the next
+bottleneck is *tuning*. `GridSearchCV` builds directly on the `Params` trait
+(`get_params`/`set_params`) shipped in v0.6 and needed no new numerical
+kernels — so it shipped together with the `ExtraTrees` and `Bagging`
+ensembles carried over from the tree phase and brute-force `KNeighbors`.
+Text features were split into v0.9 because they depend on sparse matrix
+arithmetic, a substantial kernel effort that deserves its own release.
+
+Shipped: `ExtraTreesClassifier` / `ExtraTreesRegressor` and
+`BaggingClassifier` / `BaggingRegressor` (bit-exact sampling), `GridSearchCV`
+/ `RandomizedSearchCV` with the `CrossValidator` trait,
+`validation_curve` / `learning_curve`, nested `step__param` addressing for
+the pipeline stack, and `src/neighbors/` (`KNeighborsClassifier` /
+`KNeighborsRegressor`, brute-force Euclidean with sklearn's tie-breaking).
 
 **Why this comes second.** Once the algorithm catalog is broader, the next
 bottleneck is *tuning*. `GridSearchCV` builds directly on the `Params` trait
