@@ -172,9 +172,9 @@ impl Transformer for SimpleImputer {
         x.validate_no_infinite()?;
         let mut out = x.clone();
         for i in 0..out.nrows() {
-            for j in 0..out.ncols() {
+            for (j, &fill) in self.fill_values.iter().enumerate() {
                 if out.get(i, j).is_nan() {
-                    out.set(i, j, self.fill_values[j]);
+                    out.set(i, j, fill);
                 }
             }
         }
