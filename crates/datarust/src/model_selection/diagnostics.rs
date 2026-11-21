@@ -3,55 +3,22 @@
 
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
+use crate::model_selection::cross_val::{checked_folds, Samples};
 use crate::model_selection::cross_validator::CrossValidator;
 use crate::traits::{ParamValue, Params, Predictor};
 
-/// Fit-and-score every CV fold, scoring both the training and test splits.
-///
-/// Returns `(train_scores, test_scores)` indexed `[fold]`. When `subsample`
-/// is `Some(k)`, the training split is truncated to its first `k` samples
-/// (used by [`learning_curve`]); scoring of the train split happens after
-/// fitting on the (possibly truncated) subset.
-fn cv_train_test_scores<T, S, F>(
-    estimator: &T,
-    x: &Matrix,
-    y: &[f64],
-    cv: &S,
+fn train_test_scores<T, F>(
+    mut model: T,
+    train: &Samples,
+    test: &Samples,
     scorer: F,
-    subsample: Option<usize>,
-) -> Result<(Vec<f64>, Vec<f64>)>
+) -> Result<(f64, f64)>
 where
-    T: Predictor + Clone,
-    S: CrossValidator + ?Sized,
-    F: Fn(&[f64], &[f64]) -> Result<f64>,
+    T: Predictor,
+    F: Fn(&[f64], &[f64]) -> Result<f64> + Copy,
 {
-    let n = x.nrows();
-    if y.len() != n {
-        return Err(DatarustError::ShapeMismatch {
-            expected: format!("{} rows in y", n),
-            actual: format!("{} rows in y", y.len()),
-        });
-    }
-
-    let mut train_scores = Vec::new();
-    let mut test_scores = Vec::new();
-    for (train_idx, test_idx) in cv.split(x, y)? {
-        let train_idx = match subsample {
-            Some(k) if train_idx.len() > k => train_idx[..k].to_vec(),
-            _ => train_idx,
-        };
-        let x_train = x.select_rows(&train_idx)?;
-        let x_test = x.select_rows(&test_idx)?;
-        let y_train: Vec<f64> = train_idx.iter().map(|&i| y[i]).collect();
-        let y_test: Vec<f64> = test_idx.iter().map(|&i| y[i]).collect();
-
-        let mut model = estimator.clone();
-        model.fit(&x_train, &y_train)?;
-        train_scores.push(scorer(&y_train, &model.predict(&x_train)?)?);
-        test_scores.push(scorer(&y_test, &model.predict(&x_test)?)?);
-    }
-
-    Ok((train_scores, test_scores))
+    model.fit(&train.x, &train.y)?;
+    Ok((train.score(&model, scorer)?, test.score(&model, scorer)?))
 }
 
 /// Scores of a validation curve: `(train_scores, validation_scores)`, each
@@ -75,7 +42,8 @@ pub type LearningCurveScores = (Vec<usize>, Vec<Vec<f64>>, Vec<Vec<f64>>);
 /// ```rust,ignore
 /// use datarust::linear_model::Ridge;
 /// use datarust::metrics::regression::r2_score;
-/// use datarust::model_selection::{KFold, ParamValue, validation_curve};
+/// use datarust::model_selection::{KFold, validation_curve};
+/// use datarust::traits::ParamValue;
 ///
 /// let (train, test) = validation_curve(
 ///     &Ridge::new(),
@@ -104,14 +72,18 @@ where
         return Err(DatarustError::EmptyInput("param_range is empty".into()));
     }
 
-    let mut train_curve = Vec::with_capacity(param_range.len());
-    let mut test_curve = Vec::with_capacity(param_range.len());
-    for value in param_range {
-        let mut model = estimator.clone();
-        model.set_params(param_name, value.clone())?;
-        let (train, test) = cv_train_test_scores(&model, x, y, cv, scorer, None)?;
-        train_curve.push(train);
-        test_curve.push(test);
+    let mut train_curve = vec![Vec::new(); param_range.len()];
+    let mut test_curve = vec![Vec::new(); param_range.len()];
+    for (train, test) in checked_folds(cv, x, y)? {
+        let train = Samples::select(x, y, &train)?;
+        let test = Samples::select(x, y, &test)?;
+        for (point, value) in param_range.iter().enumerate() {
+            let mut model = estimator.clone();
+            model.set_params(param_name, value.clone())?;
+            let (training, validation) = train_test_scores(model, &train, &test, scorer)?;
+            train_curve[point].push(training);
+            test_curve[point].push(validation);
+        }
     }
 
     Ok((train_curve, test_curve))
@@ -119,14 +91,13 @@ where
 
 /// Learning curve over increasing training-set sizes.
 ///
-/// `train_sizes` holds fractions in `(0, 1]` of each fold's training split.
-/// For each size the training split is truncated to its first
-/// `floor(fraction * n_train)` samples (sklearn's `shuffle=False` behavior),
-/// fit, and scored on both the truncated train split and the untouched test
-/// fold.
+/// `train_sizes` holds fractions in `(0, 1]` of the first fold's training
+/// size. Each fold uses the first requested number of training rows, or
+/// all its training rows if it is smaller, matching sklearn's
+/// `shuffle=False` behavior.
 ///
 /// Returns `(used_sizes, train_scores, validation_scores)` with the absolute
-/// sample counts actually used (deduplicated, ascending) and scores indexed
+/// requested sample counts (deduplicated, ascending) and scores indexed
 /// `[size][fold]`.
 ///
 /// ```rust,ignore
@@ -167,14 +138,13 @@ where
         ));
     }
 
-    // First fold determines the size axis (all folds share the same
-    // train-split size under KFold/StratifiedKFold).
-    let folds = cv.split(x, y)?;
-    let max_train = folds
-        .iter()
-        .map(|(train, _)| train.len())
-        .min()
-        .ok_or_else(|| DatarustError::EmptyInput("cross-validator produced no folds".into()))?;
+    let mut folds = checked_folds(cv, x, y)?;
+    let max_train = folds.peek().expect("checked_folds requires a fold").0.len();
+    if max_train == 0 {
+        return Err(DatarustError::EmptyInput(
+            "first training fold is empty".into(),
+        ));
+    }
 
     let mut sizes: Vec<usize> = train_sizes
         .iter()
@@ -183,12 +153,18 @@ where
     sizes.sort_unstable();
     sizes.dedup();
 
-    let mut train_curve = Vec::with_capacity(sizes.len());
-    let mut test_curve = Vec::with_capacity(sizes.len());
-    for &size in &sizes {
-        let (train, test) = cv_train_test_scores(estimator, x, y, cv, scorer, Some(size))?;
-        train_curve.push(train);
-        test_curve.push(test);
+    let mut train_curve = vec![Vec::new(); sizes.len()];
+    let mut test_curve = vec![Vec::new(); sizes.len()];
+    for (train_indices, test) in folds {
+        let test = Samples::select(x, y, &test)?;
+        for (point, &size) in sizes.iter().enumerate() {
+            let n_train = size.min(train_indices.len());
+            let train = Samples::select(x, y, &train_indices[..n_train])?;
+            let (training, validation) =
+                train_test_scores(estimator.clone(), &train, &test, scorer)?;
+            train_curve[point].push(training);
+            test_curve[point].push(validation);
+        }
     }
 
     Ok((sizes, train_curve, test_curve))

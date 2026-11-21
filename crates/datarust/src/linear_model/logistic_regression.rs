@@ -122,12 +122,12 @@ impl Params for LogisticRegression {
             ("max_iter", ParamValue::Int(_)) => Some(Err(DatarustError::InvalidInput(
                 "max_iter must be >= 1".into(),
             ))),
-            ("tol", ParamValue::Float(t)) if t > 0.0 => {
+            ("tol", ParamValue::Float(t)) if t.is_finite() && t >= 0.0 => {
                 self.tol = t;
                 None
             }
             ("tol", ParamValue::Float(_)) => Some(Err(DatarustError::InvalidInput(
-                "tol must be positive".into(),
+                "tol must be finite and >= 0".into(),
             ))),
             _ => Some(Err(DatarustError::InvalidInput(format!(
                 "unknown parameter '{name}' for LogisticRegression"
@@ -694,6 +694,10 @@ impl LogisticRegression {
 impl Estimator for LogisticRegression {}
 
 impl Predictor for LogisticRegression {
+    fn is_classifier(&self) -> bool {
+        true
+    }
+
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         let n = x.nrows();
         let p = x.ncols();

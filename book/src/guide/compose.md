@@ -88,8 +88,11 @@ let out = ct.fit_transform_to_table(&table)?;
 For `TargetEncoder`, use `fit_with_target` / `fit_transform_with_target`:
 
 ```rust
-ct.fit_transform_with_target(&table, &y)?;
+let training = ct.fit_transform_with_target(&table, &y)?;
+let inference = ct.transform(&new_table)?;
 ```
+
+Each training row is encoded using statistics from other folds. The encoder uses up to five shuffled folds with a fixed seed and requires at least two training rows. A category absent from a training fold receives that fold’s target mean. Later transforms use the mapping fitted on all training rows.
 
 ## When to use what
 

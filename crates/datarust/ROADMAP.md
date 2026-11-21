@@ -166,6 +166,33 @@ release (v0.9). v0.8 also lands the two ensembles carried over from v0.7.
 - [x] `src/neighbors/` module: `KNeighborsClassifier`, `KNeighborsRegressor`
       (reuses the distance infrastructure already present in `KnnImputer`).
 
+### v0.8 follow-ups — Bagging completeness
+
+> *Known gap, tracked after the 0.8.0 review.* v0.8 shipped Bagging with
+> bit-exact *sampling*, but deliberately deferred two pieces of sklearn's
+> `Bagging*` contract (forest contract: sequential fit, no OOB). They are
+> follow-ups, not part of the 0.8.0 API guarantee, and are candidates for
+> the v0.10 ensemble-depth phase. Until they land, the README's "not in
+> this first release" note on the ensemble section is the authoritative
+> statement of scope.
+
+**Deliverables:**
+
+- [ ] Bagging out-of-bag (OOB) scoring: `oob_score_` (accuracy for
+      `BaggingClassifier`, R² for `BaggingRegressor`) computed from the
+      rows each base estimator did *not* see, plus a `with_oob_score(bool)`
+      toggle. Acceptance: seeded sklearn 1.6.1 parity fixtures for the OOB
+      score; `estimators_samples()` indices reused rather than resampled.
+- [ ] Parallel Bagging fitting, behind the opt-in `rayon` feature (default
+      build stays zero-dependency, per guiding principle 1/5). Acceptance:
+      byte-identical fitted estimators for a fixed `random_state`
+      regardless of thread count — the per-estimator `RandomState` stream
+      must be derived before any parallel scheduling, never from a shared
+      mutable RNG.
+- [ ] Book `guide/ensembles.md` + README Bagging section updated when either
+      lands; CHANGELOG entry stating the exact parity claim (bit-exact vs.
+      tolerance) before the feature is advertised.
+
 ### v0.9 — Text & sparse
 
 > *Theme: the NLP stack, on a real sparse linear-algebra foundation.*

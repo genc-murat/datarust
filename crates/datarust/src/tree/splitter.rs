@@ -347,7 +347,7 @@ impl CriterionState {
             match self.kind {
                 Criterion::SquaredError => {
                     let y_ik = y[i];
-                    self.sum_total[0] += weight * y_ik;
+                    self.sum_total[0] = weight.mul_add(y_ik, self.sum_total[0]);
                     self.sq_sum_total += weight * y_ik * y_ik;
                 }
                 _ => {
@@ -402,7 +402,9 @@ impl CriterionState {
             for &i in &samples[pos..new_pos] {
                 let weight = self.sample_weights[i];
                 match self.kind {
-                    Criterion::SquaredError => self.sum_left[0] += weight * y[i],
+                    Criterion::SquaredError => {
+                        self.sum_left[0] = weight.mul_add(y[i], self.sum_left[0])
+                    }
                     _ => {
                         let c = labels.expect("labels")[i];
                         self.sum_left[c] += weight;
@@ -420,7 +422,9 @@ impl CriterionState {
                 let i = samples[p];
                 let weight = self.sample_weights[i];
                 match self.kind {
-                    Criterion::SquaredError => self.sum_left[0] -= weight * y[i],
+                    Criterion::SquaredError => {
+                        self.sum_left[0] = (-weight).mul_add(y[i], self.sum_left[0])
+                    }
                     _ => {
                         let c = labels.expect("labels")[i];
                         self.sum_left[c] -= weight;

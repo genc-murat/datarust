@@ -39,6 +39,12 @@ impl TargetTransformer for TargetTransformerKind {
         }
     }
 
+    fn fit_transform(&mut self, x: &StrMatrix, y: &[f64]) -> Result<Matrix> {
+        match self {
+            Self::TargetEncoder(t) => t.fit_transform(x, y),
+        }
+    }
+
     fn is_fitted(&self) -> bool {
         match self {
             Self::TargetEncoder(t) => t.is_fitted(),
@@ -104,7 +110,8 @@ mod tests {
         let s = sample_str();
         let y = vec![0.0, 0.0, 1.0, 1.0];
         let mut kind = TargetTransformerKind::TargetEncoder(TargetEncoder::new(1000.0).unwrap());
-        let out = kind.fit_transform(&s, &y).unwrap();
+        kind.fit(&s, &y).unwrap();
+        let out = kind.transform(&s).unwrap();
         // Global mean = 0.5; with smoothing=1000 both categories are pulled close to it.
         let global = 0.5;
         for i in 0..s.nrows() {

@@ -1,6 +1,8 @@
 //! Randomized hyperparameter search over parameter distributions, mirroring
 //! `sklearn.model_selection.RandomizedSearchCV`.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
 use crate::model_selection::cross_validator::CrossValidator;
@@ -49,18 +51,14 @@ fn sample_combinations(
         .all(|(_, d)| matches!(d, ParamDistribution::Choices(_)));
 
     if all_choices {
-        // Sample without replacement from the exhaustive product.
-        let grid: Vec<(&'static str, Vec<ParamValue>)> = space
+        let choices: Vec<_> = space
             .iter()
             .map(|(name, d)| match d {
-                ParamDistribution::Choices(values) => (*name, values.clone()),
+                ParamDistribution::Choices(values) => (*name, values.as_slice()),
                 _ => unreachable!("checked above"),
             })
             .collect();
-        let mut combos = crate::model_selection::grid_search::grid_product(&grid);
-        rng.shuffle(&mut combos);
-        combos.truncate(n_iter);
-        Ok(combos)
+        Ok(sample_choices(&choices, n_iter, rng))
     } else {
         let mut combos = Vec::with_capacity(n_iter);
         for _ in 0..n_iter {
@@ -68,7 +66,7 @@ fn sample_combinations(
             for (name, dist) in space {
                 let value = match dist {
                     ParamDistribution::Choices(values) => {
-                        values[rng.next_index(values.len())].clone()
+                        values[draw_index(rng, values.len())].clone()
                     }
                     ParamDistribution::Uniform(lo, hi) => {
                         ParamValue::Float(rng.next_range(*lo, *hi))
@@ -80,7 +78,7 @@ fn sample_combinations(
                         let index = if *lo == 0 && *hi == usize::MAX {
                             rng.next_u64() as usize
                         } else {
-                            rng.next_index(*hi - *lo + 1)
+                            draw_index(rng, *hi - *lo + 1)
                         };
                         ParamValue::Int(lo + index)
                     }
@@ -91,6 +89,72 @@ fn sample_combinations(
         }
         Ok(combos)
     }
+}
+
+/// Draw a uniform integer without the precision loss of a float conversion.
+fn draw_index(rng: &mut Rng, bound: usize) -> usize {
+    let bound = bound as u64;
+    let cutoff = bound.wrapping_neg() % bound;
+    loop {
+        let value = rng.next_u64();
+        if value >= cutoff {
+            return (value % bound) as usize;
+        }
+    }
+}
+
+fn sample_choices(
+    choices: &[(&'static str, &[ParamValue])],
+    n_iter: usize,
+    rng: &mut Rng,
+) -> Vec<Vec<(&'static str, ParamValue)>> {
+    let product = choices
+        .iter()
+        .try_fold(1usize, |size, (_, values)| size.checked_mul(values.len()));
+    let Some(product) = product else {
+        // The product is too wide for an index. Draw one index per dimension
+        // and keep unique tuples. The space is larger than usize::MAX.
+        let mut seen = HashSet::new();
+        let mut combinations = Vec::with_capacity(n_iter);
+        while combinations.len() < n_iter {
+            let indices: Vec<_> = choices
+                .iter()
+                .map(|(_, values)| draw_index(rng, values.len()))
+                .collect();
+            if seen.insert(indices.clone()) {
+                combinations.push(
+                    choices
+                        .iter()
+                        .zip(indices)
+                        .map(|(&(name, values), index)| (name, values[index].clone()))
+                        .collect(),
+                );
+            }
+        }
+        return combinations;
+    };
+
+    // Draw from a virtual Fisher–Yates shuffle, storing only moved indices.
+    let count = n_iter.min(product);
+    let mut moved = HashMap::with_capacity(count);
+    let mut combinations = Vec::with_capacity(count);
+    for remaining in (product - count..product).rev().map(|index| index + 1) {
+        let position = draw_index(rng, remaining);
+        let last = remaining - 1;
+        let mut index = moved.remove(&position).unwrap_or(position);
+        let replacement = moved.remove(&last).unwrap_or(last);
+        if position != last {
+            moved.insert(position, replacement);
+        }
+        let mut combination = Vec::with_capacity(choices.len());
+        for &(name, values) in choices.iter().rev() {
+            combination.push((name, values[index % values.len()].clone()));
+            index /= values.len();
+        }
+        combination.reverse();
+        combinations.push(combination);
+    }
+    combinations
 }
 
 fn validate_space(space: &ParamSpace) -> Result<()> {
@@ -151,6 +215,7 @@ pub struct RandomizedSearchCV<E: Predictor + Params + Clone> {
     cv: Box<dyn CrossValidator>,
     scorer: fn(&[f64], &[f64]) -> Result<f64>,
     n_iter: usize,
+    response: fn(&E, &Matrix) -> Result<Vec<f64>>,
     refit: bool,
     random_state: u64,
     // Fitted state
@@ -170,10 +235,12 @@ impl<E: Predictor + Params + Clone> RandomizedSearchCV<E> {
         param_space: ParamSpace,
         scorer: fn(&[f64], &[f64]) -> Result<f64>,
     ) -> Self {
+        let cv = super::cross_val::default_cv(estimator.is_classifier());
         Self {
             estimator,
             param_space,
-            cv: Box::new(crate::model_selection::KFold::new().with_n_splits(5)),
+            cv,
+            response: E::predict,
             scorer,
             n_iter: 10,
             refit: true,
@@ -193,7 +260,15 @@ impl<E: Predictor + Params + Clone> RandomizedSearchCV<E> {
         self
     }
 
-    /// Override the cross-validation strategy (default: 5-fold KFold).
+    /// Choose the estimator output passed to the metric for CV and refit scoring.
+    /// Defaults to [`Predictor::predict`]. For ROC-AUC with 0/1 labels use
+    /// `.with_response(binary_positive_probability)`.
+    pub fn with_response(mut self, response: fn(&E, &Matrix) -> Result<Vec<f64>>) -> Self {
+        self.response = response;
+        self
+    }
+
+    /// Override the default five-fold strategy (stratified for classifiers).
     pub fn with_cv(mut self, cv: impl CrossValidator + 'static) -> Self {
         self.cv = Box::new(cv);
         self
@@ -224,6 +299,7 @@ impl<E: Predictor + Params + Clone> RandomizedSearchCV<E> {
             y,
             self.cv.as_ref(),
             self.scorer,
+            self.response,
         )?;
         let ranks = rank_candidates(&mean_scores);
 
@@ -237,24 +313,25 @@ impl<E: Predictor + Params + Clone> RandomizedSearchCV<E> {
             }
         }
 
+        let best_estimator = if self.refit {
+            let mut best = apply_candidate(&self.estimator, &combinations[best_index])?;
+            best.fit(x, y)?;
+            Some(best)
+        } else {
+            None
+        };
+        self.best_params_ = Some(combinations[best_index].clone());
         self.cv_results_ = Some(CVResults {
             mean_test_score: mean_scores,
             std_test_score: std_scores,
             split_scores: all_split_scores,
-            params: combinations.clone(),
+            params: combinations,
             rank_test_score: ranks,
         });
 
         self.best_score_ = Some(best_score);
         self.best_index_ = Some(best_index);
-        self.best_params_ = Some(combinations[best_index].clone());
-
-        if self.refit {
-            let mut best = apply_candidate(&self.estimator, &combinations[best_index])?;
-            best.fit(x, y)?;
-            self.best_estimator_ = Some(best);
-        }
-
+        self.best_estimator_ = best_estimator;
         self.fitted = true;
         Ok(())
     }
@@ -280,6 +357,15 @@ impl<E: Predictor + Params + Clone> RandomizedSearchCV<E> {
         self.best_score_
     }
 
+    /// Score the refitted estimator on the supplied data with the search scorer.
+    pub fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
+        let estimator = self
+            .best_estimator_
+            .as_ref()
+            .ok_or_else(|| DatarustError::NotFitted("RandomizedSearchCV".into()))?;
+        (self.scorer)(y, &(self.response)(estimator, x)?)
+    }
+
     /// Index of the best candidate in `cv_results().params`.
     pub fn best_index(&self) -> Option<usize> {
         self.best_index_
@@ -289,6 +375,10 @@ impl<E: Predictor + Params + Clone> RandomizedSearchCV<E> {
 impl<E: Predictor + Params + Clone> crate::traits::Estimator for RandomizedSearchCV<E> {}
 
 impl<E: Predictor + Params + Clone> crate::traits::Predictor for RandomizedSearchCV<E> {
+    fn is_classifier(&self) -> bool {
+        self.estimator.is_classifier()
+    }
+
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         RandomizedSearchCV::fit(self, x, y)
     }
@@ -319,6 +409,9 @@ impl<E: Predictor + PredictProba + Params + Clone> crate::traits::PredictProba
 impl<E: Predictor + Params + Clone + crate::traits::Classifier> crate::traits::Classifier
     for RandomizedSearchCV<E>
 {
+    fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
+        RandomizedSearchCV::score(self, x, y)
+    }
 }
 
 impl<E: Predictor + Params + Clone + crate::traits::Regressor> crate::traits::Regressor
@@ -326,6 +419,10 @@ impl<E: Predictor + Params + Clone + crate::traits::Regressor> crate::traits::Re
 {
     fn name(&self) -> &'static str {
         "RandomizedSearchCV"
+    }
+
+    fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
+        RandomizedSearchCV::score(self, x, y)
     }
 }
 
@@ -367,6 +464,18 @@ mod tests {
         let a = run(1);
         let b = run(2);
         assert!((a.0 - b.0).abs() > 0.0 || a.1 != b.1);
+    }
+
+    #[test]
+    fn choices_can_sample_a_product_larger_than_usize() {
+        let choices = ParamDistribution::Choices((0..10).map(ParamValue::Int).collect());
+        let space = (0..24).map(|_| ("param", choices.clone())).collect();
+        let combinations = sample_combinations(&space, 10, &mut Rng::new(42)).unwrap();
+        assert_eq!(combinations.len(), 10);
+        for (index, candidate) in combinations.iter().enumerate() {
+            assert_eq!(candidate.len(), 24);
+            assert!(!combinations[..index].contains(candidate));
+        }
     }
 
     #[test]

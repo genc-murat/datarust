@@ -203,6 +203,12 @@ pub trait TargetTransformer: Estimator {
 /// Shared fitting and prediction contract for supervised estimators operating
 /// on numeric features and targets.
 pub trait Predictor: Estimator {
+    /// Whether default cross-validation should stratify by class label.
+    /// Implement this as `true` for custom classifiers.
+    fn is_classifier(&self) -> bool {
+        false
+    }
+
     /// Fit the estimator on training features and target values.
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()>;
 
@@ -258,7 +264,8 @@ pub trait Regressor: Predictor {
     /// regression estimators through this trait.
     fn name(&self) -> &'static str;
 
-    /// R² (coefficient of determination) of the prediction.
+    /// Score predictions on the supplied data. The default is R² (coefficient
+    /// of determination). Hyperparameter searches use their configured scorer.
     fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
         let prediction = Predictor::predict(self, x)?;
         crate::metrics::regression::r2_score(y, &prediction)
@@ -267,8 +274,8 @@ pub trait Regressor: Predictor {
 
 /// Trait for classifiers that return one class label per input row.
 pub trait Classifier: Predictor {
-    /// Mean classification accuracy, mirroring sklearn's default classifier
-    /// score.
+    /// Score predictions on the supplied data. The default is mean
+    /// classification accuracy. Hyperparameter searches use their configured scorer.
     fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
         let prediction = self.predict(x)?;
         crate::metrics::classification::accuracy_score(y, &prediction)

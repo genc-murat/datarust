@@ -91,7 +91,7 @@ Estimators whose hyperparameters should be searchable implement the opt-in
 
 ```rust
 pub trait Params {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)>;
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)>;
     fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()>;
 }
 ```

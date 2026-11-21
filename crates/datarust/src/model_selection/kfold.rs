@@ -6,7 +6,7 @@
 use crate::error::{DatarustError, Result};
 use crate::label_space::LabelSpace;
 use crate::matrix::Matrix;
-use crate::model_selection::cross_validator::CrossValidator;
+use crate::model_selection::cross_validator::{CrossValidator, FoldIter};
 use crate::model_selection::rng::Rng;
 
 /// K-fold cross-validation splitter.
@@ -269,6 +269,10 @@ impl CrossValidator for KFold {
     fn split(&self, x: &Matrix, _y: &[f64]) -> Result<Vec<(Vec<usize>, Vec<usize>)>> {
         Ok(self.split(x.nrows())?.collect())
     }
+
+    fn split_iter<'a>(&'a self, x: &'a Matrix, _y: &'a [f64]) -> Result<FoldIter<'a>> {
+        Ok(Box::new(self.split(x.nrows())?))
+    }
 }
 
 impl CrossValidator for StratifiedKFold {
@@ -278,6 +282,10 @@ impl CrossValidator for StratifiedKFold {
 
     fn split(&self, _x: &Matrix, y: &[f64]) -> Result<Vec<(Vec<usize>, Vec<usize>)>> {
         Ok(self.split(y)?.collect())
+    }
+
+    fn split_iter<'a>(&'a self, _x: &'a Matrix, y: &'a [f64]) -> Result<FoldIter<'a>> {
+        Ok(Box::new(self.split(y)?))
     }
 }
 

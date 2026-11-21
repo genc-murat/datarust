@@ -4,7 +4,7 @@ use crate::error::{DatarustError, Result};
 use crate::imputer::KnnWeights;
 use crate::label_space::LabelSpace;
 use crate::matrix::Matrix;
-use crate::neighbors::{distance_weights, kneighbors};
+use crate::neighbors::{kneighbors, neighbor_weights, validate_neighbor_count};
 use crate::traits::{Classifier, Estimator, ParamValue, Params, PredictProba, Predictor};
 
 /// k-Nearest-Neighbor classifier (sklearn's `KNeighborsClassifier`).
@@ -98,7 +98,7 @@ impl KNeighborsClassifier {
         self.n_features_in_
     }
 
-    fn validate_prediction_input(&self, x: &Matrix) -> Result<()> {
+    fn validate_prediction_input(&self, x: &Matrix) -> Result<&Matrix> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("KNeighborsClassifier".into()));
         }
@@ -108,13 +108,38 @@ impl KNeighborsClassifier {
                 actual: format!("{} features", x.ncols()),
             });
         }
-        x.validate_finite()
+        x.validate_finite()?;
+        let train = self
+            .x_train
+            .as_ref()
+            .ok_or_else(|| DatarustError::NotFitted("KNeighborsClassifier".into()))?;
+        validate_neighbor_count(self.n_neighbors, train.nrows())?;
+        Ok(train)
+    }
+
+    fn votes(&self, train: &Matrix, query: &[f64]) -> Vec<f64> {
+        let neighbors = kneighbors(train, query, self.n_neighbors);
+        let mut votes = vec![0.0; self.classes_.len()];
+        let mut correction = vec![0.0; votes.len()];
+        for (weight, &(_, idx)) in neighbor_weights(self.weights, &neighbors).zip(&neighbors) {
+            // Kahan summation keeps equal class weights tied across repeated additions.
+            let class = self.y_encoded[idx];
+            let adjusted = weight - correction[class];
+            let sum = votes[class] + adjusted;
+            correction[class] = (sum - votes[class]) - adjusted;
+            votes[class] = sum;
+        }
+        votes
     }
 }
 
 impl Estimator for KNeighborsClassifier {}
 
 impl Predictor for KNeighborsClassifier {
+    fn is_classifier(&self) -> bool {
+        true
+    }
+
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         if y.is_empty() {
             return Err(DatarustError::EmptyInput("y is empty".into()));
@@ -126,18 +151,7 @@ impl Predictor for KNeighborsClassifier {
             });
         }
         x.validate_finite()?;
-        if self.n_neighbors == 0 {
-            return Err(DatarustError::InvalidInput(
-                "n_neighbors must be >= 1".into(),
-            ));
-        }
-        if self.n_neighbors > x.nrows() {
-            return Err(DatarustError::InvalidInput(format!(
-                "n_neighbors ({}) must not exceed the training sample count ({})",
-                self.n_neighbors,
-                x.nrows()
-            )));
-        }
+        validate_neighbor_count(self.n_neighbors, x.nrows())?;
 
         let classes_ = LabelSpace::fit(y)?;
         let y_encoded = y
@@ -154,21 +168,17 @@ impl Predictor for KNeighborsClassifier {
     }
 
     fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
-        let proba = self.predict_proba(x)?;
-        let mut out = Vec::with_capacity(proba.nrows());
-        for i in 0..proba.nrows() {
-            // Majority vote (uniform) / largest aggregated weight (distance),
-            // ties broken by the first class in sorted order — sklearn's
-            // `argmax` over `classes_`.
-            let mut best_col = 0usize;
-            let mut best_value = f64::NEG_INFINITY;
-            for c in 0..proba.ncols() {
-                if proba.get(i, c) > best_value {
-                    best_value = proba.get(i, c);
-                    best_col = c;
+        let train = self.validate_prediction_input(x)?;
+        let mut out = Vec::with_capacity(x.nrows());
+        for i in 0..x.nrows() {
+            let votes = self.votes(train, x.row(i));
+            let mut best = 0;
+            for c in 1..votes.len() {
+                if votes[c] > votes[best] {
+                    best = c;
                 }
             }
-            out.push(self.classes_.decode(best_col)?);
+            out.push(self.classes_.decode(best)?);
         }
         Ok(out)
     }
@@ -182,43 +192,13 @@ impl Classifier for KNeighborsClassifier {}
 
 impl PredictProba for KNeighborsClassifier {
     fn predict_proba(&self, x: &Matrix) -> Result<Matrix> {
-        self.validate_prediction_input(x)?;
-        let x_train = self
-            .x_train
-            .as_ref()
-            .ok_or_else(|| DatarustError::NotFitted("KNeighborsClassifier".into()))?;
-        // n_neighbors is mutable after fit; re-check it against the stored
-        // training size (sklearn errors in `kneighbors`).
-        if self.n_neighbors > x_train.nrows() {
-            return Err(DatarustError::InvalidInput(format!(
-                "n_neighbors ({}) must not exceed the training sample count ({})",
-                self.n_neighbors,
-                x_train.nrows()
-            )));
-        }
-        let n_classes = self.classes_.len();
+        let train = self.validate_prediction_input(x)?;
         let mut rows = Vec::with_capacity(x.nrows());
         for i in 0..x.nrows() {
-            let neighbors = kneighbors(x_train, x.row(i), self.n_neighbors);
-            let mut votes = vec![0.0; n_classes];
-            match self.weights {
-                KnnWeights::Uniform => {
-                    for (_, idx) in &neighbors {
-                        votes[self.y_encoded[*idx]] += 1.0;
-                    }
-                }
-                KnnWeights::Distance => {
-                    let weights = distance_weights(&neighbors);
-                    for (w, (_, idx)) in weights.iter().zip(neighbors.iter()) {
-                        votes[self.y_encoded[*idx]] += w;
-                    }
-                }
-            }
+            let mut votes = self.votes(train, x.row(i));
             let total: f64 = votes.iter().sum();
-            if total > 0.0 {
-                for v in &mut votes {
-                    *v /= total;
-                }
+            for v in &mut votes {
+                *v /= total;
             }
             rows.push(votes);
         }
@@ -277,6 +257,18 @@ mod tests {
     }
 
     /// Two well-separated clusters; queries sit at training points.
+    #[test]
+    fn six_inverse_distance_votes_tie_one_near_neighbor() {
+        let x = Matrix::from_flat(7, 1, vec![3., 18., 18., 18., 18., 18., 18.]).unwrap();
+        let mut model = KNeighborsClassifier::new()
+            .with_n_neighbors(7)
+            .with_weights(KnnWeights::Distance);
+        model.fit(&x, &[1., 0., 0., 0., 0., 0., 0.]).unwrap();
+        let query = Matrix::new(vec![vec![0.]]).unwrap();
+        assert_eq!(model.predict_proba(&query).unwrap().row(0), &[0.5, 0.5]);
+        assert_eq!(model.predict(&query).unwrap(), vec![0.]);
+    }
+
     #[test]
     fn separates_two_clusters() {
         let x = m(vec![

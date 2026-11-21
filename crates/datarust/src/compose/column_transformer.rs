@@ -167,8 +167,15 @@ impl ColumnTransformer {
 
     /// Sets how unselected columns are handled.
     pub fn remainder(mut self, r: Remainder) -> Self {
-        self.remainder = r;
+        self.set_remainder(r);
         self
+    }
+
+    fn set_remainder(&mut self, remainder: Remainder) {
+        if self.remainder != remainder {
+            self.remainder = remainder;
+            self.fitted = false;
+        }
     }
 
     /// Adds a numeric block applying `transformer` to `columns`.
@@ -286,8 +293,9 @@ impl ColumnTransformer {
         self.fit_inner(table)
     }
 
-    /// Internal fit that handles only Numeric and Categorical specs.
+    /// Fit unsupervised specs and prepare the remainder columns.
     fn fit_inner(&mut self, table: &Table) -> Result<()> {
+        self.fitted = false;
         if self.specs.is_empty() {
             return Err(DatarustError::InvalidInput("no column specs".into()));
         }
@@ -359,7 +367,10 @@ impl ColumnTransformer {
                     }
                     consumed_cat.extend_from_slice(columns);
                 }
-                ColumnSpec::Target { .. } => {}
+                ColumnSpec::Target { columns, .. } => {
+                    Self::validate_columns(table, columns, true)?;
+                    consumed_cat.extend_from_slice(columns);
+                }
             }
         }
         consumed_num.sort_unstable();
@@ -396,11 +407,23 @@ impl ColumnTransformer {
     /// Fits the column specs **and** `Target` specs using the provided target
     /// values, then returns the transformed result.
     ///
-    /// Non-target specs are fitted via [`fit`](Self::fit) (or re-fitted if
-    /// already fitted).  Target specs are fitted with `y`.
+    /// Training rows receive out-of-fold target encodings. Later transforms
+    /// use the mapping fitted on the full training table.
     pub fn fit_transform_with_target(&mut self, table: &Table, y: &[f64]) -> Result<Matrix> {
-        self.fit_with_target(table, y)?;
-        self.transform(table)
+        self.fit_inner(table)?;
+        self.fitted = false;
+        let mut target_blocks = Vec::new();
+        for spec in &mut self.specs {
+            if let ColumnSpec::Target {
+                columns, encoder, ..
+            } = spec
+            {
+                let sub = Self::extract_categorical_cols(table, columns)?;
+                target_blocks.push(encoder.fit_transform(&sub, y)?);
+            }
+        }
+        self.fitted = true;
+        self.transform_blocks(table, target_blocks.into_iter())
     }
 
     /// Fits the column specs **and** `Target` specs using the provided target
@@ -410,6 +433,7 @@ impl ColumnTransformer {
     /// additionally fitted with the given target values.
     pub fn fit_with_target(&mut self, table: &Table, y: &[f64]) -> Result<()> {
         self.fit_inner(table)?;
+        self.fitted = false;
         for spec in self.specs.iter_mut() {
             if let ColumnSpec::Target {
                 columns, encoder, ..
@@ -419,11 +443,20 @@ impl ColumnTransformer {
                 encoder.fit(&sub, y)?;
             }
         }
+        self.fitted = true;
         Ok(())
     }
 
     /// Transforms the table by applying each fitted spec and concatenating results.
     pub fn transform(&self, table: &Table) -> Result<Matrix> {
+        self.transform_blocks(table, std::iter::empty())
+    }
+
+    fn transform_blocks(
+        &self,
+        table: &Table,
+        mut target_blocks: impl Iterator<Item = Matrix>,
+    ) -> Result<Matrix> {
         if !self.fitted {
             return Err(DatarustError::NotFitted("ColumnTransformer".into()));
         }
@@ -452,8 +485,12 @@ impl ColumnTransformer {
                 ColumnSpec::Target {
                     columns, encoder, ..
                 } => {
-                    let sub = Self::extract_categorical_cols(table, columns)?;
-                    let t = encoder.transform(&sub)?;
+                    let t = match target_blocks.next() {
+                        Some(training) => training,
+                        None => {
+                            encoder.transform(&Self::extract_categorical_cols(table, columns)?)?
+                        }
+                    };
                     block_cols.push(t.ncols());
                     blocks.push(t.into_rows());
                 }
@@ -706,11 +743,11 @@ impl Params for ColumnTransformer {
             match name {
                 "remainder" => match value {
                     ParamValue::Int(0) => {
-                        self.remainder = Remainder::Drop;
+                        self.set_remainder(Remainder::Drop);
                         Ok(())
                     }
                     ParamValue::Int(1) => {
-                        self.remainder = Remainder::Passthrough;
+                        self.set_remainder(Remainder::Passthrough);
                         Ok(())
                     }
                     _ => Err(DatarustError::InvalidInput(
@@ -1133,10 +1170,9 @@ mod tests {
         let out = ct.fit_transform_with_target(&table, &y).unwrap();
         // 1 scaled feature + 1 target-encoded column = 2
         assert_eq!(out.ncols(), 2);
-        // Istanbul mean = (1+1)/2 = 1.0
-        assert!((out.get(0, 1) - 1.0).abs() < 1e-9);
-        assert!((out.get(1, 1) - 0.0).abs() < 1e-9);
-        assert!((out.get(2, 1) - 1.0).abs() < 1e-9);
+        // Ankara occurs once, so its held-out row uses the Istanbul training mean.
+        assert_eq!(out.col(1), vec![1.0, 1.0, 1.0]);
+        assert_eq!(ct.transform(&table).unwrap().col(1), y);
     }
 
     #[test]

@@ -85,14 +85,14 @@ impl Params for Lasso {
             ("max_iter", ParamValue::Int(_)) => {
                 Err(DatarustError::InvalidInput("max_iter must be >= 1".into()))
             }
-            ("tol", ParamValue::Float(t)) if t > 0.0 => {
+            ("tol", ParamValue::Float(t)) if t.is_finite() && t >= 0.0 => {
                 self.tol = t;
                 self.fitted = false;
                 Ok(())
             }
-            ("tol", ParamValue::Float(_)) => {
-                Err(DatarustError::InvalidInput("tol must be positive".into()))
-            }
+            ("tol", ParamValue::Float(_)) => Err(DatarustError::InvalidInput(
+                "tol must be finite and >= 0".into(),
+            )),
             _ => Err(DatarustError::InvalidInput(format!(
                 "unknown parameter '{name}' for Lasso"
             ))),

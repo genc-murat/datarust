@@ -179,7 +179,7 @@ Implemented by every transformer that produces named output columns.
 
 ### `Params` (hyperparameter introspection)
 ```
-fn get_params(&self) -> Vec<(&'static str, ParamValue)>
+fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)>
 fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()>
 ```
 

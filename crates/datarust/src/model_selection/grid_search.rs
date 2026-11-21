@@ -3,7 +3,7 @@
 
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
-use crate::model_selection::cross_val::cross_val_score;
+use crate::model_selection::cross_val::{checked_folds, Samples};
 use crate::model_selection::cross_validator::CrossValidator;
 use crate::traits::{Classifier, ParamValue, Params, PredictProba, Predictor, Regressor};
 
@@ -27,20 +27,22 @@ pub struct CVResults {
 
 /// Exhaustive grid search over a parameter grid, using cross-validation.
 ///
-/// Each combination in `param_grid` is evaluated by `cross_val_score` with the
-/// provided scorer. The best combination (highest mean score, ties broken by
-/// insertion order) is refit on the full dataset when `refit` is `true`.
+/// Each combination in `param_grid` is evaluated on the same folds with the
+/// provided scorer. Parameters are traversed in alphabetical order, with each
+/// value list in its supplied order. When `refit` is `true`, the first
+/// combination with the highest mean score is refit on the full dataset.
 ///
 /// ```rust,ignore
 /// use datarust::linear_model::Ridge;
 /// use datarust::metrics::regression::r2_score;
 /// use datarust::model_selection::{GridSearchCV, KFold};
+/// use datarust::traits::ParamValue;
 ///
 /// let mut gs = GridSearchCV::new(
 ///     Ridge::new(),
 ///     vec![("alpha", vec![ParamValue::Float(0.1), ParamValue::Float(1.0)])],
 ///     r2_score,
-/// ).with_cv(3);
+/// ).with_cv(KFold::new().with_n_splits(3));
 /// gs.fit(&x, &y)?;
 /// let best = gs.best_estimator().unwrap();
 /// ```
@@ -50,6 +52,7 @@ pub struct GridSearchCV<E: Predictor + Params + Clone> {
     param_grid: ParamGrid,
     cv: Box<dyn CrossValidator>,
     scorer: fn(&[f64], &[f64]) -> Result<f64>,
+    response: fn(&E, &Matrix) -> Result<Vec<f64>>,
     refit: bool,
     // Fitted state
     cv_results_: Option<CVResults>,
@@ -60,10 +63,8 @@ pub struct GridSearchCV<E: Predictor + Params + Clone> {
     fitted: bool,
 }
 
-/// Cartesian product of lists of parameter values (shared with
-/// [`RandomizedSearchCV`](crate::model_selection::RandomizedSearchCV) for
-/// choices-only spaces).
-pub(crate) fn grid_product(grid: &ParamGrid) -> Vec<Vec<(&'static str, ParamValue)>> {
+/// Cartesian product of lists of parameter values.
+fn grid_product(grid: &ParamGrid) -> Vec<Vec<(&'static str, ParamValue)>> {
     if grid.is_empty() {
         return vec![vec![]];
     }
@@ -108,21 +109,33 @@ pub(crate) fn evaluate_candidates<E: Predictor + Params + Clone>(
     y: &[f64],
     cv: &dyn CrossValidator,
     scorer: fn(&[f64], &[f64]) -> Result<f64>,
+    response: fn(&E, &Matrix) -> Result<Vec<f64>>,
 ) -> Result<CandidateScores> {
+    let mut all_split_scores = vec![Vec::new(); combinations.len()];
+    for (train, test) in checked_folds(cv, x, y)? {
+        let train = Samples::select(x, y, &train)?;
+        let test = Samples::select(x, y, &test)?;
+        for (combo, scores) in combinations.iter().zip(&mut all_split_scores) {
+            let mut model = apply_candidate(estimator, combo)?;
+            model.fit(&train.x, &train.y)?;
+            scores.push(scorer(&test.y, &response(&model, &test.x)?)?);
+        }
+    }
+
     let mut mean_scores = Vec::with_capacity(combinations.len());
     let mut std_scores = Vec::with_capacity(combinations.len());
-    let mut all_split_scores = Vec::with_capacity(combinations.len());
-
-    for combo in combinations {
-        let model = apply_candidate(estimator, combo)?;
-        let scores = cross_val_score(&model, x, y, cv, scorer)?;
+    for scores in &all_split_scores {
         let n_folds = scores.len() as f64;
         let mean = scores.iter().sum::<f64>() / n_folds;
         let var = scores.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / n_folds;
+        if !mean.is_finite() || !var.is_finite() {
+            return Err(DatarustError::InvalidInput(
+                "cross-validation scores must have a finite mean and variance".into(),
+            ));
+        }
 
         mean_scores.push(mean);
         std_scores.push(var.sqrt());
-        all_split_scores.push(scores);
     }
 
     Ok((mean_scores, std_scores, all_split_scores))
@@ -153,13 +166,16 @@ impl<E: Predictor + Params + Clone> GridSearchCV<E> {
     /// Create a grid search from a template estimator and parameter grid.
     pub fn new(
         estimator: E,
-        param_grid: ParamGrid,
+        mut param_grid: ParamGrid,
         scorer: fn(&[f64], &[f64]) -> Result<f64>,
     ) -> Self {
+        param_grid.sort_by_key(|&(name, _)| name);
+        let cv = super::cross_val::default_cv(estimator.is_classifier());
         Self {
             estimator,
             param_grid,
-            cv: Box::new(crate::model_selection::KFold::new().with_n_splits(5)),
+            cv,
+            response: E::predict,
             scorer,
             refit: true,
             cv_results_: None,
@@ -171,7 +187,15 @@ impl<E: Predictor + Params + Clone> GridSearchCV<E> {
         }
     }
 
-    /// Override the cross-validation strategy (default: 5-fold KFold).
+    /// Choose the estimator output passed to the metric for CV and refit scoring.
+    /// Defaults to [`Predictor::predict`]. For ROC-AUC with 0/1 labels use
+    /// `.with_response(binary_positive_probability)`.
+    pub fn with_response(mut self, response: fn(&E, &Matrix) -> Result<Vec<f64>>) -> Self {
+        self.response = response;
+        self
+    }
+
+    /// Override the default five-fold strategy (stratified for classifiers).
     pub fn with_cv(mut self, cv: impl CrossValidator + 'static) -> Self {
         self.cv = Box::new(cv);
         self
@@ -198,10 +222,11 @@ impl<E: Predictor + Params + Clone> GridSearchCV<E> {
             y,
             self.cv.as_ref(),
             self.scorer,
+            self.response,
         )?;
         let ranks = rank_candidates(&mean_scores);
 
-        // Best candidate: highest mean, ties broken by insertion order.
+        // Keep the first candidate at the highest mean.
         let mut best_index = 0usize;
         let mut best_score = f64::NEG_INFINITY;
         for (i, &mean) in mean_scores.iter().enumerate() {
@@ -211,24 +236,25 @@ impl<E: Predictor + Params + Clone> GridSearchCV<E> {
             }
         }
 
+        let best_estimator = if self.refit {
+            let mut best = apply_candidate(&self.estimator, &combinations[best_index])?;
+            best.fit(x, y)?;
+            Some(best)
+        } else {
+            None
+        };
+        self.best_params_ = Some(combinations[best_index].clone());
         self.cv_results_ = Some(CVResults {
             mean_test_score: mean_scores,
             std_test_score: std_scores,
             split_scores: all_split_scores,
-            params: combinations.clone(),
+            params: combinations,
             rank_test_score: ranks,
         });
 
         self.best_score_ = Some(best_score);
         self.best_index_ = Some(best_index);
-        self.best_params_ = Some(combinations[best_index].clone());
-
-        if self.refit {
-            let mut best = apply_candidate(&self.estimator, &combinations[best_index])?;
-            best.fit(x, y)?;
-            self.best_estimator_ = Some(best);
-        }
-
+        self.best_estimator_ = best_estimator;
         self.fitted = true;
         Ok(())
     }
@@ -254,6 +280,15 @@ impl<E: Predictor + Params + Clone> GridSearchCV<E> {
         self.best_score_
     }
 
+    /// Score the refitted estimator on the supplied data with the search scorer.
+    pub fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
+        let estimator = self
+            .best_estimator_
+            .as_ref()
+            .ok_or_else(|| DatarustError::NotFitted("GridSearchCV".into()))?;
+        (self.scorer)(y, &(self.response)(estimator, x)?)
+    }
+
     /// Index of the best candidate in `cv_results().params`.
     pub fn best_index(&self) -> Option<usize> {
         self.best_index_
@@ -263,6 +298,10 @@ impl<E: Predictor + Params + Clone> GridSearchCV<E> {
 impl<E: Predictor + Params + Clone> crate::traits::Estimator for GridSearchCV<E> {}
 
 impl<E: Predictor + Params + Clone> crate::traits::Predictor for GridSearchCV<E> {
+    fn is_classifier(&self) -> bool {
+        self.estimator.is_classifier()
+    }
+
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         GridSearchCV::fit(self, x, y)
     }
@@ -288,11 +327,19 @@ impl<E: Predictor + PredictProba + Params + Clone> crate::traits::PredictProba f
     }
 }
 
-impl<E: Predictor + Params + Clone + Classifier> crate::traits::Classifier for GridSearchCV<E> {}
+impl<E: Predictor + Params + Clone + Classifier> crate::traits::Classifier for GridSearchCV<E> {
+    fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
+        GridSearchCV::score(self, x, y)
+    }
+}
 
 impl<E: Predictor + Params + Clone + Regressor> crate::traits::Regressor for GridSearchCV<E> {
     fn name(&self) -> &'static str {
         "GridSearchCV"
+    }
+
+    fn score(&self, x: &Matrix, y: &[f64]) -> Result<f64> {
+        GridSearchCV::score(self, x, y)
     }
 }
 

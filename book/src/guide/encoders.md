@@ -53,10 +53,9 @@ Supervised encoder: replaces categories with the smoothed mean of the target. Us
 ```rust
 use datarust::encoder::{TargetEncoder, UnknownTarget};
 
-let mut te = TargetEncoder::new()
-    .smoothing(1.0)
-    .handle_unknown(UnknownTarget::GlobalMean); // or NaN, Error
-let out = te.fit_transform(&str_matrix, &y)?;
+let mut te = TargetEncoder::new(1.0)?.unknown(UnknownTarget::GlobalMean);
+let training = te.fit_transform(&str_matrix, &y)?;
+let inference = te.transform(&new_categories)?;
 ```
 
 ## FrequencyEncoder

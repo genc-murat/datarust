@@ -83,6 +83,23 @@ let scores = cross_val_score(&LogisticRegression::new(), &x, &y, &cv, accuracy_s
 
 The scorer is any closure `Fn(&[f64], &[f64]) -> Result<f64>`, so you can pass custom metrics too.
 
+For ROC-AUC and average precision on binary 0/1 labels, select the positive-class probability explicitly. Both search wrappers use the response for fold scores and for `score` after refitting. Their default splitter uses five stratified folds for classifiers and five ordinary folds for regressors.
+
+```rust
+use datarust::metrics::classification::roc_auc_score;
+use datarust::model_selection::{binary_positive_probability, GridSearchCV};
+use datarust::{KNeighborsClassifier, ParamValue};
+
+let mut search = GridSearchCV::new(
+    KNeighborsClassifier::new(),
+    vec![("n_neighbors", vec![ParamValue::Int(3), ParamValue::Int(15)])],
+    roc_auc_score,
+).with_response(binary_positive_probability);
+search.fit(&x, &y)?;
+```
+
+For a single estimator, `cross_val_score_with_response` accepts the same response function as its final argument. A custom response can also return decision scores.
+
 ## CrossValidator
 
 `KFold` and `StratifiedKFold` both implement the [`CrossValidator`](https://docs.rs/datarust/latest/datarust/model_selection/trait.CrossValidator.html) trait, so `cross_val_score`, `GridSearchCV`, `RandomizedSearchCV`, and the curve diagnostics all accept either splitter — or your own:
@@ -94,14 +111,15 @@ let regression_cv: &dyn CrossValidator = &KFold::new().with_n_splits(5);
 let classification_cv: &dyn CrossValidator = &StratifiedKFold::new().with_n_splits(5);
 ```
 
-A custom splitter only needs `n_splits()` and `split(x, y)` plus `Debug`.
+A custom splitter only needs `n_splits()` and `split(x, y)` plus `Debug`. It can override `split_iter` to generate folds on demand. The built-in splitters stream one fold at a time, and each search candidate or curve point uses the same folds.
 
 ## GridSearchCV
 
 Exhaustive search over a parameter grid, mirroring `sklearn.model_selection.GridSearchCV`. Candidates come from the cartesian product of the grid, are evaluated by cross-validation, and the best is refit on the full dataset (`refit=true` by default, ties break to the first candidate).
 
 ```rust
-use datarust::model_selection::{GridSearchCV, KFold, ParamValue};
+use datarust::model_selection::{GridSearchCV, KFold};
+use datarust::traits::{ParamValue, Predictor};
 use datarust::linear_model::Ridge;
 use datarust::metrics::regression::r2_score;
 
@@ -128,20 +146,22 @@ let model = gs.best_estimator().unwrap(); // refit on all data
 model.predict(&x_new)?;
 ```
 
-`cv_results()` exposes the full table — per-candidate mean, standard deviation, fold scores, and competition ranks (`1, 1, 3` for exact ties, like sklearn's `rank_test_score`).
+`cv_results()` exposes the full table — per-candidate mean, standard deviation, fold scores, and competition ranks (`1, 1, 3` for exact ties, like sklearn's `rank_test_score`). Grid search sorts parameter names alphabetically and preserves the order of each list of values. Both search wrappers use the configured scorer when you call `score(x, y)` on the refitted model through the search object.
 
-Every estimator that implements the [`Params`](https://docs.rs/datarust/latest/datarust/traits/trait.Params.html) trait is searchable: the linear models, trees, forests, bagging ensembles, `KMeans`, the scalers, and the pipeline wrappers.
+Search accepts cloneable estimators implementing `Predictor` and [`Params`](https://docs.rs/datarust/latest/datarust/traits/trait.Params.html). A supervised pipeline lets you tune scaler parameters alongside the final estimator.
 
 ## Pipeline parameter grids
 
 `Pipeline` and `SupervisedPipeline` implement `Params` with nested `step__param` addressing, so a single search tunes preprocessing and the estimator together:
 
 ```rust
-use datarust::model_selection::{GridSearchCV, ParamValue};
+use datarust::model_selection::GridSearchCV;
+use datarust::traits::ParamValue;
 use datarust::pipeline::SupervisedPipeline;
 use datarust::transformer_kind::TransformerKind;
 use datarust::scaler::StandardScaler;
 use datarust::linear_model::Ridge;
+use datarust::metrics::regression::r2_score;
 
 let pipeline = SupervisedPipeline::new(Ridge::new()).push(
     "scaler",
@@ -161,7 +181,7 @@ gs.fit(&x, &y)?;
 
 ## RandomizedSearchCV
 
-For large spaces, sample `n_iter` candidates from parameter distributions instead of enumerating them. Sampling uses datarust's seeded xorshift64 [`Rng`](https://docs.rs/datarust/latest/datarust/struct.Rng.html) — deterministic for a fixed `random_state` (default `0`, unlike sklearn's unseeded default), but **not** bit-exact with sklearn's `ParameterSampler`.
+For large spaces, sample `n_iter` candidates from parameter distributions. Choices-only spaces are sampled without replacement using memory proportional to the number of candidates drawn. Sampling uses datarust's seeded xorshift64 [`Rng`](https://docs.rs/datarust/latest/datarust/struct.Rng.html) — deterministic for a fixed `random_state` (default `0`, unlike sklearn's unseeded default), but **not** bit-exact with sklearn's `ParameterSampler`.
 
 - `Choices` — one value drawn uniformly per candidate.
 - `Uniform(lo, hi)` — uniform float in `[lo, hi)`.
@@ -196,7 +216,8 @@ rs.best_params(); // e.g. Some([("alpha", Float(0.83)), ("max_iter", Int(517))])
 Scores train and CV-test folds across a range of one hyperparameter — the classic under/over-fitting picture. Returns `(train_scores, validation_scores)`, each indexed `[param_value][fold]`.
 
 ```rust
-use datarust::model_selection::{KFold, ParamValue, validation_curve};
+use datarust::model_selection::{KFold, validation_curve};
+use datarust::traits::ParamValue;
 use datarust::linear_model::Ridge;
 use datarust::metrics::regression::r2_score;
 
@@ -212,7 +233,7 @@ let (train, validation) = validation_curve(
 
 ## learning_curve
 
-Scores train and CV-test folds over increasing training-set sizes to reveal whether more data would help. `train_sizes` are fractions of each fold's training split; the training split is truncated to its first `floor(fraction × n_train)` samples.
+Scores train and CV-test folds over increasing training-set sizes to reveal whether more data would help. `train_sizes` are fractions of the first fold’s training size. Each fold uses the requested number of rows from the start of its training split, up to the number of rows available.
 
 ```rust
 use datarust::model_selection::{KFold, learning_curve};

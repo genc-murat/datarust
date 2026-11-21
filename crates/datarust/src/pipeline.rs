@@ -25,12 +25,17 @@ use crate::Transformer;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Pipeline {
     steps: Vec<(String, TransformerKind)>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    needs_refit: bool,
 }
 
 impl Pipeline {
     /// Creates a new empty pipeline.
     pub fn new() -> Self {
-        Self { steps: vec![] }
+        Self {
+            steps: vec![],
+            needs_refit: false,
+        }
     }
 
     /// Appends a named transformer step to the end of the pipeline.
@@ -61,6 +66,7 @@ impl Pipeline {
 
     /// Returns mutable access to the ordered list of steps.
     pub fn steps_mut(&mut self) -> &mut Vec<(String, TransformerKind)> {
+        self.needs_refit = true;
         &mut self.steps
     }
 
@@ -95,10 +101,8 @@ impl Pipeline {
     /// assert_eq!(p.get_step("a").unwrap().name(), "MaxAbsScaler");
     /// ```
     pub fn get_step_mut(&mut self, name: &str) -> Option<&mut TransformerKind> {
-        self.steps
-            .iter_mut()
-            .find(|(n, _)| n == name)
-            .map(|(_, t)| t)
+        let index = self.steps.iter().position(|(n, _)| n == name)?;
+        self.step_mut(index).map(|(_, t)| t)
     }
 
     /// Access a step and its name by index (0-based).
@@ -121,6 +125,7 @@ impl Pipeline {
 
     /// Mutable access to a step and its name by index.
     pub fn step_mut(&mut self, index: usize) -> Option<(&mut String, &mut TransformerKind)> {
+        self.needs_refit |= index < self.steps.len().saturating_sub(1);
         self.steps.get_mut(index).map(|(n, t)| (n, t))
     }
 
@@ -140,6 +145,7 @@ impl Pipeline {
     /// ```
     pub fn remove_step(&mut self, index: usize) -> Option<(String, TransformerKind)> {
         if index < self.steps.len() {
+            self.needs_refit |= index + 1 < self.steps.len();
             Some(self.steps.remove(index))
         } else {
             None
@@ -159,6 +165,7 @@ impl Pipeline {
     /// assert_eq!(p.names(), vec!["a", "b"]);
     /// ```
     pub fn insert_step(mut self, index: usize, name: &str, t: TransformerKind) -> Self {
+        self.needs_refit |= index < self.steps.len();
         self.steps.insert(index, (name.to_string(), t));
         self
     }
@@ -178,10 +185,7 @@ impl Pipeline {
     /// assert_eq!(p.get_step("s").unwrap().name(), "RobustScaler");
     /// ```
     pub fn set_step(&mut self, name: &str, t: TransformerKind) -> Option<TransformerKind> {
-        self.steps
-            .iter_mut()
-            .find(|(n, _)| n == name)
-            .map(|(_, old)| std::mem::replace(old, t))
+        self.get_step_mut(name).map(|old| std::mem::replace(old, t))
     }
 
     /// Attach a final supervised estimator to this preprocessing pipeline.
@@ -211,11 +215,13 @@ impl Pipeline {
                 actual: format!("{} targets", y.len()),
             });
         }
+        self.needs_refit = true;
         let mut current = x.clone();
         for (_name, step) in self.steps.iter_mut() {
             step.fit_with_target(&current, y)?;
             current = step.transform(&current)?;
         }
+        self.needs_refit = false;
         Ok(current)
     }
 }
@@ -244,15 +250,16 @@ impl Params for Pipeline {
         if let Some(pos) = name.find("__") {
             let step_name = &name[..pos];
             let param_name = &name[pos + 2..];
-            let step = self
+            let index = self
                 .steps
-                .iter_mut()
-                .find(|(n, _)| n == step_name)
-                .map(|(_, t)| t)
+                .iter()
+                .position(|(n, _)| n == step_name)
                 .ok_or_else(|| {
                     DatarustError::InvalidInput(format!("unknown step '{}' in Pipeline", step_name))
                 })?;
-            step.set_params(param_name, value)
+            self.steps[index].1.set_params(param_name, value)?;
+            self.needs_refit |= index + 1 < self.steps.len();
+            Ok(())
         } else {
             Err(DatarustError::InvalidInput(format!(
                 "unknown parameter '{}' for Pipeline. Use 'step__param' syntax.",
@@ -271,11 +278,13 @@ impl Transformer for Pipeline {
         if self.steps.is_empty() {
             return Err(DatarustError::InvalidInput("empty pipeline".into()));
         }
+        self.needs_refit = true;
         let mut current = x.clone();
         for (_name, step) in self.steps.iter_mut() {
             step.fit(&current)?;
             current = step.transform(&current)?;
         }
+        self.needs_refit = false;
         Ok(())
     }
 
@@ -284,6 +293,9 @@ impl Transformer for Pipeline {
     }
 
     fn transform(&self, x: &Matrix) -> Result<Matrix> {
+        if self.needs_refit {
+            return Err(DatarustError::NotFitted("Pipeline".into()));
+        }
         if self.steps.is_empty() {
             return Err(DatarustError::InvalidInput("empty pipeline".into()));
         }
@@ -298,15 +310,17 @@ impl Transformer for Pipeline {
         if self.steps.is_empty() {
             return Err(DatarustError::InvalidInput("empty pipeline".into()));
         }
+        self.needs_refit = true;
         let mut current = x.clone();
         for (_name, step) in self.steps.iter_mut() {
             current = step.fit_transform(&current)?;
         }
+        self.needs_refit = false;
         Ok(current)
     }
 
     fn is_fitted(&self) -> bool {
-        self.steps.iter().all(|(_, t)| Transformer::is_fitted(t))
+        !self.needs_refit && self.steps.iter().all(|(_, t)| Transformer::is_fitted(t))
     }
 }
 
@@ -329,6 +343,10 @@ impl FeatureNames for Pipeline {
 /// `predict_proba` operations. It is generic over the estimator, retaining
 /// static dispatch and type safety while remaining serde-serializable when the
 /// selected estimator is serializable.
+///
+/// Changing a preprocessing parameter through [`Params::set_params`] requires
+/// refitting the pipeline. Parameters of the final estimator follow that
+/// estimator's own fitting rules.
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SupervisedPipeline<E> {
@@ -352,7 +370,9 @@ impl<E: Params> Params for SupervisedPipeline<E> {
         if let Some(param) = name.strip_prefix("estimator__") {
             self.estimator.set_params(param, value)
         } else {
-            self.transformers.set_params(name, value)
+            self.transformers.set_params(name, value)?;
+            self.fitted = false;
+            Ok(())
         }
     }
 }
@@ -433,6 +453,10 @@ impl<E> SupervisedPipeline<E> {
 impl<E> Estimator for SupervisedPipeline<E> {}
 
 impl<E: Predictor> Predictor for SupervisedPipeline<E> {
+    fn is_classifier(&self) -> bool {
+        self.estimator.is_classifier()
+    }
+
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         self.fitted = false;
         let transformed = self.fit_transform_features(x, y)?;
@@ -447,7 +471,7 @@ impl<E: Predictor> Predictor for SupervisedPipeline<E> {
     }
 
     fn is_fitted(&self) -> bool {
-        self.fitted
+        self.fitted && self.estimator.is_fitted()
     }
 }
 
@@ -483,6 +507,36 @@ mod tests {
             vec![4.0, 40.0],
         ])
         .unwrap()
+    }
+
+    #[test]
+    fn changing_early_scaler_requires_refitting_downstream_steps() {
+        use crate::scaler::MinMaxScaler;
+        let x = Matrix::new(vec![vec![0.], vec![1.], vec![2.]]).unwrap();
+        let mut pipeline = Pipeline::new()
+            .push("range", TransformerKind::MinMaxScaler(MinMaxScaler::new()))
+            .push(
+                "standard",
+                TransformerKind::StandardScaler(StandardScaler::new()),
+            );
+        let before = pipeline.fit_transform(&x).unwrap();
+        pipeline
+            .set_params("range__feature_range_hi", ParamValue::Float(10.))
+            .unwrap();
+        assert!(!pipeline.is_fitted());
+        assert!(matches!(
+            pipeline.transform(&x),
+            Err(DatarustError::NotFitted(_))
+        ));
+        pipeline.fit(&x).unwrap();
+        assert!(pipeline.is_fitted());
+        for (a, b) in before
+            .col(0)
+            .iter()
+            .zip(pipeline.transform(&x).unwrap().col(0))
+        {
+            assert!((a - b).abs() < 1e-12);
+        }
     }
 
     #[test]
@@ -599,6 +653,42 @@ mod tests {
             "scale",
             TransformerKind::StandardScaler(StandardScaler::new()),
         );
+        assert!(!pipeline.is_fitted());
+        assert!(matches!(
+            pipeline.predict(&x),
+            Err(DatarustError::NotFitted(_))
+        ));
+    }
+
+    #[test]
+    fn nested_params_preserve_or_invalidate_the_fitted_pipeline() {
+        let x = Matrix::new(vec![vec![0.0], vec![1.0], vec![2.0]]).unwrap();
+        let y = [0.0, 10.0, 20.0];
+        let mut pipeline = SupervisedPipeline::new(crate::Ridge::new().with_alpha(0.0))
+            .push("scale", TransformerKind::MinMaxScaler(MinMaxScaler::new()));
+        pipeline.fit(&x, &y).unwrap();
+        let original = pipeline.predict(&x).unwrap();
+
+        assert!(pipeline
+            .set_params("scale__unknown", ParamValue::Int(1))
+            .is_err());
+        assert_eq!(pipeline.predict(&x).unwrap(), original);
+        pipeline
+            .set_params("scale__feature_range_hi", ParamValue::Float(2.0))
+            .unwrap();
+        assert!(!pipeline.is_fitted());
+        assert!(matches!(
+            pipeline.predict(&x),
+            Err(DatarustError::NotFitted(_))
+        ));
+        pipeline.fit(&x, &y).unwrap();
+        for (prediction, expected) in pipeline.predict(&x).unwrap().iter().zip(y) {
+            assert!((prediction - expected).abs() < 1e-9);
+        }
+
+        pipeline
+            .set_params("estimator__alpha", ParamValue::Float(1.0))
+            .unwrap();
         assert!(!pipeline.is_fitted());
         assert!(matches!(
             pipeline.predict(&x),

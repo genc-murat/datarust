@@ -86,7 +86,7 @@ pub fn mean_absolute_error(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
 ///
 /// Mirrors `sklearn.metrics.r2_score`. Best possible score is 1.0; a model
 /// that always predicts the mean of `y_true` scores 0.0; worse models score
-/// negative.
+/// negative. Requires at least two observations.
 ///
 /// ```rust
 /// use datarust::metrics::regression::r2_score;
@@ -101,6 +101,11 @@ pub fn mean_absolute_error(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
 /// `SS_tot = Σ (yᵢ − ȳ)²`.
 pub fn r2_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
     check_lengths(y_true, y_pred)?;
+    if y_true.len() < 2 {
+        return Err(DatarustError::InvalidInput(
+            "R² requires at least two observations".into(),
+        ));
+    }
     let n = y_true.len() as f64;
     let mean = y_true.iter().sum::<f64>() / n;
     let mut ss_res = 0.0;

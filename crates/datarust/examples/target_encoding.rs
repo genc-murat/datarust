@@ -1,5 +1,5 @@
 //! Supervised target encoding with ColumnTransformer, demonstrating
-//! TargetEncoder and fit_with_target.
+//! out-of-fold target encodings for training.
 //!
 //! Run: `cargo run --example target_encoding`
 
@@ -59,18 +59,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             vec![0],
             CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new()),
         )
-        // Target-encode department (col 1 of categorical) — needs fit_with_target
+        // Target-encode department (col 1 of categorical)
         .add_target(
             "dept_te",
             vec![1],
             TargetTransformerKind::TargetEncoder(TargetEncoder::new(5.0)?),
         );
 
-    // fit() would error on Target specs — must use fit_with_target()
-    ct.fit_with_target(&table, &y)?;
-
-    // ── 3. Transform ──────────────────────────────────────────────────
-    let transformed = ct.transform(&table)?;
+    // Encode each training row using only targets from the other folds.
+    let transformed = ct.fit_transform_with_target(&table, &y)?;
     println!("=== Target Encoder + ColumnTransformer ===");
     println!(
         "Shape: {} rows × {} cols",

@@ -37,7 +37,7 @@ pub enum UnknownTarget {
 /// let y = vec![1.0, 2.0, 3.0];
 /// let mut enc = TargetEncoder::new(1.0).unwrap();
 /// let encoded = enc.fit_transform(&x, &y).unwrap();
-/// // category "a" -> smoothed mean of [1.0, 3.0]
+/// // Each training row is encoded from the other folds.
 /// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -98,6 +98,12 @@ impl TargetEncoder {
 
     /// Learns the smoothed per-category target means.
     pub fn fit(&mut self, x: &StrMatrix, y: &[f64]) -> Result<()> {
+        self.validate_training_input(x, y)?;
+        self.fit_rows(x, y, 0..x.nrows());
+        Ok(())
+    }
+
+    fn validate_training_input(&self, x: &StrMatrix, y: &[f64]) -> Result<()> {
         if y.len() != x.nrows() {
             return Err(DatarustError::ShapeMismatch {
                 expected: format!("{} targets", x.nrows()),
@@ -117,17 +123,26 @@ impl TargetEncoder {
                 )));
             }
         }
+        Ok(())
+    }
+
+    fn fit_rows(
+        &mut self,
+        x: &StrMatrix,
+        y: &[f64],
+        rows: impl ExactSizeIterator<Item = usize> + Clone,
+    ) {
         let ncols = x.ncols();
-        let global_mean: f64 = y.iter().sum::<f64>() / y.len() as f64;
+        let global_mean: f64 = rows.clone().map(|i| y[i]).sum::<f64>() / rows.len() as f64;
         let mut mappings = Vec::with_capacity(ncols);
         let mut global_means = Vec::with_capacity(ncols);
         for j in 0..ncols {
-            let col = x.column_refs(j);
             // Borrowed keys while accumulating; owned Strings are materialized
             // once per unique category, instead of cloning every cell.
             let mut sums: HashMap<&str, (f64, f64)> = HashMap::new();
-            for (&cat, &target) in col.iter().zip(y.iter()) {
-                let e = sums.entry(cat).or_insert((0.0, 0.0));
+            for i in rows.clone() {
+                let target = y[i];
+                let e = sums.entry(x.get(i, j)).or_insert((0.0, 0.0));
                 e.0 += target;
                 e.1 += 1.0;
             }
@@ -144,7 +159,6 @@ impl TargetEncoder {
         self.mappings = mappings;
         self.global_means = global_means;
         self.fitted = true;
-        Ok(())
     }
 
     /// Replaces each category with its encoded target mean.
@@ -216,10 +230,31 @@ impl TargetEncoder {
         Matrix::new(out)
     }
 
-    /// Fits the encoder and transforms the input in one step.
+    /// Encode training rows out of fold, then fit the mapping for future transforms.
+    /// Uses up to five shuffled folds with a fixed seed. Categories absent from
+    /// a fold's training rows receive that fold's target mean.
     pub fn fit_transform(&mut self, x: &StrMatrix, y: &[f64]) -> Result<Matrix> {
-        self.fit(x, y)?;
-        self.transform(x)
+        self.validate_training_input(x, y)?;
+        let cv = crate::model_selection::KFold::new()
+            .with_n_splits(x.nrows().min(5))
+            .with_shuffle(true)
+            .with_random_state(0);
+        let mut encoded = vec![vec![0.0; x.ncols()]; x.nrows()];
+        let mut fold = Self::new(self.smoothing)?;
+        for (train, held_out) in cv.split(x.nrows())? {
+            fold.fit_rows(x, y, train.iter().copied());
+            fold.validate_fitted_state()?;
+            for i in held_out {
+                for (j, value) in encoded[i].iter_mut().enumerate() {
+                    *value = fold.mappings[j]
+                        .get(x.get(i, j))
+                        .copied()
+                        .unwrap_or(fold.global_means[j]);
+                }
+            }
+        }
+        self.fit_rows(x, y, 0..x.nrows());
+        Matrix::new(encoded)
     }
 }
 
@@ -234,6 +269,10 @@ impl TargetTransformer for TargetEncoder {
 
     fn transform(&self, x: &StrMatrix) -> Result<Matrix> {
         self.transform(x)
+    }
+
+    fn fit_transform(&mut self, x: &StrMatrix, y: &[f64]) -> Result<Matrix> {
+        TargetEncoder::fit_transform(self, x, y)
     }
 
     fn is_fitted(&self) -> bool {
@@ -267,7 +306,8 @@ mod tests {
         let x = StrMatrix::from_column(["Istanbul", "Ankara", "Izmir", "Istanbul"]).unwrap();
         let y = vec![1.0, 0.0, 1.0, 1.0];
         let mut te = TargetEncoder::new(0.0).unwrap();
-        let out = te.fit_transform(&x, &y).unwrap();
+        te.fit(&x, &y).unwrap();
+        let out = te.transform(&x).unwrap();
         // Istanbul mean = (1+1)/2 = 1 ; Ankara = 0 ; Izmir = 1
         assert!(approx(out.get(0, 0), 1.0, 1e-12));
         assert!(approx(out.get(1, 0), 0.0, 1e-12));
@@ -332,13 +372,36 @@ mod tests {
             StrMatrix::from_strings(vec![vec!["a", "x"], vec!["a", "y"], vec!["b", "x"]]).unwrap();
         let y = vec![1.0, 0.0, 1.0];
         let mut te = TargetEncoder::new(0.0).unwrap();
-        let out = te.fit_transform(&x, &y).unwrap();
+        te.fit(&x, &y).unwrap();
+        let out = te.transform(&x).unwrap();
         assert_eq!(out.ncols(), 2);
         // col0 'a' mean = 0.5, 'b' = 1.0 ; col1 'x' mean = 1.0, 'y' = 0.0
         assert!(approx(out.get(0, 0), 0.5, 1e-12));
         assert!(approx(out.get(2, 0), 1.0, 1e-12));
         assert!(approx(out.get(0, 1), 1.0, 1e-12));
         assert!(approx(out.get(1, 1), 0.0, 1e-12));
+    }
+
+    #[test]
+    fn training_encoding_excludes_own_target_and_inference_uses_full_map() {
+        let x = StrMatrix::from_column(["a", "b", "a", "b", "singleton", "a", "b"]).unwrap();
+        let y = [1., 2., 3., 4., 5., 6., 7.];
+        let mut te = TargetEncoder::new(1.0)
+            .unwrap()
+            .unknown(UnknownTarget::Error);
+        let encoded = TargetTransformer::fit_transform(&mut te, &x, &y).unwrap();
+        for i in 0..y.len() {
+            let mut changed = y;
+            changed[i] += 100.0;
+            let output = te.fit_transform(&x, &changed).unwrap();
+            assert_eq!(encoded.get(i, 0), output.get(i, 0));
+        }
+        assert!(te
+            .transform(&StrMatrix::from_column(["unknown"]).unwrap())
+            .is_err());
+        assert!(te
+            .fit_transform(&StrMatrix::from_column(["only"]).unwrap(), &[1.])
+            .is_err());
     }
 
     #[test]

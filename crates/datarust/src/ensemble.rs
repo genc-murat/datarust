@@ -143,20 +143,6 @@ impl ForestOptions {
         Ok(())
     }
 
-    /// Row sample for one tree, derived deterministically from the tree's
-    /// seed: bootstrap draws from a per-tree stream (keeping estimator
-    /// addition deterministic and isolating each tree's draws), else the
-    /// original row order. Storing only the seeds lets
-    /// `estimators_samples` regenerate indices on demand instead of the
-    /// model retaining `n_estimators × n_samples` indices for its lifetime.
-    fn sample_for(&self, tree_seed: u64, n_samples: usize) -> Vec<usize> {
-        if !self.bootstrap {
-            return (0..n_samples).collect();
-        }
-        let mut sampler = LegacyRandomState::new(tree_seed);
-        (0..n_samples).map(|_| sampler.randint(n_samples)).collect()
-    }
-
     fn tree_classifier(&self, criterion: Criterion, seed: u64) -> DecisionTreeClassifier {
         let mut tree = DecisionTreeClassifier::new()
             .with_criterion(criterion)
@@ -311,6 +297,41 @@ fn max_features_from_code(value: usize) -> Result<MaxFeatures> {
     }
 }
 
+/// Sampling settings and seeds committed together with the fitted forest.
+#[derive(Debug, Clone, Default)]
+struct ForestSamples {
+    n_samples: usize,
+    bootstrap: bool,
+    tree_seeds: Vec<u64>,
+}
+
+impl ForestSamples {
+    fn new(options: &ForestOptions, n_samples: usize) -> Self {
+        Self {
+            n_samples,
+            bootstrap: options.bootstrap,
+            tree_seeds: Vec::with_capacity(options.n_estimators),
+        }
+    }
+
+    fn sample_for(&self, seed: u64) -> Vec<usize> {
+        if !self.bootstrap {
+            return (0..self.n_samples).collect();
+        }
+        let mut sampler = LegacyRandomState::new(seed);
+        (0..self.n_samples)
+            .map(|_| sampler.randint(self.n_samples))
+            .collect()
+    }
+
+    fn indices(&self) -> Vec<Vec<usize>> {
+        self.tree_seeds
+            .iter()
+            .map(|&seed| self.sample_for(seed))
+            .collect()
+    }
+}
+
 fn sample_weights(n_samples: usize, indices: &[usize]) -> Vec<f64> {
     let mut weights = vec![0.0; n_samples];
     for &index in indices {
@@ -321,6 +342,10 @@ fn sample_weights(n_samples: usize, indices: &[usize]) -> Vec<f64> {
 
 fn validate_forest_input(x: &Matrix, y: &[f64], options: &ForestOptions) -> Result<()> {
     options.validate()?;
+    validate_training_input(x, y)
+}
+
+fn validate_training_input(x: &Matrix, y: &[f64]) -> Result<()> {
     if x.nrows() != y.len() {
         return Err(DatarustError::ShapeMismatch {
             expected: format!("{} rows in y", x.nrows()),
@@ -330,7 +355,7 @@ fn validate_forest_input(x: &Matrix, y: &[f64], options: &ForestOptions) -> Resu
     if x.nrows() == 0 {
         return Err(DatarustError::EmptyInput("X is empty".into()));
     }
-    x.validate_finite()?;
+    crate::tree::validate_features(x)?;
     Ok(())
 }
 
@@ -341,7 +366,7 @@ fn validate_prediction_shape(x: &Matrix, n_features: usize) -> Result<()> {
             actual: format!("{} features", x.ncols()),
         });
     }
-    x.validate_finite()?;
+    crate::tree::validate_features(x)?;
     if x.nrows() == 0 {
         return Err(DatarustError::EmptyInput("X has no rows".into()));
     }
@@ -380,11 +405,9 @@ pub struct RandomForestClassifier {
     options: ForestOptions,
     criterion: Criterion,
     n_features: usize,
-    /// Rows seen at fit time; drives on-demand sample regeneration.
-    n_samples: usize,
+    samples: ForestSamples,
     classes: Option<LabelSpace>,
     trees: Vec<DecisionTreeClassifier>,
-    tree_seeds: Vec<u64>,
     /// Estimator label used in error messages; ExtraTrees delegates here.
     name: &'static str,
 }
@@ -406,10 +429,9 @@ impl RandomForestClassifier {
             },
             criterion: Criterion::Gini,
             n_features: 0,
-            n_samples: 0,
+            samples: ForestSamples::default(),
             classes: None,
             trees: Vec::new(),
-            tree_seeds: Vec::new(),
             name: "RandomForestClassifier",
         }
     }
@@ -497,10 +519,7 @@ impl RandomForestClassifier {
     /// stored per-tree seeds on demand, so the fitted model does not retain
     /// `n_estimators × n_samples` indices.
     pub fn estimators_samples(&self) -> Vec<Vec<usize>> {
-        self.tree_seeds
-            .iter()
-            .map(|&seed| self.options.sample_for(seed, self.n_samples))
-            .collect()
+        self.samples.indices()
     }
 
     /// Mean normalized impurity reduction across the non-trivial fitted
@@ -544,21 +563,20 @@ impl RandomForestClassifier {
         let classes = LabelSpace::fit(y)?;
         let mut stream = LegacyRandomState::new(self.options.random_state);
         let mut trees = Vec::with_capacity(self.options.n_estimators);
-        let mut tree_seeds = Vec::with_capacity(self.options.n_estimators);
+        let mut samples = ForestSamples::new(&self.options, x.nrows());
         for _ in 0..self.options.n_estimators {
             let tree_seed = stream.seed31();
-            let sample_indices = self.options.sample_for(tree_seed, x.nrows());
+            let sample_indices = samples.sample_for(tree_seed);
             let weights = sample_weights(x.nrows(), &sample_indices);
             let mut tree = self.options.tree_classifier(self.criterion, tree_seed);
             tree.fit_weighted_impl(x, y, Some(weights), Some(classes.clone()))?;
             trees.push(tree);
-            tree_seeds.push(tree_seed);
+            samples.tree_seeds.push(tree_seed);
         }
         self.n_features = x.ncols();
-        self.n_samples = x.nrows();
+        self.samples = samples;
         self.classes = Some(classes);
         self.trees = trees;
-        self.tree_seeds = tree_seeds;
         Ok(())
     }
 
@@ -603,6 +621,10 @@ impl RandomForestClassifier {
 impl Estimator for RandomForestClassifier {}
 
 impl Predictor for RandomForestClassifier {
+    fn is_classifier(&self) -> bool {
+        true
+    }
+
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         self.fit_impl(x, y)
     }
@@ -689,10 +711,8 @@ impl Params for RandomForestClassifier {
 pub struct RandomForestRegressor {
     options: ForestOptions,
     n_features: usize,
-    /// Rows seen at fit time; drives on-demand sample regeneration.
-    n_samples: usize,
+    samples: ForestSamples,
     trees: Vec<DecisionTreeRegressor>,
-    tree_seeds: Vec<u64>,
     /// Estimator label used in error messages; ExtraTrees delegates here.
     name: &'static str,
 }
@@ -710,9 +730,8 @@ impl RandomForestRegressor {
         Self {
             options: ForestOptions::default(),
             n_features: 0,
-            n_samples: 0,
+            samples: ForestSamples::default(),
             trees: Vec::new(),
-            tree_seeds: Vec::new(),
             name: "RandomForestRegressor",
         }
     }
@@ -787,10 +806,7 @@ impl RandomForestRegressor {
     /// stored per-tree seeds on demand, so the fitted model does not retain
     /// `n_estimators × n_samples` indices.
     pub fn estimators_samples(&self) -> Vec<Vec<usize>> {
-        self.tree_seeds
-            .iter()
-            .map(|&seed| self.options.sample_for(seed, self.n_samples))
-            .collect()
+        self.samples.indices()
     }
 
     /// Mean normalized impurity reduction across the non-trivial fitted
@@ -833,20 +849,19 @@ impl RandomForestRegressor {
         }
         let mut stream = LegacyRandomState::new(self.options.random_state);
         let mut trees = Vec::with_capacity(self.options.n_estimators);
-        let mut tree_seeds = Vec::with_capacity(self.options.n_estimators);
+        let mut samples = ForestSamples::new(&self.options, x.nrows());
         for _ in 0..self.options.n_estimators {
             let tree_seed = stream.seed31();
-            let sample_indices = self.options.sample_for(tree_seed, x.nrows());
+            let sample_indices = samples.sample_for(tree_seed);
             let weights = sample_weights(x.nrows(), &sample_indices);
             let mut tree = self.options.tree_regressor(tree_seed);
             tree.fit_weighted_impl(x, y, Some(weights))?;
             trees.push(tree);
-            tree_seeds.push(tree_seed);
+            samples.tree_seeds.push(tree_seed);
         }
         self.n_features = x.ncols();
-        self.n_samples = x.nrows();
+        self.samples = samples;
         self.trees = trees;
-        self.tree_seeds = tree_seeds;
         Ok(())
     }
 }
@@ -1059,6 +1074,10 @@ impl ExtraTreesClassifier {
 impl Estimator for ExtraTreesClassifier {}
 
 impl Predictor for ExtraTreesClassifier {
+    fn is_classifier(&self) -> bool {
+        true
+    }
+
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         self.inner.fit(x, y)
     }
@@ -1452,18 +1471,30 @@ impl BaggingClassifier {
 impl Estimator for BaggingClassifier {}
 
 impl Predictor for BaggingClassifier {
+    fn is_classifier(&self) -> bool {
+        true
+    }
+
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        if self.n_estimators == 0 {
+            return Err(DatarustError::InvalidInput(
+                "n_estimators must be >= 1".into(),
+            ));
+        }
+        validate_training_input(x, y)?;
         let n_samples = x.nrows();
         let n_features = x.ncols();
-        self.n_features_ = n_features;
 
-        self.classes_ = LabelSpace::fit(y)?;
+        let classes = LabelSpace::fit(y)?;
 
         let n_draw_samples = self.max_samples.resolve(n_samples)?;
         let n_draw_features = self.max_features.resolve(n_features)?;
 
         let mut rng = LegacyRandomState::new(self.random_state);
 
+        let mut estimators = Vec::new();
+        let mut estimators_samples = Vec::new();
+        let mut estimators_features = Vec::new();
         for _ in 0..self.n_estimators {
             let forest_seed = rng.seed31();
             // sklearn's `_set_random_states` derives a fresh seed for the
@@ -1520,13 +1551,18 @@ impl Predictor for BaggingClassifier {
 
             let mut tree = self.base.clone();
             tree.set_params("random_state", ParamValue::Int(tree_seed as usize))?;
-            tree.fit_weighted_impl(&x_sub, y, Some(sample_weight), Some(self.classes_.clone()))?;
+            tree.fit_weighted_impl(&x_sub, y, Some(sample_weight), Some(classes.clone()))?;
 
-            self.estimators_.push(tree);
-            self.estimators_samples_.push(sample_indices);
-            self.estimators_features_.push(features);
+            estimators.push(tree);
+            estimators_samples.push(sample_indices);
+            estimators_features.push(features);
         }
 
+        self.n_features_ = n_features;
+        self.estimators_ = estimators;
+        self.estimators_samples_ = estimators_samples;
+        self.estimators_features_ = estimators_features;
+        self.classes_ = classes;
         Ok(())
     }
 
@@ -1559,6 +1595,10 @@ impl Predictor for BaggingClassifier {
 
 impl PredictProba for BaggingClassifier {
     fn predict_proba(&self, x: &Matrix) -> Result<Matrix> {
+        if !self.is_fitted() {
+            return Err(DatarustError::NotFitted("BaggingClassifier".into()));
+        }
+        validate_prediction_shape(x, self.n_features_)?;
         let n_classes = self.classes_.len();
         let n_samples = x.nrows();
         let mut proba = vec![0.0; n_samples * n_classes];
@@ -1711,7 +1751,7 @@ impl Default for BaggingRegressor {
 }
 
 impl BaggingRegressor {
-    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
+    /// New Bagging regressor with sensible defaults: 10 estimators, bootstrap
     /// on the full sample, all features.
     #[doc(hidden)]
     pub fn new() -> Self {
@@ -1780,15 +1820,23 @@ impl Estimator for BaggingRegressor {}
 
 impl Predictor for BaggingRegressor {
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
+        if self.n_estimators == 0 {
+            return Err(DatarustError::InvalidInput(
+                "n_estimators must be >= 1".into(),
+            ));
+        }
+        validate_training_input(x, y)?;
         let n_samples = x.nrows();
         let n_features = x.ncols();
-        self.n_features_ = n_features;
 
         let n_draw_samples = self.max_samples.resolve(n_samples)?;
         let n_draw_features = self.max_features.resolve(n_features)?;
 
         let mut rng = LegacyRandomState::new(self.random_state);
 
+        let mut estimators = Vec::new();
+        let mut estimators_samples = Vec::new();
+        let mut estimators_features = Vec::new();
         for _ in 0..self.n_estimators {
             let forest_seed = rng.seed31();
             // sklearn's `_set_random_states` derives a fresh seed for the
@@ -1844,21 +1892,24 @@ impl Predictor for BaggingRegressor {
             tree.set_params("random_state", ParamValue::Int(tree_seed as usize))?;
             tree.fit_weighted_impl(&x_sub, y, Some(sample_weight))?;
 
-            self.estimators_.push(tree);
-            self.estimators_samples_.push(sample_indices);
-            self.estimators_features_.push(features);
+            estimators.push(tree);
+            estimators_samples.push(sample_indices);
+            estimators_features.push(features);
         }
 
+        self.n_features_ = n_features;
+        self.estimators_ = estimators;
+        self.estimators_samples_ = estimators_samples;
+        self.estimators_features_ = estimators_features;
         Ok(())
     }
 
     fn predict(&self, x: &Matrix) -> Result<Vec<f64>> {
-        let n_samples = x.nrows();
-        if self.estimators_.is_empty() {
-            return Err(DatarustError::NotFitted(
-                "BaggingRegressor not fitted".into(),
-            ));
+        if !self.is_fitted() {
+            return Err(DatarustError::NotFitted("BaggingRegressor".into()));
         }
+        validate_prediction_shape(x, self.n_features_)?;
+        let n_samples = x.nrows();
         let mut sum = vec![0.0; n_samples];
         let n = self.estimators_.len() as f64;
         for (est, features) in self.estimators_.iter().zip(&self.estimators_features_) {
@@ -1987,8 +2038,12 @@ impl BaggingMaxSamples {
     pub fn resolve(self, n: usize) -> Result<usize> {
         match self {
             Self::Fraction(f) => {
-                let count = (f * n as f64).trunc() as usize;
-                Ok(count.max(1))
+                if !(f > 0.0 && f <= 1.0) || n == 0 {
+                    return Err(DatarustError::InvalidInput(format!(
+                        "max_samples fraction {f} must be in (0, 1] and the input must be nonempty"
+                    )));
+                }
+                Ok(((f * n as f64) as usize).clamp(1, n))
             }
             Self::Count(c) => {
                 if c == 0 || c > n {
@@ -2037,8 +2092,12 @@ impl BaggingMaxFeatures {
     pub fn resolve(self, n: usize) -> Result<usize> {
         match self {
             Self::Fraction(f) => {
-                let count = (f * n as f64).trunc() as usize;
-                Ok(count.max(1))
+                if !(f > 0.0 && f <= 1.0) || n == 0 {
+                    return Err(DatarustError::InvalidInput(format!(
+                        "max_features fraction {f} must be in (0, 1] and the input must be nonempty"
+                    )));
+                }
+                Ok(((f * n as f64) as usize).clamp(1, n))
             }
             Self::Count(c) => {
                 if c == 0 {
@@ -2092,6 +2151,45 @@ mod tests {
         .unwrap();
         let y = vec![0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0];
         (x, y)
+    }
+
+    #[test]
+    fn extra_trees_bootstrap_weighted_split_matches_reference() {
+        let x = Matrix::new(
+            [
+                [3., 2.],
+                [3., 0.],
+                [0., 3.],
+                [0., 3.],
+                [3., 0.],
+                [3., 3.],
+                [1., 1.],
+                [3., 2.],
+            ]
+            .map(|row| row.to_vec())
+            .to_vec(),
+        )
+        .unwrap();
+        let mut model = ExtraTreesRegressor::new()
+            .with_n_estimators(1)
+            .with_bootstrap(true)
+            .with_random_state(47)
+            .with_max_depth(Some(5));
+        model
+            .fit(&x, &[1.1, 0.3, -0.4, -1.4, 0.8, 1.2, 0.5, -0.7])
+            .unwrap();
+        assert_eq!(
+            model
+                .predict(&Matrix::new(vec![vec![3., 3.]]).unwrap())
+                .unwrap(),
+            vec![-1.3999999999999997]
+        );
+        let tree = model.trees()[0].tree().unwrap();
+        assert_eq!(tree.node_feature(0), Some(1));
+        assert_eq!(tree.node_threshold(0), Some(2.815475307319069));
+        let overflow = Matrix::new(vec![vec![1e40, 0.]]).unwrap();
+        assert!(model.predict(&overflow).is_err());
+        assert!(model.fit(&overflow, &[0.]).is_err());
     }
 
     #[test]
@@ -2163,6 +2261,31 @@ mod tests {
         for tree in forest.trees() {
             assert_eq!(tree.tree().unwrap().node_n_samples(0), Some(x.nrows()));
         }
+    }
+
+    #[test]
+    fn samples_only_change_after_a_successful_refit() {
+        let (x, y) = simple_data();
+        let identity = vec![(0..x.nrows()).collect::<Vec<_>>(); 3];
+        let mut classifier = ExtraTreesClassifier::new().with_n_estimators(3);
+        classifier.fit(&x, &y).unwrap();
+        classifier
+            .set_params("bootstrap", ParamValue::Bool(true))
+            .unwrap();
+        assert_eq!(classifier.estimators_samples(), identity);
+        assert!(classifier.fit(&x, &[]).is_err());
+        assert_eq!(classifier.estimators_samples(), identity);
+        classifier.fit(&x, &y).unwrap();
+        assert_ne!(classifier.estimators_samples(), identity);
+
+        let mut regressor = RandomForestRegressor::new().with_n_estimators(3);
+        regressor.fit(&x, &y).unwrap();
+        let bootstrapped = regressor.estimators_samples();
+        assert_ne!(bootstrapped, identity);
+        regressor = regressor.with_bootstrap(false);
+        assert_eq!(regressor.estimators_samples(), bootstrapped);
+        regressor.fit(&x, &y).unwrap();
+        assert_eq!(regressor.estimators_samples(), identity);
     }
 
     #[test]

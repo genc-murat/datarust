@@ -172,3 +172,47 @@ fn bagging_regressor_parity() {
         }
     }
 }
+
+#[test]
+fn refitting_replaces_bagging_members_and_failed_fit_preserves_them() {
+    let x = Matrix::new(vec![vec![1.0], vec![2.0], vec![3.0]]).unwrap();
+    let mut reg = BaggingRegressor::new().with_n_estimators(1);
+    reg.fit(&x, &[0.0; 3]).unwrap();
+    reg.fit(&x, &[10.0; 3]).unwrap();
+    assert_eq!(reg.estimators().len(), 1);
+    assert_eq!(reg.estimators_samples().len(), 1);
+    assert_eq!(reg.estimators_features().len(), 1);
+    assert_eq!(reg.predict(&x).unwrap(), vec![10.0; 3]);
+    assert!(reg.fit(&x, &[0.0, f64::NAN, 0.0]).is_err());
+    assert_eq!(reg.predict(&x).unwrap(), vec![10.0; 3]);
+
+    let mut clf = BaggingClassifier::new().with_n_estimators(1);
+    assert!(matches!(
+        clf.predict_proba(&x),
+        Err(datarust::DatarustError::NotFitted(_))
+    ));
+    clf.fit(&x, &[0.0, 1.0, 2.0]).unwrap();
+    clf.fit(&x, &[5.0; 3]).unwrap();
+    assert_eq!(clf.estimators().len(), 1);
+    assert_eq!(clf.predict(&x).unwrap(), vec![5.0; 3]);
+    assert_eq!(clf.predict_proba(&x).unwrap().as_slice(), &[1.0; 3]);
+    assert!(clf.fit(&x, &[9.0; 2]).is_err());
+    assert_eq!(clf.predict(&x).unwrap(), vec![5.0; 3]);
+}
+
+#[test]
+fn bagging_rejects_invalid_ensemble_size_and_sampling_fractions() {
+    let x = Matrix::new(vec![vec![1.0], vec![2.0]]).unwrap();
+    assert!(BaggingClassifier::new()
+        .with_n_estimators(0)
+        .fit(&x, &[0.0, 1.0])
+        .is_err());
+    assert!(BaggingRegressor::new()
+        .with_n_estimators(0)
+        .fit(&x, &[0.0, 1.0])
+        .is_err());
+    for invalid in [0.0, 2.0, f64::NAN, f64::INFINITY] {
+        assert!(BaggingMaxSamples::Fraction(invalid).resolve(2).is_err());
+        assert!(BaggingMaxFeatures::Fraction(invalid).resolve(2).is_err());
+    }
+}

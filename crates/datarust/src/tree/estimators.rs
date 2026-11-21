@@ -153,7 +153,7 @@ impl DecisionTreeClassifier {
         if x.nrows() == 0 {
             return Err(DatarustError::EmptyInput("X is empty".into()));
         }
-        x.validate_finite()?;
+        crate::tree::validate_features(x)?;
         let classes = known_classes.unwrap_or(LabelSpace::fit(y)?);
         let n_classes = classes.len();
         let codes: Vec<usize> = y
@@ -179,6 +179,10 @@ impl DecisionTreeClassifier {
 impl Estimator for DecisionTreeClassifier {}
 
 impl Predictor for DecisionTreeClassifier {
+    fn is_classifier(&self) -> bool {
+        true
+    }
+
     fn fit(&mut self, x: &Matrix, y: &[f64]) -> Result<()> {
         self.fit_impl(x, y)
     }
@@ -195,7 +199,7 @@ impl Predictor for DecisionTreeClassifier {
                 actual: format!("{} features", x.ncols()),
             });
         }
-        x.validate_finite()?;
+        crate::tree::validate_features(x)?;
         let mut out = Vec::with_capacity(x.nrows());
         for i in 0..x.nrows() {
             let leaf = tree.leaf_for(x.row(i))?;
@@ -225,7 +229,7 @@ impl PredictProba for DecisionTreeClassifier {
                 actual: format!("{} features", x.ncols()),
             });
         }
-        x.validate_finite()?;
+        crate::tree::validate_features(x)?;
         let n_classes = classes.len();
         let mut flat: Vec<f64> = Vec::with_capacity(x.nrows() * n_classes);
         for i in 0..x.nrows() {
@@ -445,7 +449,7 @@ impl DecisionTreeRegressor {
         if x.nrows() == 0 {
             return Err(DatarustError::EmptyInput("X is empty".into()));
         }
-        x.validate_finite()?;
+        crate::tree::validate_features(x)?;
         for (i, &v) in y.iter().enumerate() {
             if !v.is_finite() {
                 return Err(DatarustError::InvalidInput(format!(
@@ -487,7 +491,7 @@ impl Predictor for DecisionTreeRegressor {
                 actual: format!("{} features", x.ncols()),
             });
         }
-        x.validate_finite()?;
+        crate::tree::validate_features(x)?;
         let mut out = Vec::with_capacity(x.nrows());
         for i in 0..x.nrows() {
             let leaf = tree.leaf_for(x.row(i))?;

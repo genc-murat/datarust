@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `cross_val_score_with_response`, and `.with_response(...)` on both search
+  wrappers, score a chosen estimator response per fold — pass the new
+  `binary_positive_probability` helper to score ROC-AUC or average precision
+  on binary labels instead of hard predictions.
+
+### Changed
+
+- `TargetEncoder::fit_transform` now encodes each training row out of fold
+  (up to five shuffled folds with a fixed seed; a category absent from a
+  fold's training rows receives that fold's target mean) before fitting the
+  full mapping that later `transform` calls use. `fit` followed by
+  `transform` keeps the previous in-sample behavior.
+
+### Fixed
+
+- Bagging replaces fitted trees and sample metadata on a successful refit and validates ensemble settings before training.
+- Hyperparameter searches and diagnostics reuse the same folds for all candidates. Built-in splitters stream the folds during evaluation. Searches publish results after a successful refit, and randomized choices avoid allocating the full grid.
+- Grid search enumerates parameter names in sorted order. Both searches use the configured scorer when scoring the refitted winner.
+- k-NN uses training order for ties at the neighborhood boundary, validates the neighbor count at prediction time, and handles distances whose squares exceed the floating-point range.
+- Forests and ExtraTrees report the samples used during training even after the bootstrap setting changes.
+- A supervised pipeline requires a new fit after a preprocessing parameter changes. Lasso and logistic regression accept finite, nonnegative tolerances through both the builder and parameter search.
+- Changing a fitted column transformer’s remainder strategy requires fitting the new output layout.
+
 ## [0.8.0] - 2026-11-21
 
 The "Model selection & ensemble completion" release: the carried-over v0.7
@@ -54,8 +79,9 @@ brute-force nearest neighbors — all pinned against scikit-learn 1.6.1.
   competition ranks — exact ties share the minimum rank, `1, 1, 3`),
   first-candidate tie-breaking for `best_index`/`best_params`, `refit`
   best-estimator behavior, and `Predictor`/`PredictProba` passthrough to the
-  refit winner. Any estimator implementing `Params` is searchable (linear
-  models, trees, forests, bagging, KMeans, scalers, pipelines).
+  refit winner. Search accepts cloneable estimators implementing both
+  `Predictor` and `Params`. A supervised pipeline can tune its scalers
+  alongside the final estimator.
   Ordering, ranks, and tie-breaks match sklearn exactly; scores match
   sklearn 1.6.1 within 1e-8 (`tests/search_parity.rs`, seeded Ridge grid).
 - **`RandomizedSearchCV` (`src/model_selection/randomized_search.rs`).**

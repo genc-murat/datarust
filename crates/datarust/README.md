@@ -34,7 +34,7 @@ let normalized = scaler.fit_transform(&data)?;
 | **RNG** | Public seedable `Rng` (xorshift64*): `next_unit`, `next_range`, `next_normal`, Fisher–Yates `shuffle` |
 | **Clustering** | KMeans (Lloyd's algorithm, k-means++ initialization, n_init restarts), silhouette_score |
 | **Metrics** | Regression: MSE/RMSE, MAE, R², max_error, explained_variance. Classification: accuracy, precision, recall, F1, confusion_matrix (n×n), log_loss, ROC-AUC, average precision, Cohen's kappa, Matthews corrcoef (macro-averaged for multiclass) |
-| **Model Selection** | train_test_split, KFold, StratifiedKFold, `CrossValidator` trait, cross_val_score, GridSearchCV (cv_results, ranks, refit-best), RandomizedSearchCV (Choices/Uniform/RandInt), validation_curve, learning_curve |
+| **Model Selection** | train_test_split, KFold, StratifiedKFold, `CrossValidator` trait, cross_val_score, GridSearchCV (cv_results, ranks, refit-best), RandomizedSearchCV (Choices/Uniform/RandInt — ⚠️ sampling is **not** sklearn `ParameterSampler`-bit-exact; deterministic for a fixed seed, but the drawn candidate sequence differs), validation_curve, learning_curve |
 | **Nearest Neighbors** | KNeighborsClassifier, KNeighborsRegressor (brute-force Euclidean, uniform/distance weights, sklearn tie-breaking) |
 | **Pipeline** | Sequential + supervised Pipeline (serde-serializable), ColumnTransformer (numeric + categorical) |
 | **Feature Names** | `FeatureNames` trait on all transformers for output column names |
@@ -98,14 +98,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-datarust = "0.7"
+datarust = "0.8"
 ```
 
 ### Optional features
 
 ```toml
 [dependencies]
-datarust = { version = "0.7", features = ["serde", "rayon"] }
+datarust = { version = "0.8", features = ["serde", "rayon"] }
 ```
 
 - **`serde`** — enables JSON serialization/deserialization of fitted transformers via `datarust::serialize::{save_json, load_json, to_json, from_json}`.
@@ -191,23 +191,24 @@ pattern: add the marker `impl Estimator for MyClusterer {}`, then implement
 
 ### Params Trait (hyperparameter introspection)
 
-Estimators whose hyperparameters should be searchable (for future
-`GridSearchCV`) implement the [`Params`](https://docs.rs/datarust/latest/datarust/trait.Params.html) trait.
-It exposes `get_params` / `set_params` over a type-safe [`ParamValue`](https://docs.rs/datarust/latest/datarust/enum.ParamValue.html) enum:
+The [`Params`](https://docs.rs/datarust/latest/datarust/traits/trait.Params.html) trait
+provides `get_params` and `set_params` for inspecting and changing hyperparameters.
+Both methods use the [`ParamValue`](https://docs.rs/datarust/latest/datarust/traits/enum.ParamValue.html) enum.
 
 ```rust
 pub trait Params {
-    fn get_params(&self) -> Vec<(&'static str, ParamValue)>;
+    fn get_params(&self) -> Vec<(std::borrow::Cow<'static, str>, ParamValue)>;
     fn set_params(&mut self, name: &str, value: ParamValue) -> Result<()>;
 }
 
 pub enum ParamValue { Float(f64), Int(usize), Bool(bool) }
 ```
 
-Implemented by [KMeans](#kmeans) (`n_clusters`, `max_iter`, `tol`, `n_init`) and
-[LogisticRegression](#logisticregression) (`max_iter`, `tol`, `fit_intercept`).
-Not every estimator needs `Params` — only those whose hyperparameters should be
-tunable by an automated search.
+`GridSearchCV` and `RandomizedSearchCV` accept models that implement
+`Predictor + Params + Clone`, including Ridge, Lasso, logistic regression,
+trees, ensembles and nearest neighbors. A supervised pipeline can tune both
+preprocessing and model parameters through names such as `scale__with_mean`
+and `estimator__alpha`. KMeans also exposes its settings through `Params`.
 
 ### CategoricalTransformer Trait
 
@@ -473,9 +474,9 @@ Replace categories with the smoothed mean of the target variable. Implements [`T
 ```rust
 use datarust::encoder::TargetEncoder;
 
-let mut te = TargetEncoder::new(5.0); // smoothing factor
-te.fit(&categorical, &target)?;
-let out = te.transform(&categorical)?;
+let mut te = TargetEncoder::new(5.0)?;
+let training = te.fit_transform(&categorical, &target)?; // out-of-fold encodings
+let inference = te.transform(&new_categories)?; // full training mapping
 ```
 
 Controlled via [`UnknownTarget`](https://docs.rs/datarust/latest/datarust/encoder/enum.UnknownTarget.html): `GlobalMean` (default), `NaN`, or `Error` for unseen categories.
@@ -989,11 +990,13 @@ For classification, pass `accuracy_score` from `metrics::classification` instead
 
 Exhaustive search over a parameter grid with sklearn-shaped results —
 `cv_results()` (mean/std/fold scores, competition ranks), first-candidate
-tie-breaking, and refit-best behavior. Any estimator implementing `Params`
-is searchable; pipelines tune through nested `step__param` names.
+tie-breaking, and refit-best behavior. Search accepts cloneable estimators
+implementing `Predictor` and `Params`. Pipelines tune through nested
+`step__param` names.
 
 ```rust
-use datarust::model_selection::{GridSearchCV, KFold, ParamValue};
+use datarust::model_selection::{GridSearchCV, KFold};
+use datarust::traits::ParamValue;
 use datarust::linear_model::Ridge;
 use datarust::metrics::regression::r2_score;
 
@@ -1016,19 +1019,30 @@ sklearn 1.6.1 within 1e-8 (pinned by `tests/search_parity.rs`).
 
 #### RandomizedSearchCV
 
+> **⚠️ Parity note — not bit-exact with sklearn.** `RandomizedSearchCV`
+> uses datarust's own seeded xorshift64 `Rng`, not sklearn's
+> `ParameterSampler` stream. It is deterministic for a fixed
+> `random_state` (default `0` — reproducible by default, unlike sklearn's
+> unseeded default), but the *sequence of sampled candidates* — and
+> therefore `best_params_` — will differ from sklearn for the same seed.
+> Scores for any given candidate are comparable; the search trajectory is
+> not. If you need a sklearn-reproducible search, use `GridSearchCV`,
+> whose ordering, ranks, and tie-breaks match sklearn exactly.
+
 Sample `n_iter` candidates from parameter distributions instead of
 enumerating them — `Choices` (uniform draw), `Uniform(lo, hi)`, and
 `RandInt(lo, hi)` (inclusive). Choices-only spaces sample without
 replacement from the exhaustive product; otherwise each candidate draws
-every parameter independently. Deterministic for a fixed `random_state`
-(default `0`), using datarust's own seeded `Rng` — deliberately not
-`ParameterSampler`-bit-exact; the sampling contract is documented in the
-API docs.
+every parameter independently. The full sampling contract is documented
+in the API docs (`model_selection::RandomizedSearchCV`).
 
 #### validation_curve / learning_curve
 
 ```rust
-use datarust::model_selection::{KFold, ParamValue, validation_curve};
+use datarust::linear_model::Ridge;
+use datarust::metrics::regression::r2_score;
+use datarust::model_selection::{KFold, validation_curve};
+use datarust::traits::ParamValue;
 
 let (train, validation) = validation_curve(
     &Ridge::new(), &x, &y, "alpha",
@@ -1039,8 +1053,8 @@ let (train, validation) = validation_curve(
 // each table is [param_value][fold]
 ```
 
-`learning_curve` takes `train_sizes` as fractions of each fold's training
-split (sklearn `shuffle=False` truncation) and returns the deduplicated
+`learning_curve` takes `train_sizes` as fractions of the first fold’s training
+size (sklearn `shuffle=False` truncation) and returns the deduplicated
 absolute sizes alongside the score tables.
 
 ### Datasets
@@ -1111,7 +1125,8 @@ Apply different transformers to different columns of a mixed numeric/categorical
 
 ```rust
 use datarust::compose::{ColumnTransformer, Remainder, Table, Output};
-use datarust::encoder::OneHotEncoder;
+use datarust::encoder::{OneHotEncoder, TargetEncoder};
+use datarust::{CategoricalTransformerKind, TargetTransformerKind, FeatureNames};
 use datarust::scaler::StandardScaler;
 use datarust::transformer_kind::TransformerKind;
 
@@ -1120,21 +1135,21 @@ let table = Table::new(numeric, categorical)?;
 let mut ct = ColumnTransformer::new()
     .remainder(Remainder::Passthrough)  // retain unselected columns
     .add_numeric("scale", vec![0, 1], TransformerKind::StandardScaler(StandardScaler::new()))
-    .add_categorical("city", vec![0], OneHotEncoder::new());
+    .add_categorical("city", vec![0], CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new()));
 let out = ct.fit_transform(&table)?;
 
 // Preserve the numeric/categorical split
 let output: Output = ct.fit_transform_to_table(&table)?;
 // output.numeric → Matrix, output.categorical → StrMatrix
 
-// Target specs require fit_with_target
+// Encode the training table out of fold
 let mut ct = ColumnTransformer::new()
-    .add_target("te", vec![0], TargetEncoder::new(5.0)?);
-ct.fit_with_target(&table, &y)?;  // fit() would error — use fit_with_target()
+    .add_target("te", vec![0], TargetTransformerKind::TargetEncoder(TargetEncoder::new(5.0)?));
+let training = ct.fit_transform_with_target(&table, &y)?;
 
 // Feature names compose from all sub-transformers
-let names = ct.feature_names_out(Some(&["age", "salary", "city"]));
-assert_eq!(names, vec!["age", "salary", "city_Istanbul", "city_Ankara", "city_Izmir"]);
+let names = ct.feature_names_out(Some(&["city".into()]));
+assert_eq!(names, vec!["city"]);
 ```
 
 ### Output
@@ -1315,7 +1330,7 @@ PCA also exposes [`noise_variance()`](https://docs.rs/datarust/latest/datarust/d
 Enable the `serde` feature for JSON save/load of fitted transformers.
 
 ```toml
-datarust = { version = "0.7", features = ["serde"] }
+datarust = { version = "0.8", features = ["serde"] }
 ```
 
 ```rust
@@ -1343,7 +1358,7 @@ than causing an indexing panic.
 Enable the `rayon` feature for parallel column operations on large datasets.
 
 ```toml
-datarust = { version = "0.7", features = ["rayon"] }
+datarust = { version = "0.8", features = ["rayon"] }
 ```
 
 When enabled, the following use parallel iterators:
@@ -1889,6 +1904,7 @@ let out = loaded.transform(&new_data)?;
 ```rust,ignore
 use datarust::compose::{ColumnTransformer, Table};
 use datarust::encoder::{OneHotEncoder, TargetEncoder};
+use datarust::{CategoricalTransformerKind, TargetTransformerKind, Matrix, StrMatrix};
 use datarust::scaler::StandardScaler;
 use datarust::transformer_kind::TransformerKind;
 
@@ -1907,12 +1923,9 @@ let targets = vec![100.0, 200.0, 150.0];
 let table = Table::new(numeric, categorical)?;
 let mut ct = ColumnTransformer::new()
     .add_numeric("nums", vec![0], TransformerKind::StandardScaler(StandardScaler::new()))
-    .add_categorical("city", vec![0], OneHotEncoder::new())
-    .add_target("te", vec![1], TargetEncoder::new(5.0)?);
-ct.fit_with_target(&table, &targets)?;
-
-// Transform with all three spec types
-let out = ct.transform(&table)?;
+    .add_categorical("city", vec![0], CategoricalTransformerKind::OneHotEncoder(OneHotEncoder::new()))
+    .add_target("te", vec![1], TargetTransformerKind::TargetEncoder(TargetEncoder::new(5.0)?));
+let out = ct.fit_transform_with_target(&table, &targets)?;
 println!("{} columns", out.ncols());
 ```
 

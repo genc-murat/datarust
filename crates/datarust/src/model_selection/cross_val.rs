@@ -2,8 +2,28 @@
 
 use crate::error::{DatarustError, Result};
 use crate::matrix::Matrix;
-use crate::model_selection::cross_validator::CrossValidator;
-use crate::traits::Predictor;
+use crate::model_selection::cross_validator::{CrossValidator, FoldIter};
+use crate::traits::{PredictProba, Predictor};
+
+/// Extract the second probability column for a binary classifier. Use this
+/// response when the metric's positive label is the second fitted class.
+pub fn binary_positive_probability<T: PredictProba>(estimator: &T, x: &Matrix) -> Result<Vec<f64>> {
+    let probabilities = estimator.predict_proba(x)?;
+    if probabilities.ncols() != 2 {
+        return Err(DatarustError::InvalidInput(
+            "binary probability scoring requires two fitted classes".into(),
+        ));
+    }
+    Ok(probabilities.col(1))
+}
+
+pub(super) fn default_cv(classification: bool) -> Box<dyn CrossValidator> {
+    if classification {
+        Box::new(super::StratifiedKFold::new())
+    } else {
+        Box::new(super::KFold::new())
+    }
+}
 
 /// Evaluate an estimator by cross-validation.
 ///
@@ -47,6 +67,42 @@ where
     S: CrossValidator + ?Sized,
     F: Fn(&[f64], &[f64]) -> Result<f64>,
 {
+    cross_val_score_with_response(estimator, x, y, cv, scorer, T::predict)
+}
+
+/// Evaluate a metric using a chosen estimator response on each held-out fold.
+/// Pass [`binary_positive_probability`] for binary probability metrics or a
+/// function returning a decision score for each row.
+pub fn cross_val_score_with_response<T, S, F, R>(
+    estimator: &T,
+    x: &Matrix,
+    y: &[f64],
+    cv: &S,
+    scorer: F,
+    response: R,
+) -> Result<Vec<f64>>
+where
+    T: Predictor + Clone,
+    S: CrossValidator + ?Sized,
+    F: Fn(&[f64], &[f64]) -> Result<f64>,
+    R: Fn(&T, &Matrix) -> Result<Vec<f64>>,
+{
+    let mut scores = Vec::new();
+    for (train, test) in checked_folds(cv, x, y)? {
+        let train = Samples::select(x, y, &train)?;
+        let test = Samples::select(x, y, &test)?;
+        let mut model = estimator.clone();
+        model.fit(&train.x, &train.y)?;
+        scores.push(scorer(&test.y, &response(&model, &test.x)?)?);
+    }
+    Ok(scores)
+}
+
+pub(super) fn checked_folds<'a, S: CrossValidator + ?Sized>(
+    cv: &'a S,
+    x: &'a Matrix,
+    y: &'a [f64],
+) -> Result<std::iter::Peekable<FoldIter<'a>>> {
     let n = x.nrows();
     if y.len() != n {
         return Err(DatarustError::ShapeMismatch {
@@ -54,19 +110,36 @@ where
             actual: format!("{} targets", y.len()),
         });
     }
-    let mut scores = Vec::new();
-    for (train_idx, test_idx) in cv.split(x, y)? {
-        let x_train = x.select_rows(&train_idx)?;
-        let x_test = x.select_rows(&test_idx)?;
-        let y_train: Vec<f64> = train_idx.iter().map(|&i| y[i]).collect();
-        let y_test: Vec<f64> = test_idx.iter().map(|&i| y[i]).collect();
-
-        let mut model = estimator.clone();
-        model.fit(&x_train, &y_train)?;
-        let pred = model.predict(&x_test)?;
-        scores.push(scorer(&y_test, &pred)?);
+    let mut folds = cv.split_iter(x, y)?.peekable();
+    if folds.peek().is_none() {
+        return Err(DatarustError::EmptyInput(
+            "cross-validator produced no folds".into(),
+        ));
     }
-    Ok(scores)
+    Ok(folds)
+}
+
+/// Features and targets for one side of a fold, shared by candidates.
+pub(super) struct Samples {
+    pub x: Matrix,
+    pub y: Vec<f64>,
+}
+
+impl Samples {
+    pub fn select(x: &Matrix, y: &[f64], indices: &[usize]) -> Result<Self> {
+        Ok(Self {
+            x: x.select_rows(indices)?,
+            y: indices.iter().map(|&i| y[i]).collect(),
+        })
+    }
+
+    pub fn score<T, F>(&self, model: &T, scorer: F) -> Result<f64>
+    where
+        T: Predictor,
+        F: Fn(&[f64], &[f64]) -> Result<f64>,
+    {
+        scorer(&self.y, &model.predict(&self.x)?)
+    }
 }
 
 #[cfg(test)]

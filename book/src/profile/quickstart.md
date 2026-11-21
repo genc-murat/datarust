@@ -8,7 +8,7 @@ no `serde` required for the HTML report.
 
 ```toml
 [dependencies]
-datarust = "0.7"
+datarust = "0.8"
 datarust-profile = "0.4"
 ```
 

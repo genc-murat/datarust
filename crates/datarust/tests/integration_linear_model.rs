@@ -7,6 +7,28 @@ use datarust::metrics::regression::{
 use datarust::traits::Predictor;
 use datarust::Matrix;
 
+#[test]
+fn tolerance_search_accepts_zero_and_rejects_invalid_values_without_losing_fit() {
+    use datarust::linear_model::{Lasso, LogisticRegression};
+    use datarust::traits::{ParamValue, Params};
+
+    fn check(model: &mut (impl Params + Predictor), x: &Matrix, y: &[f64]) {
+        model.set_params("tol", ParamValue::Float(0.0)).unwrap();
+        model.fit(x, y).unwrap();
+        let predictions = model.predict(x).unwrap();
+        for invalid in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(model.set_params("tol", ParamValue::Float(invalid)).is_err());
+            assert!(model.is_fitted());
+            assert_eq!(model.predict(x).unwrap(), predictions);
+        }
+    }
+
+    let x = Matrix::new(vec![vec![0.0], vec![1.0], vec![2.0], vec![3.0]]).unwrap();
+    let y = [0.0, 1.0, 0.0, 1.0];
+    check(&mut Lasso::new(), &x, &y);
+    check(&mut LogisticRegression::new(), &x, &y);
+}
+
 fn approx(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() < tol
 }

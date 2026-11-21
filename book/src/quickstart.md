@@ -13,14 +13,14 @@ datarust is built for zero onboarding friction:
 
 ```toml
 [dependencies]
-datarust = "0.7"
+datarust = "0.8"
 ```
 
 Or with the most useful feature flags:
 
 ```toml
 [dependencies]
-datarust = { version = "0.7", features = ["serde", "rayon"] }
+datarust = { version = "0.8", features = ["serde", "rayon"] }
 ```
 
 See [Installation](./installation.md) for what each feature does.

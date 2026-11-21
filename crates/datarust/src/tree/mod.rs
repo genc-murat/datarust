@@ -41,6 +41,19 @@ use crate::label_space::LabelSpace;
 use crate::matrix::Matrix;
 use crate::traits::ParamValue;
 
+pub(crate) fn validate_features(x: &Matrix) -> Result<()> {
+    for i in 0..x.nrows() {
+        for (j, &value) in x.row(i).iter().enumerate() {
+            if !(value as f32).is_finite() {
+                return Err(DatarustError::InvalidInput(format!(
+                    "non-finite f32 feature {value} at position ({i}, {j})"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Split quality criterion.
 ///
 /// Classification nodes use `Gini` (default) or `Entropy`; regression nodes

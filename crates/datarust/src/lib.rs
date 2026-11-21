@@ -120,9 +120,9 @@ pub use linear_model::{
 };
 pub use matrix::{Matrix, SparseMatrix, StrMatrix};
 pub use model_selection::{
-    cross_val_score, learning_curve, train_test_split, validation_curve, CrossValidator,
-    GridSearchCV, KFold, ParamDistribution, ParamGrid, ParamSpace, RandomizedSearchCV,
-    StratifiedKFold, TrainTestSplit,
+    binary_positive_probability, cross_val_score, cross_val_score_with_response, learning_curve,
+    train_test_split, validation_curve, CrossValidator, GridSearchCV, KFold, ParamDistribution,
+    ParamGrid, ParamSpace, RandomizedSearchCV, StratifiedKFold, TrainTestSplit,
 };
 pub use neighbors::{KNeighborsClassifier, KNeighborsRegressor};
 pub use pipeline::{Pipeline, SupervisedPipeline};

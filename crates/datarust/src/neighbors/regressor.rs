@@ -3,7 +3,7 @@
 use crate::error::{DatarustError, Result};
 use crate::imputer::KnnWeights;
 use crate::matrix::Matrix;
-use crate::neighbors::{distance_weights, kneighbors};
+use crate::neighbors::{kneighbors, neighbor_weights, validate_neighbor_count};
 use crate::traits::{Estimator, ParamValue, Params, Predictor, Regressor};
 
 /// k-Nearest-Neighbor regressor (sklearn's `KNeighborsRegressor`).
@@ -14,8 +14,7 @@ use crate::traits::{Estimator, ParamValue, Params, Predictor, Regressor};
 /// - `Uniform`: the unweighted mean of the neighbors' targets.
 /// - `Distance`: the weighted mean with inverse Euclidean weights `1/d`;
 ///   when any neighbor coincides with the query (zero distance), only those
-///   neighbors contribute (winner-takes-all, sklearn's `_get_weights`), and a
-///   zero total weight falls back to the unweighted mean.
+///   neighbors contribute (winner-takes-all, sklearn's `_get_weights`).
 ///
 /// ```rust
 /// use datarust::neighbors::KNeighborsRegressor;
@@ -115,18 +114,7 @@ impl Predictor for KNeighborsRegressor {
                 "y must contain only finite values".into(),
             ));
         }
-        if self.n_neighbors == 0 {
-            return Err(DatarustError::InvalidInput(
-                "n_neighbors must be >= 1".into(),
-            ));
-        }
-        if self.n_neighbors > x.nrows() {
-            return Err(DatarustError::InvalidInput(format!(
-                "n_neighbors ({}) must not exceed the training sample count ({})",
-                self.n_neighbors,
-                x.nrows()
-            )));
-        }
+        validate_neighbor_count(self.n_neighbors, x.nrows())?;
 
         self.x_train = Some(x.clone());
         self.y_train = y.to_vec();
@@ -141,43 +129,31 @@ impl Predictor for KNeighborsRegressor {
             .x_train
             .as_ref()
             .ok_or_else(|| DatarustError::NotFitted("KNeighborsRegressor".into()))?;
-        // n_neighbors is mutable after fit; re-check it against the stored
-        // training size (sklearn errors in `kneighbors`).
-        if self.n_neighbors > x_train.nrows() {
-            return Err(DatarustError::InvalidInput(format!(
-                "n_neighbors ({}) must not exceed the training sample count ({})",
-                self.n_neighbors,
-                x_train.nrows()
-            )));
-        }
+        validate_neighbor_count(self.n_neighbors, x_train.nrows())?;
 
         let mut out = Vec::with_capacity(x.nrows());
         for i in 0..x.nrows() {
             let neighbors = kneighbors(x_train, x.row(i), self.n_neighbors);
-            let value = match self.weights {
-                KnnWeights::Uniform => {
-                    let sum: f64 = neighbors.iter().map(|(_, idx)| self.y_train[*idx]).sum();
-                    sum / neighbors.len() as f64
-                }
-                KnnWeights::Distance => {
-                    let weights = distance_weights(&neighbors);
-                    let mut weighted = 0.0;
-                    let mut total = 0.0;
-                    for (w, (_, idx)) in weights.iter().zip(neighbors.iter()) {
-                        weighted += w * self.y_train[*idx];
-                        total += w;
-                    }
-                    if total > 0.0 {
-                        weighted / total
-                    } else {
-                        // Division-by-zero guard; unreachable with sklearn's
-                        // distance weights (every nonzero distance has a
-                        // positive weight, and the winner-takes-all rule
-                        // guarantees weight 1 when any distance is zero).
-                        let sum: f64 = neighbors.iter().map(|(_, idx)| self.y_train[*idx]).sum();
-                        sum / neighbors.len() as f64
-                    }
-                }
+            let targets_and_weights = || {
+                neighbors
+                    .iter()
+                    .zip(neighbor_weights(self.weights, &neighbors))
+                    .map(|(&(_, idx), weight)| (self.y_train[idx], weight))
+            };
+            let mut weighted_sum = 0.0;
+            let mut total_weight = 0.0;
+            for (target, weight) in targets_and_weights() {
+                weighted_sum += target * weight;
+                total_weight += weight;
+            }
+            let value = if weighted_sum.is_finite() {
+                weighted_sum / total_weight
+            } else {
+                // The mean of finite targets is finite even if their sum overflowed.
+                let scaled_sum: f64 = targets_and_weights()
+                    .map(|(target, weight)| (target / f64::MAX) * weight)
+                    .sum();
+                (scaled_sum / total_weight).clamp(-1.0, 1.0) * f64::MAX
             };
             out.push(value);
         }
@@ -253,6 +229,19 @@ mod tests {
         knn.fit(&x, &y).unwrap();
         let pred = knn.predict(&m(vec![vec![0.5]])).unwrap();
         assert!((pred[0] - 5.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn finite_target_mean_survives_sum_overflow() {
+        let train = m(vec![vec![0.0], vec![2.0]]);
+        let query = m(vec![vec![1.0]]);
+        for weights in [KnnWeights::Uniform, KnnWeights::Distance] {
+            let mut model = KNeighborsRegressor::new()
+                .with_n_neighbors(2)
+                .with_weights(weights);
+            model.fit(&train, &[f64::MAX, f64::MAX]).unwrap();
+            assert_eq!(model.predict(&query).unwrap(), [f64::MAX]);
+        }
     }
 
     #[test]

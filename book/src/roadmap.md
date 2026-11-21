@@ -71,8 +71,9 @@ Shipped: `src/tree/` (`DecisionTreeClassifier` / `DecisionTreeRegressor`,
 (`RandomForestClassifier` / `RandomForestRegressor` with on-demand
 `estimators_samples()`), and the public `Rng` promoted from
 `model_selection`. `ExtraTrees` and a generic `Bagging` meta-estimator
-shipped in v0.8; out-of-bag scoring and parallel forest fitting remain
-planned for later.
+shipped in v0.8; out-of-bag scoring and parallel fitting for Bagging
+(and the forests) remain tracked follow-ups — see the canonical roadmap's
+"v0.8 follow-ups — Bagging completeness" checklist.
 
 ### v0.8 — Model selection & ensemble completion (Shipped)
 

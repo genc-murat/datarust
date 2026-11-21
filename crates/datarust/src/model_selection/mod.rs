@@ -25,7 +25,7 @@ pub mod rng;
 /// Train/test split.
 pub mod split;
 
-pub use cross_val::cross_val_score;
+pub use cross_val::{binary_positive_probability, cross_val_score, cross_val_score_with_response};
 pub use cross_validator::CrossValidator;
 pub use diagnostics::{learning_curve, validation_curve};
 pub use grid_search::{CVResults, GridSearchCV, ParamGrid};
