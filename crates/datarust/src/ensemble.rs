@@ -397,8 +397,6 @@ impl Default for RandomForestClassifier {
 
 impl RandomForestClassifier {
     /// Creates a classifier with scikit-learn-style defaults.
-    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
-    /// on the full sample, all features.
     #[doc(hidden)]
     pub fn new() -> Self {
         Self {
@@ -707,8 +705,6 @@ impl Default for RandomForestRegressor {
 
 impl RandomForestRegressor {
     /// Creates a regressor with scikit-learn-style defaults.
-    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
-    /// on the full sample, all features.
     #[doc(hidden)]
     pub fn new() -> Self {
         Self {
@@ -963,8 +959,6 @@ impl Default for ExtraTreesClassifier {
 impl ExtraTreesClassifier {
     /// Creates a classifier with scikit-learn-style ExtraTrees defaults
     /// (100 non-bootstrap trees, sqrt feature subsampling, Gini).
-    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
-    /// on the full sample, all features.
     #[doc(hidden)]
     pub fn new() -> Self {
         let mut inner = RandomForestClassifier::new().with_bootstrap(false);
@@ -1135,8 +1129,6 @@ impl Default for ExtraTreesRegressor {
 impl ExtraTreesRegressor {
     /// Creates a regressor with scikit-learn-style ExtraTrees defaults
     /// (100 non-bootstrap trees, all features, squared error).
-    /// New Bagging classifier with sensible defaults: 10 estimators, bootstrap
-    /// on the full sample, all features.
     #[doc(hidden)]
     pub fn new() -> Self {
         let mut inner = RandomForestRegressor::new().with_bootstrap(false);

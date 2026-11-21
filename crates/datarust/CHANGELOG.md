@@ -22,8 +22,8 @@ brute-force nearest neighbors — all pinned against scikit-learn 1.6.1.
   clone. With the same integer `random_state`, fitted trees match sklearn
   *node-for-node, bit-for-bit* (per-tree node arrays pinned by
   `tests/ensemble_parity.rs`), and per-node feature subsampling mirrors
-  sklearn's forest dispatch. Defaults follow sklearn 1.6.1 (bootstrap off,
-  `max_features` differs from RandomForest).
+  sklearn's forest dispatch. Defaults follow sklearn 1.6.1 (bootstrap off —
+  the one ExtraTrees-vs-RandomForest default that differs).
 - **Bagging meta-estimators (`src/ensemble.rs`).** `BaggingClassifier` and
   `BaggingRegressor` fit the base tree on bootstrap (or random-subset)
   samples with optional per-member feature subsets. The sampling stream

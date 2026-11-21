@@ -75,9 +75,10 @@ impl KNeighborsClassifier {
     /// Number of neighbors consulted per prediction (default: 5).
     ///
     /// Unlike most hyperparameters, `n_neighbors` and `weights` may be
-    /// changed after `fit` — they only affect prediction.
+    /// changed after `fit` — they only affect prediction. A zero value is
+    /// rejected at `fit`/`predict` time, matching `set_params`.
     pub fn with_n_neighbors(mut self, k: usize) -> Self {
-        self.n_neighbors = k.max(1);
+        self.n_neighbors = k;
         self
     }
 

@@ -64,9 +64,10 @@ impl KNeighborsRegressor {
     /// Number of neighbors consulted per prediction (default: 5).
     ///
     /// Unlike most hyperparameters, `n_neighbors` and `weights` may be
-    /// changed after `fit` — they only affect prediction.
+    /// changed after `fit` — they only affect prediction. A zero value is
+    /// rejected at `fit`/`predict` time, matching `set_params`.
     pub fn with_n_neighbors(mut self, k: usize) -> Self {
-        self.n_neighbors = k.max(1);
+        self.n_neighbors = k;
         self
     }
 
@@ -169,9 +170,10 @@ impl Predictor for KNeighborsRegressor {
                     if total > 0.0 {
                         weighted / total
                     } else {
-                        // sklearn falls back to the unweighted mean when every
-                        // weight sums to zero; unreachable under the
-                        // winner-takes-all rule, kept for contract parity.
+                        // Division-by-zero guard; unreachable with sklearn's
+                        // distance weights (every nonzero distance has a
+                        // positive weight, and the winner-takes-all rule
+                        // guarantees weight 1 when any distance is zero).
                         let sum: f64 = neighbors.iter().map(|(_, idx)| self.y_train[*idx]).sum();
                         sum / neighbors.len() as f64
                     }

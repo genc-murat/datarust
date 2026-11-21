@@ -62,8 +62,9 @@ Never ship an estimator without its sklearn-parity fixtures.
 - [x] `ExtraTreesClassifier` / `ExtraTreesRegressor` in `src/ensemble.rs`.
       Random-split variant of the existing CART kernel: per-feature uniform
       threshold draws from the same MT19937 "legacy RandomState" stream the
-      forests already clone. Note sklearn 1.6.1 defaults (`max_features`
-      differs from RandomForest) — pin behavior with fixtures, not memory.
+      forests already clone. Note sklearn 1.6.1 defaults (`bootstrap` is the
+      one ExtraTrees-vs-RandomForest default that differs) — pin behavior
+      with fixtures, not memory.
 - [x] `Bagging` meta-estimator, generic over any `Predictor` (bootstrap +
       optional `max_samples` / `max_features`). First cut mirrors the forest
       release contract: no OOB scoring, no sample weights, no parallel fit.

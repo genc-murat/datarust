@@ -129,7 +129,9 @@ pub(crate) fn evaluate_candidates<E: Predictor + Params + Clone>(
 }
 
 /// Competition ranks for mean scores: highest mean gets rank 1, exact ties
-/// share the same rank (1, 1, 3 — like sklearn's `rank_test_score`).
+/// share the same rank (1, 1, 3 — like sklearn's `rank_test_score`, which
+/// compares scores for exact equality; identical candidates run identical
+/// code paths, so their means are bit-identical here too).
 pub(crate) fn rank_candidates(mean_scores: &[f64]) -> Vec<usize> {
     let mut indexed: Vec<(usize, f64)> = mean_scores.iter().copied().enumerate().collect();
     indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -138,7 +140,7 @@ pub(crate) fn rank_candidates(mean_scores: &[f64]) -> Vec<usize> {
     for (idx, &(i, _)) in indexed.iter().enumerate() {
         if idx > 0 {
             let prev_score = indexed[idx - 1].1;
-            if (prev_score - mean_scores[i]).abs() > f64::EPSILON {
+            if prev_score != mean_scores[i] {
                 current_rank = idx + 1;
             }
         }

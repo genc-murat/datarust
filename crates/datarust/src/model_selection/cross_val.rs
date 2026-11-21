@@ -15,8 +15,9 @@ use crate::traits::Predictor;
 /// [`r2_score`](crate::metrics::regression::r2_score) for regression or
 /// [`accuracy_score`](crate::metrics::classification::accuracy_score) for
 /// classification. The estimator must implement [`Predictor`] and [`Clone`].
-/// The cross-validator implements [`CrossValidator`] (see [`KFold`] and
-/// [`StratifiedKFold`]).
+/// The cross-validator implements [`CrossValidator`] (see
+/// [`KFold`](crate::model_selection::KFold) and
+/// [`StratifiedKFold`](crate::model_selection::StratifiedKFold)).
 ///
 /// ```rust
 /// use datarust::linear_model::LinearRegression;

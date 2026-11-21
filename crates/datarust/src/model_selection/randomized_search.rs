@@ -74,7 +74,15 @@ fn sample_combinations(
                         ParamValue::Float(rng.next_range(*lo, *hi))
                     }
                     ParamDistribution::RandInt(lo, hi) => {
-                        ParamValue::Int(lo + rng.next_index(hi - lo + 1))
+                        // `hi - lo + 1` overflows only for the full usize span
+                        // (lo == 0, hi == usize::MAX); sample that degenerate
+                        // case directly from the u64 stream instead.
+                        let index = if *lo == 0 && *hi == usize::MAX {
+                            rng.next_u64() as usize
+                        } else {
+                            rng.next_index(*hi - *lo + 1)
+                        };
+                        ParamValue::Int(lo + index)
                     }
                 };
                 combo.push((*name, value));
@@ -117,7 +125,7 @@ fn validate_space(space: &ParamSpace) -> Result<()> {
 /// Randomized search over a parameter space, using cross-validation.
 ///
 /// Draws `n_iter` candidates from the [`ParamSpace`] with datarust's seeded
-/// [`Rng`](crate::Rng) (deterministic for a fixed `random_state`), evaluates
+/// [`Rng`] (deterministic for a fixed `random_state`), evaluates
 /// each by cross-validation, and keeps the best. See
 /// [`GridSearchCV`](crate::model_selection::GridSearchCV) for the exhaustive
 /// counterpart; result fields mirror it.
@@ -448,5 +456,32 @@ mod tests {
         let (x, y) = make_data();
         let mut rs = RandomizedSearchCV::new(Lasso::new(), vec![], r2_score);
         assert!(matches!(rs.fit(&x, &y), Err(DatarustError::EmptyInput(_))));
+    }
+
+    #[test]
+    fn rand_int_full_usize_span_does_not_overflow() {
+        // `hi - lo + 1` overflows usize when lo == 0 && hi == usize::MAX;
+        // the sampler must fall back to the u64 stream instead of panicking
+        // (debug) or wrapping (release).
+        let (x, y) = make_data();
+        let mut rs = RandomizedSearchCV::new(
+            Lasso::new(),
+            vec![
+                ("max_iter", ParamDistribution::RandInt(0, usize::MAX)),
+                ("alpha", ParamDistribution::Uniform(0.1, 1.0)),
+            ],
+            r2_score,
+        )
+        .with_n_iter(4)
+        .with_random_state(5)
+        .with_cv(KFold::new().with_n_splits(2));
+        rs.fit(&x, &y).unwrap();
+        for combo in rs.cv_results().unwrap().params.iter() {
+            for (name, value) in combo {
+                if *name == "max_iter" {
+                    assert!(matches!(value, ParamValue::Int(_)));
+                }
+            }
+        }
     }
 }

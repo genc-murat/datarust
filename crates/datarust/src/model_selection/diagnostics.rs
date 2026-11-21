@@ -65,7 +65,7 @@ pub type LearningCurveScores = (Vec<usize>, Vec<Vec<f64>>, Vec<Vec<f64>>);
 /// Validation curve over a single hyperparameter.
 ///
 /// For each value in `param_range` the estimator is parameterized via
-/// [`Params::set_params`](crate::traits::Params::set_params) and evaluated by
+/// [`Params::set_params`] and evaluated by
 /// cross-validation, scoring both the training and test folds. This shows
 /// under- vs. over-fitting as the parameter moves.
 ///
